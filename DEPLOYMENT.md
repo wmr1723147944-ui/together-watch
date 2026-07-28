@@ -2,29 +2,140 @@
 
 当前版本采用“各自在官方页面播放，服务器只同步状态”的模式。服务器不解析、不下载、不代理第三方视频，也不接触用户的 Cookie 或会员凭据。这样既能显著降低带宽成本，也更适合作为公开服务的起点。
 
-## 个人阶段：先用 Render 免费服务
+## 个人阶段：腾讯云香港轻量服务器
 
-仓库已经提供 `Dockerfile`、`render.yaml`、`/health` 健康检查和公网冒烟测试。个人阶段可以先部署到 Render 新加坡区：
+对主要在中国大陆使用、又暂时不想办理 ICP 备案的个人项目，推荐：
 
-1. 在 GitHub 新建一个私有仓库，把本项目推送上去。不要提交 `.env`、TURN 密钥或其他凭据。
-2. 登录 Render，选择 **New → Blueprint**，连接这个 GitHub 仓库。
-3. Render 会读取 `render.yaml`，创建 `together-watch-personal` Web Service。
-4. 部署完成后访问 `https://你的服务.onrender.com/health`。应看到 `"status": "ok"`、`"legacy_media_pipeline": false` 和 `"companion_archive": true`。
-5. 在本机执行完整验收：
+> 腾讯云轻量应用服务器（中国香港）+ Docker CE + Caddy 自动 HTTPS
 
-   ```powershell
-   .\.venv\Scripts\python.exe scripts\smoke_test.py https://你的服务.onrender.com
-   ```
+香港节点可以使用中国大陆常见支付方式购买，也不会像免费 PaaS 那样空闲休眠。服务器只传递同步和聊天数据，不承载第三方视频流量，因此个人阶段从当前可购买的最低档 Linux 套餐开始即可。购买页价格和活动会变化，以实际订单为准。
 
-6. 打开公网首页，创建一个房间。所有参与者安装房间页提供的“观影伴侣”，把同一份配置保存到扩展中，再分别打开同一集官方视频。
+### 1. 购买服务器
 
-免费实例适合个人验证，不等于稳定生产环境：空闲后会休眠，下一次访问会有冷启动；服务重启后，当前房间的内存状态也会丢失。新加坡节点对中国大陆通常比欧美节点更合适，但跨境线路仍可能随运营商和时段波动。
+在腾讯云轻量应用服务器购买页选择：
+
+- 地域：`中国香港`
+- 镜像：`Docker CE` 应用模板；没有时选择 `Ubuntu 24.04 LTS`
+- 配置：个人阶段选择最低档或约 `2 核 2 GB`
+- 数量：`1`
+- 自动续费：第一次测试可以先关闭，避免忘记续费
+
+创建后记下服务器的公网 IPv4。不要把 SSH 密码发给其他人。
+
+### 2. 准备域名和 DNS
+
+完整功能必须使用 HTTPS，否则浏览器不会开放麦克风权限。购买一个域名或使用已有域名，然后增加一条 DNS 记录：
+
+```text
+记录类型：A
+主机记录：watch
+记录值：你的香港服务器公网 IPv4
+```
+
+假设域名是 `example.com`，最终访问地址就是：
+
+```text
+https://watch.example.com
+```
+
+域名指向中国香港服务器时不需要 ICP 备案，但域名注册本身仍需按注册商要求完成实名认证。
+
+### 3. 设置防火墙
+
+在轻量应用服务器控制台的“防火墙”中保留或新增：
+
+| 用途 | 协议 | 端口 | 来源 |
+| --- | --- | --- | --- |
+| SSH 管理 | TCP | 22 | 优先限制为自己的公网 IP |
+| HTTP 证书验证 | TCP | 80 | `0.0.0.0/0` |
+| HTTPS / WebSocket | TCP | 443 | `0.0.0.0/0` |
+| HTTP/3（可选） | UDP | 443 | `0.0.0.0/0` |
+
+不要把应用内部的 `5000` 端口开放到公网。
+
+### 4. 登录服务器并下载项目
+
+在腾讯云控制台点击“登录”，进入服务器终端后执行：
+
+```bash
+git clone https://github.com/wmr1723147944-ui/together-watch.git
+cd together-watch
+cp .env.server.example .env.server
+openssl rand -hex 32
+```
+
+最后一条命令会输出一串随机字符。复制它，然后编辑服务器配置：
+
+```bash
+nano .env.server
+```
+
+把内容改成：
+
+```dotenv
+DOMAIN=watch.你的域名
+SECRET_KEY=刚才生成的随机字符
+WEBRTC_ICE_SERVERS=
+```
+
+按 `Ctrl+O`、回车保存，再按 `Ctrl+X` 退出。`.env.server` 已被 Git 和 Docker 忽略，不会上传到 GitHub，也不要把它截图公开。
+
+### 5. 一条命令启动
+
+如果购买的是 Docker CE 模板，执行：
+
+```bash
+docker compose --env-file .env.server up -d --build
+```
+
+如果提示无权限，在命令前加 `sudo`。第一次启动需要下载 Python 和 Caddy 镜像。Caddy 会在 DNS 生效后自动申请 HTTPS 证书，并自动支持 WebSocket。
+
+查看状态：
+
+```bash
+docker compose --env-file .env.server ps
+docker compose --env-file .env.server logs --tail=100
+```
+
+两个服务都应处于运行状态。随后访问：
+
+```text
+https://watch.你的域名/health
+```
+
+应看到 `"status": "ok"`、`"legacy_media_pipeline": false` 和 `"companion_archive": true`。
+
+### 6. 在 Windows 上完成公网验收
+
+回到本地 `D:\视频共享`，执行：
+
+```powershell
+.\.venv\Scripts\python.exe scripts\smoke_test.py https://watch.你的域名
+```
+
+脚本会检查 HTTPS、房间页、扩展安装包、两个真实 WebSocket 客户端、播放同步和房间权威状态。
+
+### 7. 后续更新
+
+以后本地代码推送到 GitHub 后，在服务器执行：
+
+```bash
+cd together-watch
+git pull --ff-only
+docker compose --env-file .env.server up -d --build
+```
+
+Caddy 的证书保存在 Docker 数据卷中，不要执行 `docker compose down -v`，否则会一并删除证书数据。
+
+## Render 作为备用方案
+
+仓库仍保留 `render.yaml`，因此将来有可用国际支付方式或账号不再要求银行卡验证时，仍可部署到 Render。面向中国大陆的个人主方案已经切换为香港轻量服务器。
 
 ## 语音通话：TURN 是公网可靠性的关键
 
 默认只有 STUN。普通家庭网络之间往往能直连，但公司网络、校园网、对称 NAT 或严格防火墙下，语音可能失败。页面现在会明确提示 TURN 是否缺失，`/health` 也会返回 `turn_configured`。
 
-个人测试可以申请一个托管 TURN 服务，把它提供的地址、用户名和密码写进 Render 控制台的 `WEBRTC_ICE_SERVERS` 环境变量。不要把真实凭据提交到仓库。格式示例：
+个人测试可以申请一个托管 TURN 服务，把它提供的地址、用户名和密码写进服务器的 `.env.server`。不要把真实凭据提交到仓库。格式示例：
 
 ```json
 [
@@ -35,7 +146,7 @@
 ]
 ```
 
-保存后 Render 会重新部署。再次访问 `/health`，确认 `turn_configured` 为 `true`。随后至少用两种不同网络实测，例如一台设备连接家庭宽带，另一台使用手机流量。
+保存后重新执行 `docker compose --env-file .env.server up -d`。再次访问 `/health`，确认 `turn_configured` 为 `true`。随后至少用两种不同网络实测，例如一台设备连接家庭宽带，另一台使用手机流量。
 
 托管 TURN 的免费额度一般只适合短时测试。商业阶段应使用离主要用户更近的 TURN 节点、短期动态凭据和流量告警。语音会消耗 TURN 流量，视频本身不会经过 TURN。
 
@@ -54,7 +165,7 @@
 
 ### 第一阶段：小范围内测
 
-- 把免费实例升级为不休眠的固定实例，并绑定正式域名、HTTPS。
+- 保留固定香港实例和正式域名，根据实测升级带宽、CPU 与内存。
 - 增加账号、邀请口令、房主权限、封禁和限流，避免公开房间被滥用。
 - 把房间事件和状态放入 Redis；用户、套餐、订单和投诉记录放入 PostgreSQL。
 - 接入错误监控、延迟指标、WebSocket 在线数、TURN 流量和成本告警。
@@ -80,9 +191,9 @@
 
 ## 推荐的成本顺序
 
-1. **现在：** Render 免费实例 + 默认 STUN，先验证同步和扩展流程。
-2. **语音验证：** 增加有免费试用额度的托管 TURN，仅供少量个人通话。
-3. **稳定内测：** 付费常驻应用实例 + Redis/PostgreSQL + 正式域名。
+1. **现在：** 香港轻量服务器 + Docker Compose + Caddy + 默认 STUN。
+2. **语音验证：** 增加靠近主要用户的托管 TURN，仅供少量个人通话。
+3. **稳定内测：** 在现有服务器旁增加 Redis/PostgreSQL，或迁移到托管数据库。
 4. **用户增长后：** 多实例、SFU、多区域 TURN、监控和合规投入。
 
 不要在个人阶段自建视频转码或代理集群。那会立刻增加带宽、存储、版权和运维成本，却不会改善官方页面模式下的观影同步。

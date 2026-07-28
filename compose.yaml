@@ -1,0 +1,60 @@
+name: together-watch
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      APP_VERSION: vps-personal-v1
+      SECRET_KEY: ${SECRET_KEY:?请在 .env.server 中设置 SECRET_KEY}
+      TRUST_PROXY_HOPS: "1"
+      ENABLE_LEGACY_MEDIA_PIPELINE: "0"
+      ROOM_TTL_SECONDS: "21600"
+      MAX_ROOM_MEMBERS: "50"
+      MAX_CALL_MEMBERS: "8"
+      GUNICORN_THREADS: "40"
+      ALLOWED_ORIGINS: https://${DOMAIN:?请在 .env.server 中设置 DOMAIN}
+      WEBRTC_ICE_SERVERS: ${WEBRTC_ICE_SERVERS:-}
+    expose:
+      - "5000"
+    networks:
+      - web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      DOMAIN: ${DOMAIN:?请在 .env.server 中设置 DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - web
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  web:
+
+volumes:
+  caddy_data:
+  caddy_config:

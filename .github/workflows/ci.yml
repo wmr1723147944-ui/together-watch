@@ -24,6 +24,15 @@ jobs:
       - run: node --check browser-extension/background.js
       - run: node --check browser-extension/content.js
       - run: node --check browser-extension/popup.js
+      - name: Validate VPS Compose configuration
+        run: docker compose --env-file .env.server.example config --quiet
+      - name: Validate Caddy configuration
+        run: >-
+          docker run --rm
+          -e DOMAIN=watch.example.com
+          -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"
+          caddy:2-alpine
+          caddy validate --config /etc/caddy/Caddyfile
       - name: Build production image
         run: docker build -t together-watch:test .
       - name: Start production container

@@ -1,4 +1,5 @@
 .env
+.env.server
 .venv
 .git
 .gitignore
@@ -15,6 +16,8 @@ ngrok-*.zip
 ngrok.yml
 README.docx
 DEPLOYMENT.md
+compose.yaml
+deploy
 *.log
 新建 文本文档.txt
 无畏契约专属灵敏度生成器.html

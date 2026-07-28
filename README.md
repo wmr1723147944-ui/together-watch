@@ -4,7 +4,7 @@
 
 每位成员都在视频网站的官方页面，用自己的账号和权限播放内容；房间服务器只传递播放、暂停、进度、倍速、缓冲状态、聊天与语音信令。这样启动更快、服务器流量更小，公开部署和后续商业化也更稳妥。
 
-准备部署到公网时，请直接看 [DEPLOYMENT.md](DEPLOYMENT.md)。其中包含个人免费部署、部署后自动验收、TURN 配置和商业化升级清单。
+准备部署到公网时，请直接看 [DEPLOYMENT.md](DEPLOYMENT.md)。其中包含腾讯云香港轻量服务器部署、自动 HTTPS、部署后验收、TURN 配置和商业化升级清单。
 
 ## 能做什么
 
@@ -86,6 +86,16 @@ docker build -t together-watch .
 docker run --rm -p 5000:5000 --env-file .env together-watch
 ```
 
+面向中国大陆个人使用，推荐“中国香港轻量云服务器 + Docker Compose + Caddy”。服务器只需安装 Docker，仓库中的 `compose.yaml` 会同时启动应用和 HTTPS 反向代理：
+
+```bash
+cp .env.server.example .env.server
+nano .env.server
+docker compose --env-file .env.server up -d --build
+```
+
+Caddy 会在域名解析生效后自动申请和续期 HTTPS 证书，并代理 WebSocket。完整购买、域名解析、防火墙和验收步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
+
 公开部署至少需要：
 
 - HTTPS 域名
@@ -94,7 +104,7 @@ docker run --rm -p 5000:5000 --env-file .env together-watch
 - 用于语音通话的 TURN
 - 多实例部署时用于 Socket.IO 广播的 Redis
 
-ngrok 只是一条临时公网隧道，不参与视频同步，也不会改善视频源速度。个人测试可以用它，长期公网服务更适合国内云服务器或备案后的域名与 HTTPS。
+ngrok 只是一条临时公网隧道，不参与视频同步，也不会改善视频源速度。个人测试可以用它，长期公网服务更适合香港轻量云，或备案后的中国内地云服务器。
 
 部署后可以用同一套脚本验证 HTTP、HTTPS/WSS、双客户端入房和播放同步：
 
