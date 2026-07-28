@@ -90,6 +90,16 @@ a {
     line-height: 1.6;
 }
 
+.landing-actions {
+    display: grid;
+    grid-template-columns: 1.15fr 1fr;
+    gap: 0.7rem;
+}
+
+.landing-actions .btn {
+    width: 100%;
+}
+
 .input-group {
     width: 100%;
     margin-bottom: 1.2rem;
@@ -523,6 +533,20 @@ video.video-cover {
     font-size: 0.76rem;
 }
 
+.companion-manual {
+    margin-top: 0.7rem;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 0.72rem;
+}
+
+.companion-manual summary {
+    cursor: pointer;
+}
+
+.companion-manual .btn {
+    margin-top: 0.65rem;
+}
+
 .video-empty-state {
     position: absolute;
     inset: 0;
@@ -561,6 +585,88 @@ video.video-cover {
     align-items: start;
     padding: 1rem;
     gap: 1rem;
+}
+
+.audio-mixer {
+    display: grid;
+    padding-top: 0.9rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.09);
+    gap: 0.75rem;
+}
+
+.audio-mixer-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.8rem;
+}
+
+.audio-mixer-heading > div {
+    display: grid;
+    gap: 0.18rem;
+}
+
+.audio-mixer-heading strong {
+    color: #fff;
+    font-size: 0.92rem;
+}
+
+.audio-mixer-heading span,
+.volume-help {
+    color: var(--muted-color);
+    font-size: 0.72rem;
+    line-height: 1.5;
+}
+
+.companion-status {
+    flex: 0 0 auto;
+    padding: 0.26rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(255, 200, 87, 0.11);
+    color: #ffd572 !important;
+    white-space: nowrap;
+}
+
+.companion-status.is-connected {
+    background: rgba(66, 232, 168, 0.11);
+    color: var(--success-color) !important;
+}
+
+.volume-controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.volume-control {
+    display: grid;
+    grid-template-columns: auto minmax(90px, 1fr) 48px;
+    min-width: 0;
+    align-items: center;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 13px;
+    background: rgba(0, 0, 0, 0.16);
+    gap: 0.65rem;
+}
+
+.volume-label {
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 0.78rem;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.volume-control input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    accent-color: var(--primary-color);
+}
+
+.volume-control output {
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.72rem;
+    text-align: right;
 }
 
 .control-card {
@@ -1126,6 +1232,10 @@ video.video-cover {
         flex-direction: column;
     }
 
+    .landing-actions {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .room-container {
         width: calc(100% - 20px);
         margin: 10px auto;
@@ -1217,6 +1327,19 @@ video.video-cover {
         align-items: flex-start;
         flex-direction: column;
         gap: 0.55rem;
+    }
+
+    .audio-mixer-heading {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .companion-status {
+        width: fit-content;
+    }
+
+    .volume-controls {
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .health-badges {

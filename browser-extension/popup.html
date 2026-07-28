@@ -26,6 +26,19 @@
             font-size: 12px;
             line-height: 1.55;
         }
+        .invite-banner {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border: 1px solid rgba(99, 222, 163, 0.36);
+            border-radius: 10px;
+            background: rgba(99, 222, 163, 0.09);
+            color: #8ff0bd;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .hidden {
+            display: none;
+        }
         .field {
             display: grid;
             margin-top: 12px;
@@ -50,6 +63,12 @@
         textarea {
             min-height: 58px;
             resize: vertical;
+        }
+        input[type="range"] {
+            padding: 0;
+            border: 0;
+            background: transparent;
+            accent-color: #7d8cff;
         }
         button {
             margin-top: 12px;
@@ -80,36 +99,76 @@
             color: #63dea3;
             font-size: 11px;
         }
+        details {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid #30344a;
+        }
+        summary {
+            color: #c9cdea;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: 700;
+        }
+        .volume-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: center;
+            margin-top: 12px;
+            gap: 6px 10px;
+        }
+        .volume-row label {
+            grid-column: 1 / -1;
+        }
+        .volume-row output {
+            min-width: 42px;
+            color: #c9cdea;
+            font-size: 12px;
+            text-align: right;
+        }
     </style>
 </head>
 <body>
     <h1>Together Watch 观影伴侣</h1>
-    <p class="subtitle">请先在房间页复制伴侣配置，再粘贴到这里。</p>
+    <p class="subtitle">从房间页点击“打开视频并连接”，再点一次插件图标即可。</p>
+    <div id="inviteBanner" class="invite-banner hidden">
+        已自动识别邀请。点击下方按钮即可加入，无需复制配置。
+    </div>
 
-    <div class="field">
-        <label for="configPaste">伴侣配置</label>
-        <textarea id="configPaste" placeholder='{"server":"https://你的域名","room":"房间号","username":"昵称"}'></textarea>
+    <div class="volume-row">
+        <label for="videoVolume">🎬 当前视频音量（只影响你自己）</label>
+        <input id="videoVolume" type="range" min="0" max="100" step="1" value="100">
+        <output id="videoVolumeValue" for="videoVolume">100%</output>
     </div>
-    <button type="button" id="readConfigBtn" class="secondary">读取粘贴的配置</button>
 
-    <div class="field">
-        <label for="server">房间服务器</label>
-        <input id="server" type="url" placeholder="https://watch.example.com">
-    </div>
-    <div class="field">
-        <label for="room">房间号</label>
-        <input id="room" maxlength="64">
-    </div>
-    <div class="field">
-        <label for="username">昵称</label>
-        <input id="username" maxlength="32">
-    </div>
     <label class="toggle">
         <input id="enabled" type="checkbox" checked>
         在当前官方视频页启用同步
     </label>
-    <button type="button" id="saveBtn">保存并连接</button>
+    <button type="button" id="saveBtn">连接当前房间</button>
     <p id="status" class="status">正在读取配置…</p>
+
+    <details id="advancedSetup">
+        <summary>手动配置或更换房间</summary>
+        <div class="field">
+            <label for="configPaste">手动连接配置</label>
+            <textarea id="configPaste" placeholder='{"server":"https://你的域名","room":"房间号","username":"昵称"}'></textarea>
+        </div>
+        <button type="button" id="readConfigBtn" class="secondary">读取手动配置</button>
+
+        <div class="field">
+            <label for="server">房间服务器</label>
+            <input id="server" type="url" placeholder="https://watch.example.com">
+        </div>
+        <div class="field">
+            <label for="room">房间号</label>
+            <input id="room" maxlength="64">
+        </div>
+        <div class="field">
+            <label for="username">昵称</label>
+            <input id="username" maxlength="32">
+        </div>
+    </details>
     <p class="safe">只同步时间和播放状态，不读取账号、Cookie、弹幕或媒体地址。</p>
     <script src="popup.js"></script>
 </body>

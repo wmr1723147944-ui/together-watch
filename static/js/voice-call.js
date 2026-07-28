@@ -12,6 +12,8 @@ window.createVoiceCallController = ({
     const muteButton = document.getElementById('muteCallBtn');
     const leaveButton = document.getElementById('leaveCallBtn');
     const audioContainer = document.getElementById('remoteAudioContainer');
+    const callVolumeSlider = document.getElementById('callVolumeSlider');
+    const callVolumeValue = document.getElementById('callVolumeValue');
 
     let localStream = null;
     let joined = false;
@@ -20,8 +22,15 @@ window.createVoiceCallController = ({
     let selfId = '';
     let iceServers = [];
     let warnedMissingTurn = false;
+    let audioContext = null;
+    const storedCallVolumeRaw = localStorage.getItem('tw_call_volume');
+    const storedCallVolume = Number(storedCallVolumeRaw);
+    let callVolume = storedCallVolumeRaw !== null && Number.isFinite(storedCallVolume)
+        ? Math.max(0, Math.min(100, storedCallVolume))
+        : 100;
     const peers = new Map();
     const queuedCandidates = new Map();
+    const peerAudioNodes = new Map();
 
     const supported = Boolean(
         navigator.mediaDevices?.getUserMedia
@@ -31,6 +40,77 @@ window.createVoiceCallController = ({
         joinButton.disabled = true;
         joinButton.textContent = '浏览器不支持语音';
     }
+
+    function setCallVolume(nextVolume) {
+        callVolume = Math.max(0, Math.min(100, Math.round(Number(nextVolume) || 0)));
+        const normalized = callVolume / 100;
+        if (callVolumeSlider) callVolumeSlider.value = String(callVolume);
+        if (callVolumeValue) {
+            callVolumeValue.textContent = callVolume === 0 ? '静音' : `${callVolume}%`;
+        }
+        localStorage.setItem('tw_call_volume', String(callVolume));
+        peerAudioNodes.forEach(record => {
+            if (record.gain && audioContext) {
+                record.gain.gain.setTargetAtTime(
+                    normalized,
+                    audioContext.currentTime,
+                    0.015,
+                );
+            }
+            if (record.audio) record.audio.volume = normalized;
+        });
+    }
+
+    async function ensureAudioContext() {
+        if (!window.AudioContext && !window.webkitAudioContext) return null;
+        if (!audioContext) {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            audioContext = new AudioContextClass();
+        }
+        if (audioContext.state === 'suspended') {
+            await audioContext.resume();
+        }
+        return audioContext;
+    }
+
+    async function attachRemoteAudio(peerId, stream) {
+        const previous = peerAudioNodes.get(peerId);
+        previous?.source?.disconnect();
+        previous?.gain?.disconnect();
+        previous?.audio?.remove();
+        peerAudioNodes.delete(peerId);
+
+        try {
+            const context = await ensureAudioContext();
+            if (context) {
+                const source = context.createMediaStreamSource(stream);
+                const gain = context.createGain();
+                gain.gain.value = callVolume / 100;
+                source.connect(gain).connect(context.destination);
+                peerAudioNodes.set(peerId, { source, gain, audio: null });
+                return;
+            }
+        } catch (error) {
+            console.debug('Web Audio volume control unavailable:', error);
+        }
+
+        const audio = document.createElement('audio');
+        audio.autoplay = true;
+        audio.playsInline = true;
+        audio.dataset.peerId = peerId;
+        audio.volume = callVolume / 100;
+        audio.srcObject = stream;
+        audioContainer.appendChild(audio);
+        peerAudioNodes.set(peerId, { source: null, gain: null, audio });
+        audio.play().catch(() => {
+            callStatus.textContent = '点一下页面以播放通话声音';
+        });
+    }
+
+    setCallVolume(callVolume);
+    callVolumeSlider?.addEventListener('input', () => {
+        setCallVolume(callVolumeSlider.value);
+    });
 
     function signalPayload(payload = {}) {
         return { room: roomId, ...payload };
@@ -45,6 +125,11 @@ window.createVoiceCallController = ({
             peers.delete(peerId);
         }
         queuedCandidates.delete(peerId);
+        const audioRecord = peerAudioNodes.get(peerId);
+        audioRecord?.source?.disconnect();
+        audioRecord?.gain?.disconnect();
+        audioRecord?.audio?.remove();
+        peerAudioNodes.delete(peerId);
         audioContainer
             .querySelectorAll('audio')
             .forEach(audio => {
@@ -119,19 +204,8 @@ window.createVoiceCallController = ({
         });
 
         connection.addEventListener('track', event => {
-            let audio = Array.from(audioContainer.querySelectorAll('audio'))
-                .find(item => item.dataset.peerId === peerId);
-            if (!audio) {
-                audio = document.createElement('audio');
-                audio.autoplay = true;
-                audio.playsInline = true;
-                audio.dataset.peerId = peerId;
-                audioContainer.appendChild(audio);
-            }
-            audio.srcObject = event.streams[0];
-            audio.play().catch(() => {
-                callStatus.textContent = '点一下页面以播放通话声音';
-            });
+            const stream = event.streams[0] || new MediaStream([event.track]);
+            attachRemoteAudio(peerId, stream);
         });
 
         connection.addEventListener('connectionstatechange', () => {
@@ -174,6 +248,7 @@ window.createVoiceCallController = ({
         joinButton.textContent = '正在获取麦克风…';
 
         try {
+            await ensureAudioContext();
             localStream = await navigator.mediaDevices.getUserMedia({
                 video: false,
                 audio: {

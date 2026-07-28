@@ -9,7 +9,9 @@ const DEFAULTS = {
     server: '',
     room: '',
     username: '',
+    clientKey: '',
     enabled: true,
+    videoVolume: 100,
 };
 
 let settings = { ...DEFAULTS };
@@ -143,7 +145,10 @@ function handleRoomEvent(eventName, payload) {
         }
         return;
     }
-    if (['room_state', 'buffering_state', 'sync_video'].includes(eventName)) {
+    if (
+        ['room_state', 'buffering_state', 'sync_video', 'companion_command']
+            .includes(eventName)
+    ) {
         sendToPlayer(eventName, payload);
     }
 }
@@ -171,6 +176,11 @@ function connect() {
                 room: settings.room,
                 username: (settings.username || '观影成员').slice(0, 32),
                 role: 'companion',
+                client_key: settings.clientKey,
+            });
+            sendToPlayer('companion_command', {
+                command: 'set_volume',
+                value: Math.max(0, Math.min(1, Number(settings.videoVolume) / 100)),
             });
             startClockSync();
             setTimeout(() => {
@@ -207,6 +217,10 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         setTarget(sender);
         report(socket?.ready ? 'connected' : 'finding', '已找到官方页面播放器');
         if (changedTarget || !socket?.ready) connect();
+        sendToPlayer('companion_command', {
+            command: 'set_volume',
+            value: Math.max(0, Math.min(1, Number(settings.videoVolume) / 100)),
+        });
         return;
     }
     if (message.type === 'tw_video_event') {
@@ -236,6 +250,7 @@ chrome.tabs.onRemoved.addListener(tabId => {
 
 chrome.storage.local.get(DEFAULTS, config => {
     settings = { ...DEFAULTS, ...config };
+    if (target) connect();
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
@@ -243,5 +258,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     for (const [key, change] of Object.entries(changes)) {
         if (key in DEFAULTS) settings[key] = change.newValue;
     }
-    connect();
+    if (changes.videoVolume) {
+        sendToPlayer('companion_command', {
+            command: 'set_volume',
+            value: Math.max(0, Math.min(1, Number(settings.videoVolume) / 100)),
+        });
+    }
+    if (['server', 'room', 'username', 'clientKey', 'enabled'].some(
+        key => Boolean(changes[key]),
+    )) {
+        connect();
+    }
 });

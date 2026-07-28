@@ -6,6 +6,13 @@ document.addEventListener('DOMContentLoaded', () => {
         .trim()
         .slice(0, 32);
     localStorage.setItem('tw_username', username);
+    const savedClientKey = localStorage.getItem('tw_client_key') || '';
+    const clientKey = /^[A-Za-z0-9_-]{16,96}$/.test(savedClientKey)
+        ? savedClientKey
+        : Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => (
+            byte.toString(16).padStart(2, '0')
+        )).join('');
+    localStorage.setItem('tw_client_key', clientKey);
 
     const videoPlayer = document.getElementById('mainVideo');
     const videoEmptyState = document.getElementById('videoEmptyState');
@@ -34,6 +41,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const strictSyncToggle = document.getElementById('strictSyncToggle');
     const playbackHealth = document.getElementById('playbackHealth');
     const syncHealth = document.getElementById('syncHealth');
+    const videoVolumeSlider = document.getElementById('videoVolumeSlider');
+    const videoVolumeValue = document.getElementById('videoVolumeValue');
+    const volumeHelp = document.getElementById('volumeHelp');
+    const companionStatusBadge = document.getElementById('companionStatusBadge');
 
     function showUrlDiagnostic(kind, payload = {}) {
         if (!urlStatus) return;
@@ -211,6 +222,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let roomBufferingActive = false;
     let qualityMode = 'auto';
     let hlsRecoveryAttempts = 0;
+    let companionConnected = false;
+    let companionVolumeTimer = null;
+
+    function clampedStoredVolume(key, fallback = 100) {
+        const rawValue = localStorage.getItem(key);
+        const stored = Number(rawValue);
+        return rawValue !== null && Number.isFinite(stored)
+            ? Math.max(0, Math.min(100, Math.round(stored)))
+            : fallback;
+    }
+
+    let videoVolume = clampedStoredVolume('tw_video_volume');
 
     const EVENT_COOLDOWN = 250;
     const SEEK_THRESHOLD = 0.5;
@@ -501,6 +524,86 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    function companionConfig() {
+        return {
+            server: window.location.origin,
+            room: roomId,
+            username,
+            clientKey,
+        };
+    }
+
+    function encodeCompanionConfig(config) {
+        const bytes = new TextEncoder().encode(JSON.stringify(config));
+        const encoded = btoa(String.fromCharCode(...bytes));
+        return encoded.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function officialUrlWithInvite(pageUrl) {
+        try {
+            const target = new URL(pageUrl);
+            target.hash = `tw=${encodeCompanionConfig(companionConfig())}`;
+            return target.href;
+        } catch (_error) {
+            return pageUrl;
+        }
+    }
+
+    function updateCompanionStatus(connected) {
+        companionConnected = Boolean(connected);
+        if (!companionStatusBadge) return;
+        companionStatusBadge.className = (
+            `companion-status ${companionConnected ? 'is-connected' : 'is-waiting'}`
+        );
+        companionStatusBadge.textContent = companionConnected ? '插件已连接' : '插件未连接';
+    }
+
+    function updateVolumeHelp() {
+        if (!volumeHelp) return;
+        const isAppleMobile = /iPad|iPhone|iPod/.test(navigator.userAgent)
+            || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (isAppleMobile) {
+            volumeHelp.textContent = (
+                'iPhone/iPad 的视频音量由系统音量键控制；通话音量仍可单独调整。'
+            );
+        } else if (activeMediaSource?.mode === 'official_page') {
+            volumeHelp.textContent = companionConnected
+                ? '视频音量正在控制你的官方视频标签页；通话音量只影响房间语音。'
+                : '先打开官方视频并连接插件，视频音量才能从这里调整。';
+        } else {
+            volumeHelp.textContent = '视频音量只影响当前播放器；通话音量只影响房间语音。';
+        }
+    }
+
+    function sendCompanionVolume() {
+        window.clearTimeout(companionVolumeTimer);
+        companionVolumeTimer = window.setTimeout(() => {
+            if (!socket.connected) return;
+            socket.emit('companion_command', {
+                room: roomId,
+                command: 'set_volume',
+                value: videoVolume / 100,
+            });
+        }, 80);
+    }
+
+    function applyVideoVolume({ notifyCompanion = true } = {}) {
+        const normalized = videoVolume / 100;
+        try {
+            videoPlayer.volume = normalized;
+            videoPlayer.muted = videoVolume === 0;
+        } catch (_error) {
+            // Some mobile browsers only allow the hardware volume buttons.
+        }
+        if (videoVolumeSlider) videoVolumeSlider.value = String(videoVolume);
+        if (videoVolumeValue) {
+            videoVolumeValue.textContent = videoVolume === 0 ? '静音' : `${videoVolume}%`;
+        }
+        localStorage.setItem('tw_video_volume', String(videoVolume));
+        if (notifyCompanion) sendCompanionVolume();
+        updateVolumeHelp();
+    }
+
     function updateOfficialPlaybackState(state = {}) {
         if (!officialPlaybackState) return;
         const seconds = Math.max(0, Number(state.time) || 0);
@@ -531,8 +634,9 @@ document.addEventListener('DOMContentLoaded', () => {
             `视频仍由${source.provider_name || '原网站'}提供。`
             + '每位成员使用自己的正常观看权限，本站只同步播放状态。'
         );
-        openOfficialPageBtn.href = source.page_url;
+        openOfficialPageBtn.href = officialUrlWithInvite(source.page_url);
         updateOfficialPlaybackState(state || {});
+        updateVolumeHelp();
     }
 
     function changeMediaSource(source, emitEvent = false, state = null) {
@@ -546,6 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
             officialPageStage.classList.add('hidden');
             videoPlayer.classList.remove('hidden');
             changeVideoSource(source.media_url || source.page_url, false);
+            updateVolumeHelp();
         }
 
         if (emitEvent) {
@@ -776,7 +881,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('connect', () => {
         setConnectionStatus('online', '已连接');
-        socket.emit('join', { username, room: roomId });
+        socket.emit('join', {
+            username,
+            room: roomId,
+            client_key: clientKey,
+        });
         window.setTimeout(sendSyncPing, 80);
         callController?.handleSocketReconnect();
     });
@@ -784,6 +893,8 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('disconnect', () => {
         setConnectionStatus('offline', '正在重连');
         updateSyncHealth(null, '网络中断，等待重连…');
+        updateCompanionStatus(false);
+        updateVolumeHelp();
         callController?.handleSocketDisconnect();
     });
 
@@ -824,6 +935,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('status', data => {
         if (data?.msg) addSystemMessage(data.msg);
+    });
+
+    socket.on('companion_presence', data => {
+        updateCompanionStatus(Boolean(data?.connected));
+        updateVolumeHelp();
+        if (data?.connected) sendCompanionVolume();
     });
 
     socket.on('presence', data => {
@@ -1308,9 +1425,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `已识别：${data.source.provider_name}官方页面`
                     : '已识别公开媒体直链',
                 suggestion: isOfficialPage
-                    ? '点击“打开官方视频页面”，再用观影伴侣扩展加入当前房间。'
+                    ? '如果浏览器没有自动打开新页面，请点击画面中的“打开视频并连接”。'
                     : '视频将由每位成员的浏览器直接加载，本站不会中转流量。',
             });
+            if (isOfficialPage) {
+                openOfficialPageBtn.click();
+            }
         } catch (error) {
             if (error.code === 'client_timeout') {
                 showUrlDiagnostic('error', {
@@ -1329,7 +1449,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } finally {
             loadUrlBtn.disabled = false;
-            loadUrlBtn.textContent = '识别来源';
+            loadUrlBtn.textContent = '打开视频并连接';
         }
     }
 
@@ -1346,11 +1466,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     copyCompanionConfigBtn?.addEventListener('click', () => {
-        const config = JSON.stringify({
-            server: window.location.origin,
-            room: roomId,
-            username,
-        });
+        const config = JSON.stringify(companionConfig());
         const done = () => {
             copyCompanionConfigBtn.textContent = '配置已复制';
             window.setTimeout(() => {
@@ -1363,6 +1479,12 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     });
+
+    videoVolumeSlider?.addEventListener('input', () => {
+        videoVolume = Math.max(0, Math.min(100, Number(videoVolumeSlider.value) || 0));
+        applyVideoVolume();
+    });
+    applyVideoVolume({ notifyCompanion: false });
 
     fitToggleBtn.addEventListener('click', () => {
         if (activeMediaSource?.mode === 'official_page') {
@@ -1386,7 +1508,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     function copyInviteLink() {
-        const inviteUrl = window.location.href;
+        const inviteUrl = new URL('/', window.location.origin);
+        inviteUrl.searchParams.set('room', roomId);
         const finish = () => {
             const oldText = copyRoomBtn.textContent;
             copyRoomBtn.textContent = '已复制';
@@ -1396,14 +1519,14 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         if (navigator.clipboard?.writeText) {
-            navigator.clipboard.writeText(inviteUrl).then(finish).catch(() => {
+            navigator.clipboard.writeText(inviteUrl.href).then(finish).catch(() => {
                 addSystemMessage('复制失败，请手动复制浏览器地址。');
             });
             return;
         }
 
         const helper = document.createElement('textarea');
-        helper.value = inviteUrl;
+        helper.value = inviteUrl.href;
         helper.style.position = 'fixed';
         helper.style.opacity = '0';
         document.body.appendChild(helper);

@@ -1920,6 +1920,7 @@ room_states = {}
 room_members = defaultdict(dict)
 sid_membership = {}
 sid_roles = {}
+sid_client_keys = {}
 room_activity = {}
 socket_message_times = defaultdict(deque)
 call_members = defaultdict(dict)
@@ -2097,6 +2098,7 @@ def remove_member(sid, announce=True):
             return
         room_id, username = membership
         role = sid_roles.pop(sid, "member")
+        client_key = sid_client_keys.pop(sid, "")
         room_members[room_id].pop(sid, None)
         room_activity[room_id] = time.time()
 
@@ -2106,6 +2108,8 @@ def remove_member(sid, announce=True):
             {"msg": f"{username} 离开了房间"},
             to=room_id,
         )
+    if role == "companion" and client_key:
+        notify_companion_presence(room_id, client_key)
     broadcast_presence(room_id)
 
 
@@ -2119,6 +2123,30 @@ def socket_identity(data):
     return room_id, username
 
 
+def notify_companion_presence(room_id, client_key):
+    if not client_key:
+        return
+    with room_lock:
+        members = room_members.get(room_id, {})
+        companion_count = sum(
+            sid_roles.get(sid) == "companion"
+            and sid_client_keys.get(sid) == client_key
+            for sid in members
+        )
+        human_sids = [
+            sid
+            for sid in members
+            if sid_roles.get(sid, "member") != "companion"
+            and sid_client_keys.get(sid) == client_key
+        ]
+    payload = {
+        "connected": companion_count > 0,
+        "count": companion_count,
+    }
+    for sid in human_sids:
+        socketio.emit("companion_presence", payload, to=sid)
+
+
 @socketio.on("join")
 def on_join(data):
     cleanup_stale_rooms()
@@ -2129,6 +2157,9 @@ def on_join(data):
     username = clean_text(data.get("username"), 32)
     room_id = clean_text(data.get("room"), 64)
     role = "companion" if data.get("role") == "companion" else "member"
+    client_key = clean_text(data.get("client_key"), 96)
+    if client_key and not re.fullmatch(r"[A-Za-z0-9_-]{16,96}", client_key):
+        client_key = ""
     if not username or not valid_room_id(room_id):
         emit("app_error", {"message": "昵称或房间号无效"})
         return
@@ -2164,12 +2195,15 @@ def on_join(data):
     with room_lock:
         sid_membership[request.sid] = (room_id, username)
         sid_roles[request.sid] = role
+        sid_client_keys[request.sid] = client_key
         room_members[room_id][request.sid] = username
         room_activity[room_id] = time.time()
 
     if is_new_member and role != "companion":
         emit("status", {"msg": f"{username} 加入了房间"}, to=room_id)
     broadcast_presence(room_id)
+    if client_key:
+        notify_companion_presence(room_id, client_key)
 
     state = current_room_state(room_id)
     if state:
@@ -2198,6 +2232,39 @@ def request_room_state(data):
     state = current_room_state(identity[0])
     if state:
         emit("room_state", state)
+
+
+@socketio.on("companion_command")
+def companion_command(data):
+    identity = socket_identity(data)
+    if not identity or sid_roles.get(request.sid, "member") == "companion":
+        return
+    room_id, _username = identity
+    if data.get("command") != "set_volume":
+        return
+    try:
+        volume = float(data.get("value"))
+    except (TypeError, ValueError):
+        return
+    if not math.isfinite(volume) or not 0 <= volume <= 1:
+        return
+
+    client_key = sid_client_keys.get(request.sid, "")
+    if not client_key:
+        return
+    with room_lock:
+        targets = [
+            sid
+            for sid in room_members.get(room_id, {})
+            if sid_roles.get(sid) == "companion"
+            and sid_client_keys.get(sid) == client_key
+        ]
+    for sid in targets:
+        socketio.emit(
+            "companion_command",
+            {"command": "set_volume", "value": volume},
+            to=sid,
+        )
 
 
 @socketio.on("sync_ping")

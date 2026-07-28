@@ -23,6 +23,7 @@ class TogetherWatchTests(unittest.TestCase):
             application.room_members.clear()
             application.sid_membership.clear()
             application.sid_roles.clear()
+            application.sid_client_keys.clear()
             application.room_activity.clear()
             application.socket_message_times.clear()
             application.call_members.clear()
@@ -39,8 +40,14 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertEqual(room.status_code, 200)
         html = room.get_data(as_text=True)
         self.assertIn("粘贴官方视频网页", html)
-        self.assertIn("复制伴侣配置", html)
-        self.assertIn("下载观影伴侣", html)
+        self.assertIn("打开视频并连接", html)
+        self.assertIn(
+            'aria-label="识别来源并打开视频">打开视频并连接</button>',
+            html,
+        )
+        self.assertIn("首次使用：下载插件", html)
+        self.assertIn('id="videoVolumeSlider"', html)
+        self.assertIn('id="callVolumeSlider"', html)
         self.assertNotIn("上传本地视频", html)
 
         invalid_room = self.client.get("/room/x")
@@ -293,6 +300,78 @@ class TogetherWatchTests(unittest.TestCase):
         finally:
             room_page.disconnect()
             companion.disconnect()
+
+    def test_volume_command_only_reaches_paired_companion(self):
+        room_page = application.socketio.test_client(
+            application.app,
+            flask_test_client=self.client,
+        )
+        paired = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        other = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            room_page.emit(
+                "join",
+                {
+                    "username": "甲",
+                    "room": "volume-room",
+                    "client_key": "paired-client-key-1234",
+                },
+            )
+            paired.emit(
+                "join",
+                {
+                    "username": "甲",
+                    "room": "volume-room",
+                    "role": "companion",
+                    "client_key": "paired-client-key-1234",
+                },
+            )
+            other.emit(
+                "join",
+                {
+                    "username": "甲",
+                    "room": "volume-room",
+                    "role": "companion",
+                    "client_key": "other-client-key-5678",
+                },
+            )
+            room_page.get_received()
+            paired.get_received()
+            other.get_received()
+
+            room_page.emit(
+                "companion_command",
+                {
+                    "room": "volume-room",
+                    "command": "set_volume",
+                    "value": 0.35,
+                },
+            )
+            paired_commands = [
+                item["args"][0]
+                for item in paired.get_received()
+                if item["name"] == "companion_command"
+            ]
+            other_commands = [
+                item
+                for item in other.get_received()
+                if item["name"] == "companion_command"
+            ]
+            self.assertEqual(
+                paired_commands[-1],
+                {"command": "set_volume", "value": 0.35},
+            )
+            self.assertEqual(other_commands, [])
+        finally:
+            room_page.disconnect()
+            paired.disconnect()
+            other.disconnect()
 
     def test_latency_probe_and_room_buffering_resume(self):
         first = application.socketio.test_client(

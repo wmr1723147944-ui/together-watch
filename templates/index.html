@@ -11,7 +11,7 @@
     <div class="landing-container">
         <main class="glass-panel landing-panel">
             <h1 class="title">Together Watch</h1>
-            <p class="landing-subtitle">粘贴官方视频网页，只同步播放状态，不搬运视频内容</p>
+            <p class="landing-subtitle">创建一个私人放映间，把邀请链接发给朋友就能一起看</p>
 
             <form id="loginForm" novalidate>
                 <div class="input-group">
@@ -19,16 +19,16 @@
                     <input type="text" id="username" placeholder="例如：小雨" required maxlength="32" autocomplete="nickname">
                 </div>
                 <div class="input-group">
-                    <label class="field-label" for="roomId">房间号</label>
-                    <div class="input-inline">
-                        <input type="text" id="roomId" placeholder="输入已有房间号" required minlength="4" maxlength="64" autocomplete="off">
-                        <button type="button" id="generateRoomBtn" class="btn btn-secondary btn-compact">随机生成</button>
-                    </div>
+                    <label class="field-label" for="roomId">加入已有房间（可选）</label>
+                    <input type="text" id="roomId" placeholder="粘贴邀请链接或输入房间号" maxlength="300" autocomplete="off">
                 </div>
                 <p id="formError" class="form-error" role="alert" aria-live="polite"></p>
-                <button type="submit" class="btn btn-block">进入房间</button>
+                <div class="landing-actions">
+                    <button type="button" id="createRoomBtn" class="btn">＋ 创建新房间</button>
+                    <button type="submit" id="joinRoomBtn" class="btn btn-secondary">加入已有房间</button>
+                </div>
             </form>
-            <p class="privacy-tip">每位成员在原网站使用自己的正常观看权限；本站不会提取会员凭证或中转影片。</p>
+            <p class="privacy-tip">无需上传视频。每位成员仍在原网站使用自己的观看权限，本站只同步播放状态。</p>
         </main>
     </div>
 

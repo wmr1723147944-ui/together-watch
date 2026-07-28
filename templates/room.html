@@ -53,18 +53,21 @@
                         </p>
                         <div class="official-source-actions">
                             <a id="openOfficialPageBtn" class="btn btn-small" href="#" target="_blank" rel="noopener noreferrer">
-                                打开官方视频页面
+                                打开视频并连接
                             </a>
-                            <button type="button" id="copyCompanionConfigBtn" class="btn btn-secondary btn-small">
-                                复制伴侣配置
-                            </button>
                             <a class="btn btn-secondary btn-small" href="/companion-extension.zip" download>
-                                下载观影伴侣
+                                首次使用：下载插件
                             </a>
                         </div>
                         <span id="officialPlaybackState" class="official-playback-state">
-                            打开页面后，在浏览器扩展中加入当前房间
+                            打开视频后点一次插件图标，房间信息会自动填好
                         </span>
+                        <details class="companion-manual">
+                            <summary>插件没有自动识别房间？</summary>
+                            <button type="button" id="copyCompanionConfigBtn" class="btn btn-secondary btn-small">
+                                复制手动连接配置
+                            </button>
+                        </details>
                     </div>
                     <div id="videoEmptyState" class="video-empty-state">
                         <span class="empty-icon">🎬</span>
@@ -93,7 +96,7 @@
                     <label class="sr-only" for="videoUrlInput">视频链接</label>
                     <div class="input-inline">
                         <input type="url" id="videoUrlInput" placeholder="粘贴哔哩哔哩、腾讯视频、爱奇艺、优酷等官方页面" autocomplete="url">
-                        <button type="button" id="loadUrlBtn" class="btn btn-small" aria-label="识别视频来源">识别来源</button>
+                        <button type="button" id="loadUrlBtn" class="btn btn-small" aria-label="识别来源并打开视频">打开视频并连接</button>
                     </div>
                     <div class="control-options">
                         <button type="button" id="fitToggleBtn" class="btn btn-secondary btn-compact">↔ 铺满画面</button>
@@ -118,6 +121,30 @@
                         <span id="syncHealth" class="sync-health">正在校准同步状态…</span>
                     </div>
                 </div>
+                <section class="audio-mixer" aria-labelledby="audioMixerTitle">
+                    <div class="audio-mixer-heading">
+                        <div>
+                            <strong id="audioMixerTitle">本机声音</strong>
+                            <span>两个音量互不影响，也不会改变其他成员的声音</span>
+                        </div>
+                        <span id="companionStatusBadge" class="companion-status is-waiting">插件未连接</span>
+                    </div>
+                    <div class="volume-controls">
+                        <label class="volume-control" for="videoVolumeSlider">
+                            <span class="volume-label">🎬 视频</span>
+                            <input id="videoVolumeSlider" type="range" min="0" max="100" step="1" value="100">
+                            <output id="videoVolumeValue" for="videoVolumeSlider">100%</output>
+                        </label>
+                        <label class="volume-control" for="callVolumeSlider">
+                            <span class="volume-label">🎙 通话</span>
+                            <input id="callVolumeSlider" type="range" min="0" max="100" step="1" value="100">
+                            <output id="callVolumeValue" for="callVolumeSlider">100%</output>
+                        </label>
+                    </div>
+                    <p id="volumeHelp" class="volume-help">
+                        直链视频会立即调整；官方网页需要先连接观影伴侣插件。
+                    </p>
+                </section>
             </div>
         </div>
 

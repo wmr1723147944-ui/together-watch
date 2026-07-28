@@ -6,6 +6,7 @@
     let bufferingReported = false;
     let serverClockOffset = 0;
     let resumeTimer = null;
+    let localVolume = 1;
 
     function notify(message) {
         try {
@@ -71,6 +72,12 @@
         playerEvents?.abort();
         playerEvents = new AbortController();
         player = nextPlayer;
+        try {
+            player.volume = localVolume;
+            player.muted = localVolume === 0;
+        } catch (_error) {
+            // Some mobile browsers only expose the hardware volume.
+        }
         const options = { signal: playerEvents.signal };
         player.addEventListener('play', () => emit('play'), options);
         player.addEventListener('pause', () => {
@@ -132,6 +139,19 @@
     }
 
     function handleEvent(eventName, payload) {
+        if (eventName === 'companion_command') {
+            if (payload?.command !== 'set_volume') return;
+            localVolume = Math.max(0, Math.min(1, Number(payload.value) || 0));
+            if (player) {
+                try {
+                    player.volume = localVolume;
+                    player.muted = localVolume === 0;
+                } catch (_error) {
+                    report('finding', '当前播放器只支持系统音量控制');
+                }
+            }
+            return;
+        }
         window.clearTimeout(resumeTimer);
         if (eventName === 'room_state') {
             const resumeAt = Number(payload?.resume_at);
@@ -203,9 +223,21 @@
     }
 
     chrome.runtime.onMessage.addListener(message => {
-        if (message?.type !== 'tw_room_event') return;
-        serverClockOffset = Number(message.serverClockOffset) || 0;
-        handleEvent(message.eventName, message.payload);
+        if (message?.type === 'tw_room_event') {
+            serverClockOffset = Number(message.serverClockOffset) || 0;
+            handleEvent(message.eventName, message.payload);
+            return;
+        }
+        if (message?.type === 'tw_set_local_volume') {
+            handleEvent('companion_command', {
+                command: 'set_volume',
+                value: message.value,
+            });
+            return;
+        }
+        if (message?.type === 'tw_clear_invite_hash' && location.hash.startsWith('#tw=')) {
+            history.replaceState(null, '', `${location.pathname}${location.search}`);
+        }
     });
 
     refreshPlayer();
