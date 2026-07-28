@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>版权投诉 - Together Watch</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="legal-page">
+    <main class="legal-shell">
+        <a class="legal-back" href="/">← 返回首页</a>
+        <article class="glass-panel legal-card">
+            <p class="legal-kicker">NOTICE &amp; TAKEDOWN</p>
+            <h1>版权投诉与下架</h1>
+            <p class="legal-meta">版本：{{ legal_notice_version }}</p>
+
+            <section>
+                <h2>提交投诉</h2>
+                {% if service_operator_name %}
+                <p>服务运营者：{{ service_operator_name }}</p>
+                {% endif %}
+                {% if copyright_contact_email %}
+                <p>请将完整通知发送至 <a href="mailto:{{ copyright_contact_email }}">{{ copyright_contact_email }}</a>，邮件标题注明“版权投诉”。</p>
+                {% else %}
+                <div class="legal-alert">
+                    当前尚未配置投诉邮箱。此状态只适合本地个人测试，不应向公众或商业用户开放。
+                    部署管理员应设置 <code>COPYRIGHT_CONTACT_EMAIL</code> 后再上线。
+                </div>
+                {% endif %}
+            </section>
+
+            <section>
+                <h2>通知中请包含</h2>
+                <ul>
+                    <li>权利人或授权代理人的姓名、联系方式和身份证明；</li>
+                    <li>被投诉作品的名称，以及权属或授权证明；</li>
+                    <li>涉及的房间、网页、媒体域名或可准确定位问题的信息；</li>
+                    <li>你认为相关使用未经授权的具体理由；</li>
+                    <li>所提交材料真实、准确，并愿意承担不实投诉相应责任的声明。</li>
+                </ul>
+                <p>请勿发送视频平台账号、密码、Cookie、Token、银行卡信息或无关的个人敏感信息。</p>
+            </section>
+
+            <section>
+                <h2>处理方式</h2>
+                <p>收到能够定位问题且材料完整的通知后，管理员会核验并采取与风险相称的措施，例如临时阻止相关域名或链接、终止房间、保全必要日志，或要求提交者补充授权证明。授权到期或无法核实的媒体域名应从白名单移除。</p>
+            </section>
+
+            <section>
+                <h2>重要说明</h2>
+                <p>本服务不托管影视文件，也不提供第三方内容解析或代理，但这并不自动免除平台应尽的管理义务。投诉机制需要配合真实可用的联系邮箱、日常巡查和及时处置才能发挥作用。</p>
+            </section>
+        </article>
+        <nav class="legal-links" aria-label="法律与合规">
+            <a href="/terms">用户协议</a>
+            <a href="/privacy">隐私政策</a>
+        </nav>
+    </main>
+</body>
+</html>

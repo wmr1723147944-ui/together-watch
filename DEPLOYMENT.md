@@ -84,8 +84,14 @@ nano .env.server
 ```dotenv
 DOMAIN=watch.你的域名
 SECRET_KEY=刚才生成的随机字符
+SERVICE_OPERATOR_NAME=你的真实姓名或公司名称
+COPYRIGHT_CONTACT_EMAIL=你能及时处理投诉的真实邮箱
+AUTHORIZED_MEDIA_HOSTS=
+AUTHORIZED_PAGE_HOSTS=
 WEBRTC_ICE_SERVERS=
 ```
+
+个人测试阶段，两项 `AUTHORIZED_*` 建议保持空白。只有你能留存自有权利证明或有效书面授权时，才填写媒体或网页域名；不要把免费视频站、会员媒体域名或临时播放地址加入白名单。
 
 按 `Ctrl+O`、回车保存，再按 `Ctrl+X` 退出。`.env.server` 已被 Git 和 Docker 忽略，不会上传到 GitHub，也不要把它截图公开。
 
@@ -112,7 +118,7 @@ docker compose --env-file .env.server logs --tail=100
 https://watch.你的域名/health
 ```
 
-应看到 `"status": "ok"`、`"legacy_media_pipeline": false` 和 `"companion_archive": true`。
+应看到 `"status": "ok"`、`"compliance_mode": true`、`"legacy_media_pipeline": false` 和 `"companion_archive": true`。正式开放前还应确认 `"public_launch_ready": true`。
 
 ### 6. 在 Windows 上完成公网验收
 
@@ -169,6 +175,8 @@ Caddy 的证书保存在 Docker 数据卷中，不要执行 `docker compose down
 - 官方页面双方打开同一集、同一版本；扩展角标显示“✓”。
 - 语音测试覆盖直连和 TURN 中继，通话过程中视频声音不变调。
 - `/health` 显示旧媒体解析链路关闭，扩展安装包存在。
+- 首页可以打开用户协议、隐私政策和版权投诉页面；用户未确认协议时不能进入房间。
+- 任意第三方 MP4/M3U8 地址会被拒绝；只在确有自有权利或书面授权时配置 `AUTHORIZED_MEDIA_HOSTS`。
 
 ## 商业部署：按用户量逐步升级
 
@@ -192,7 +200,7 @@ Caddy 的证书保存在 Docker 数据卷中，不要执行 `docker compose down
 
 ### 第三阶段：收费或广告
 
-- 在接广告或收费前，完成用户协议、隐私政策、Cookie/设备信息说明、未成年人保护、投诉与下架流程。
+- 在接广告或收费前，按实际运营主体复核现有用户协议、隐私政策和投诉页，配置真实联系邮箱，并补齐设备信息说明、未成年人保护、投诉处理时限与留档流程。
 - 在中国大陆使用境内服务器和域名时，办理适用的 ICP 备案；如果业务属于经营性互联网信息服务或其他增值电信业务，进一步确认许可证要求。
 - 广告需要清晰标识，建立广告主和素材审核、违法广告处置及留档流程。
 - 遵循个人信息最小化：聊天、麦克风状态、IP、设备信息和日志只收集业务确实需要的部分，并明确保存期限、删除机制和权限控制。

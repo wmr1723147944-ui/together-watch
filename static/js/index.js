@@ -5,11 +5,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const createButton = document.getElementById('createRoomBtn');
     const joinButton = document.getElementById('joinRoomBtn');
     const formError = document.getElementById('formError');
+    const complianceConsent = document.getElementById('complianceConsent');
+    const legalVersion = form.dataset.legalVersion || '';
     const roomPattern = /^[\p{L}\p{N}_-]{4,64}$/u;
 
     const savedUsername = localStorage.getItem('tw_username');
     if (savedUsername) {
         usernameInput.value = savedUsername;
+    }
+    if (
+        complianceConsent
+        && legalVersion
+        && localStorage.getItem('tw_legal_notice_version') === legalVersion
+    ) {
+        complianceConsent.checked = true;
     }
 
     function generateRoomId() {
@@ -35,6 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function validatedUsername() {
         formError.textContent = '';
+        if (!complianceConsent?.checked) {
+            formError.textContent = '请先阅读并同意用户协议和隐私政策。';
+            complianceConsent?.focus();
+            return '';
+        }
         const username = usernameInput.value.trim();
         if (!username) {
             formError.textContent = '先给自己取一个昵称吧。';
@@ -42,6 +56,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return '';
         }
         localStorage.setItem('tw_username', username.slice(0, 32));
+        if (legalVersion) {
+            localStorage.setItem('tw_legal_notice_version', legalVersion);
+        }
         return username.slice(0, 32);
     }
 
@@ -67,9 +84,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const invitedRoom = new URLSearchParams(window.location.search).get('room');
+    const noticeRequired = new URLSearchParams(window.location.search).get('notice') === 'required';
     if (invitedRoom && roomPattern.test(invitedRoom)) {
         roomInput.value = invitedRoom;
         joinButton.textContent = '加入朋友的房间';
+        if (noticeRequired) {
+            formError.textContent = '加入房间前，请先阅读并同意用户协议和隐私政策。';
+        }
         if (usernameInput.value) {
             joinButton.focus();
         } else {

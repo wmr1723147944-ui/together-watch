@@ -18,8 +18,14 @@ services:
         value: personal-v1
       - key: TRUST_PROXY_HOPS
         value: "1"
-      - key: ENABLE_LEGACY_MEDIA_PIPELINE
-        value: "0"
+      - key: AUTHORIZED_MEDIA_HOSTS
+        value: ""
+      - key: AUTHORIZED_PAGE_HOSTS
+        value: ""
+      - key: SERVICE_OPERATOR_NAME
+        value: ""
+      - key: COPYRIGHT_CONTACT_EMAIL
+        value: ""
       - key: ROOM_TTL_SECONDS
         value: "21600"
       - key: MAX_ROOM_MEMBERS

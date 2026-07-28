@@ -17,6 +17,13 @@ class TogetherWatchTests(unittest.TestCase):
     def setUp(self):
         application.app.config.update(TESTING=True)
         self.client = application.app.test_client()
+        self.authorized_media_patcher = patch.object(
+            application,
+            "AUTHORIZED_MEDIA_HOSTS",
+            ("cdn.example.com",),
+        )
+        self.authorized_media_patcher.start()
+        self.addCleanup(self.authorized_media_patcher.stop)
         application.rate_buckets.clear()
         with application.room_lock:
             application.room_states.clear()
@@ -33,8 +40,17 @@ class TogetherWatchTests(unittest.TestCase):
     def test_pages_and_security_headers(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
+        landing_html = response.get_data(as_text=True)
+        self.assertIn('id="complianceConsent"', landing_html)
+        self.assertIn('href="/terms"', landing_html)
+        self.assertIn('href="/privacy"', landing_html)
+        self.assertIn('href="/copyright"', landing_html)
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
+        self.assertIn(
+            "https://cdn.example.com",
+            response.headers["Content-Security-Policy"],
+        )
 
         room = self.client.get("/room/test-room")
         self.assertEqual(room.status_code, 200)
@@ -48,7 +64,19 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("首次使用：下载插件", html)
         self.assertIn('id="videoVolumeSlider"', html)
         self.assertIn('id="callVolumeSlider"', html)
+        self.assertIn('id="legalNoticeVersion"', html)
+        self.assertIn("/static/js/room-gate.js", html)
         self.assertNotIn("上传本地视频", html)
+        self.assertIn("只同步，不共享会员权限", html)
+
+        for path, marker in (
+            ("/terms", "用户协议"),
+            ("/privacy", "隐私政策"),
+            ("/copyright", "版权投诉"),
+        ):
+            legal_page = self.client.get(path)
+            self.assertEqual(legal_page.status_code, 200)
+            self.assertIn(marker, legal_page.get_data(as_text=True))
 
         invalid_room = self.client.get("/room/x")
         self.assertEqual(invalid_room.status_code, 404)
@@ -62,7 +90,12 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("uptime_seconds", payload)
         self.assertIn("active_rooms", payload)
         self.assertIn("connected_clients", payload)
+        self.assertTrue(payload["compliance_mode"])
         self.assertFalse(payload["legacy_media_pipeline"])
+        self.assertTrue(payload["authorized_media_enabled"])
+        self.assertIsInstance(payload["copyright_contact_configured"], bool)
+        self.assertIsInstance(payload["service_operator_configured"], bool)
+        self.assertIsInstance(payload["public_launch_ready"], bool)
         self.assertIsInstance(payload["turn_configured"], bool)
         self.assertTrue(payload["companion_archive"])
 
@@ -142,20 +175,67 @@ class TogetherWatchTests(unittest.TestCase):
             source["media_url"],
             "https://cdn.example.com/path/movie.m3u8?token=abc",
         )
+        self.assertEqual(source["provider_name"], "已授权媒体")
 
-    def test_source_resolver_accepts_generic_official_page_quickly(self):
+    def test_source_resolver_only_accepts_authorized_generic_page(self):
         started_at = time.monotonic()
-        response = self.client.post(
-            "/parse_url",
-            json={"url": "https://movies.example.com/watch/episode-1"},
-        )
+        with patch.object(
+            application,
+            "AUTHORIZED_PAGE_HOSTS",
+            ("movies.example.com",),
+        ):
+            response = self.client.post(
+                "/parse_url",
+                json={"url": "https://movies.example.com/watch/episode-1"},
+            )
         elapsed = time.monotonic() - started_at
 
         self.assertEqual(response.status_code, 200)
         source = response.get_json()["source"]
         self.assertEqual(source["mode"], "official_page")
-        self.assertEqual(source["provider_name"], "movies.example.com")
+        self.assertIn("movies.example.com", source["provider_name"])
         self.assertLess(elapsed, 0.3)
+
+    def test_source_resolver_rejects_unapproved_pages_and_media(self):
+        with patch.object(application, "AUTHORIZED_MEDIA_HOSTS", ()):
+            media = self.client.post(
+                "/resolve_source",
+                json={"url": "https://cdn.example.com/member/master.m3u8"},
+            )
+        self.assertEqual(media.status_code, 403)
+        self.assertEqual(media.get_json()["code"], "media_host_not_authorized")
+
+        page = self.client.post(
+            "/resolve_source",
+            json={"url": "https://movies.example.com/watch/episode-1"},
+        )
+        self.assertEqual(page.status_code, 403)
+        self.assertEqual(page.get_json()["code"], "page_host_not_authorized")
+
+        insecure = self.client.post(
+            "/resolve_source",
+            json={"url": "http://cdn.example.com/movie.mp4"},
+        )
+        self.assertEqual(insecure.status_code, 400)
+        self.assertEqual(insecure.get_json()["code"], "media_requires_https")
+
+    def test_production_requires_operator_and_complaint_contact(self):
+        with (
+            patch.object(application, "APP_ENV", "production"),
+            patch.object(application, "PUBLIC_LAUNCH_READY", False),
+        ):
+            response = self.client.post(
+                "/resolve_source",
+                json={"url": "https://www.bilibili.com/video/BV1xx411c7mD"},
+            )
+            landing = self.client.get("/")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["code"], "compliance_setup_required")
+        self.assertIn(
+            "目前仅供内部测试",
+            landing.get_data(as_text=True),
+        )
 
     def test_source_resolver_rejects_local_and_unsafe_urls(self):
         for url in (
@@ -595,6 +675,40 @@ class TogetherWatchTests(unittest.TestCase):
                 },
             )
             client.emit("request_room_state", {"room": "legacy-room"})
+            states = [
+                item
+                for item in client.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertEqual(states, [])
+        finally:
+            client.disconnect()
+
+    def test_unapproved_media_cannot_be_injected_through_socket(self):
+        client = application.socketio.test_client(
+            application.app,
+            flask_test_client=self.client,
+        )
+        try:
+            client.emit("join", {"username": "测试者", "room": "blocked-room"})
+            client.get_received()
+            forged_source = {
+                "mode": "direct_media",
+                "provider_key": "direct",
+                "provider_name": "伪造授权媒体",
+                "page_url": "https://evil.example/member.mp4",
+                "media_url": "https://evil.example/member.mp4",
+            }
+            client.emit(
+                "video_event",
+                {
+                    "room": "blocked-room",
+                    "type": "change_source",
+                    "time": 0,
+                    "source": forged_source,
+                },
+            )
+            client.emit("request_room_state", {"room": "blocked-room"})
             states = [
                 item
                 for item in client.get_received()

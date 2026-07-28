@@ -1,4 +1,5 @@
 document.addEventListener('DOMContentLoaded', () => {
+    if (window.TW_LEGAL_GATE_BLOCKED) return;
     const roomId = document.getElementById('roomData')?.value;
     if (!roomId) return;
 
@@ -108,20 +109,20 @@ document.addEventListener('DOMContentLoaded', () => {
             2: {
                 error: '浏览器无法继续下载视频',
                 stage: '媒体网络',
-                reason: '公开媒体直链下载中断或源站拒绝了当前浏览器。',
+                reason: '已授权媒体下载中断或源站拒绝了当前浏览器。',
                 suggestion: '请检查链接是否仍有效，或改用该视频的官方网页。',
             },
             3: {
                 error: '浏览器无法解码视频',
                 stage: '媒体解码',
                 reason: '已拿到媒体数据，但编码不兼容、文件损坏或加密均有可能；仅凭此错误不能认定 DRM。',
-                suggestion: '优先换用 H.264 + AAC 的公开 MP4，或改用官方视频网页。',
+                suggestion: '请让管理员核验媒体编码和授权状态，或改用官方视频网页。',
             },
             4: {
                 error: '浏览器不支持这个媒体源',
                 stage: '媒体格式',
                 reason: '常见原因是链接返回网页、MIME 类型错误、编码不支持或地址已经失效。',
-                suggestion: '请换用可公开访问的 MP4/M3U8 直链，或改用官方视频网页。',
+                suggestion: '请让管理员检查已登记媒体域名、格式和跨域配置，或改用官方视频网页。',
             },
         };
         return diagnostics[errorCode] || {
@@ -515,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return {
             mode: 'direct_media',
             provider_key: 'direct',
-            provider_name: '公开媒体直链',
+            provider_name: '已授权媒体',
             media_id: null,
             title: '网络视频',
             page_url: url,
@@ -1423,7 +1424,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ...data.diagnostic,
                 error: isOfficialPage
                     ? `已识别：${data.source.provider_name}官方页面`
-                    : '已识别公开媒体直链',
+                    : '已识别管理员登记的授权媒体',
                 suggestion: isOfficialPage
                     ? '如果浏览器没有自动打开新页面，请点击画面中的“打开视频并连接”。'
                     : '视频将由每位成员的浏览器直接加载，本站不会中转流量。',

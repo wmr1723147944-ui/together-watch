@@ -15,3 +15,5 @@ README.docx
 新建 文本文档.txt
 无畏契约专属灵敏度生成器.html
 *.log
+.chrome-*/
+tmp-compliance-*.png

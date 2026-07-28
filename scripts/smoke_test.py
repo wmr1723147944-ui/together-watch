@@ -6,6 +6,7 @@ import json
 import time
 import uuid
 import zipfile
+from urllib.parse import urlparse
 
 import requests
 import socketio
@@ -41,6 +42,10 @@ def run(base_url):
         "旧媒体解析链路没有关闭",
     )
     expect(
+        health_payload.get("compliance_mode") is True,
+        "合规模式没有开启",
+    )
+    expect(
         health_payload.get("companion_archive") is True,
         "观影伴侣安装包缺失",
     )
@@ -48,6 +53,33 @@ def run(base_url):
         isinstance(health_payload.get("turn_configured"), bool),
         "健康检查没有报告 TURN 配置状态",
     )
+    expect(
+        isinstance(health_payload.get("copyright_contact_configured"), bool),
+        "健康检查没有报告版权投诉邮箱状态",
+    )
+    expect(
+        isinstance(health_payload.get("service_operator_configured"), bool),
+        "健康检查没有报告运营者配置状态",
+    )
+    expect(
+        isinstance(health_payload.get("public_launch_ready"), bool),
+        "健康检查没有报告公开上线准备状态",
+    )
+    hostname = (urlparse(base_url).hostname or "").lower()
+    if hostname not in {"127.0.0.1", "localhost", "::1"}:
+        expect(
+            health_payload.get("public_launch_ready") is True,
+            "公开部署尚未配置真实运营者名称或版权投诉邮箱",
+        )
+
+    for legal_path, marker in (
+        ("/terms", "用户协议"),
+        ("/privacy", "隐私政策"),
+        ("/copyright", "版权投诉"),
+    ):
+        legal_page = session.get(f"{base_url}{legal_path}", timeout=20)
+        legal_page.raise_for_status()
+        expect(marker in legal_page.text, f"{marker}页面内容不完整")
 
     room_id = f"smoke-{uuid.uuid4().hex[:12]}"
     room = session.get(f"{base_url}/room/{room_id}", timeout=20)
@@ -62,6 +94,17 @@ def run(base_url):
     resolved.raise_for_status()
     source = resolved.json().get("source")
     expect(source and source.get("mode") == "official_page", "官方来源识别失败")
+
+    blocked_media = session.post(
+        f"{base_url}/resolve_source",
+        json={"url": "https://cdn.example.com/member-video.m3u8"},
+        timeout=20,
+    )
+    expect(blocked_media.status_code == 403, "任意媒体直链没有被默认拒绝")
+    expect(
+        blocked_media.json().get("code") == "media_host_not_authorized",
+        "媒体直链拒绝原因不清楚",
+    )
 
     archive = session.get(f"{base_url}/companion-extension.zip", timeout=20)
     archive.raise_for_status()
@@ -139,8 +182,10 @@ def run(base_url):
         "extension_version": manifest.get("version"),
         "checks": [
             "HTTP health",
+            "compliance and legal pages",
             "room page",
             "fast source recognition",
+            "unapproved media rejection",
             "extension archive",
             "WebSocket connection",
             "two-member presence",

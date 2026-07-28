@@ -55,10 +55,55 @@ CONTROL_EVENTS = {"play", "pause", "seek", "change_source", "speed"}
 REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 DIRECT_MEDIA_EXTENSIONS = {".mp4", ".webm", ".ogg", ".m4v", ".m3u8"}
 MEDIA_SOURCE_MODES = {"direct_media", "official_page"}
-ENABLE_LEGACY_MEDIA_PIPELINE = os.environ.get(
-    "ENABLE_LEGACY_MEDIA_PIPELINE",
-    "0",
-).lower() in {"1", "true", "yes"}
+
+
+def parse_host_allowlist(raw_value):
+    """Parse exact hosts and explicit *.example.com wildcard rules."""
+    rules = []
+    for candidate in re.split(r"[\s,;]+", raw_value or ""):
+        rule = candidate.strip().rstrip(".").lower()
+        if not rule:
+            continue
+        base = rule[2:] if rule.startswith("*.") else rule
+        try:
+            base = base.encode("idna").decode("ascii")
+        except UnicodeError:
+            continue
+        if (
+            not base
+            or len(base) > 253
+            or not re.fullmatch(
+                r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*"
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?",
+                base,
+            )
+        ):
+            continue
+        normalized = f"*.{base}" if rule.startswith("*.") else base
+        if normalized not in rules:
+            rules.append(normalized)
+    return tuple(rules)
+
+
+# Compliance mode is intentionally hard-coded. The retired upload, extraction,
+# proxy and transcoding paths cannot be re-enabled by a deployment variable.
+ENABLE_LEGACY_MEDIA_PIPELINE = False
+AUTHORIZED_MEDIA_HOSTS = parse_host_allowlist(
+    os.environ.get("AUTHORIZED_MEDIA_HOSTS", "")
+)
+AUTHORIZED_PAGE_HOSTS = parse_host_allowlist(
+    os.environ.get("AUTHORIZED_PAGE_HOSTS", "")
+)
+COPYRIGHT_CONTACT_EMAIL = os.environ.get("COPYRIGHT_CONTACT_EMAIL", "").strip()[:254]
+COPYRIGHT_CONTACT_CONFIGURED = bool(
+    re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", COPYRIGHT_CONTACT_EMAIL)
+)
+SERVICE_OPERATOR_NAME = os.environ.get("SERVICE_OPERATOR_NAME", "").strip()[:100]
+SERVICE_OPERATOR_CONFIGURED = bool(SERVICE_OPERATOR_NAME)
+PUBLIC_LAUNCH_READY = (
+    COPYRIGHT_CONTACT_CONFIGURED and SERVICE_OPERATOR_CONFIGURED
+)
+LEGAL_NOTICE_VERSION = "2026-07-28"
 FAKE_IP_NETWORKS = (
     ipaddress.ip_network("198.18.0.0/15"),
     ipaddress.ip_network("fdfe:dcba:9876::/64"),
@@ -75,19 +120,9 @@ PARSE_MAX_WORKERS = max(
     2,
     min(8, int(os.environ.get("PARSE_MAX_WORKERS", "4"))),
 )
-ENABLE_BROWSER_PARSER = os.environ.get("ENABLE_BROWSER_PARSER", "1").lower() not in {
-    "0",
-    "false",
-    "no",
-}
-ENABLE_BROWSER_PARSER = ENABLE_LEGACY_MEDIA_PIPELINE and ENABLE_BROWSER_PARSER
+ENABLE_BROWSER_PARSER = False
 DEFAULT_ICE_SERVERS = [{"urls": "stun:stun.cloudflare.com:3478"}]
-ENABLE_HLS_TRANSCODE = os.environ.get("ENABLE_HLS_TRANSCODE", "1").lower() not in {
-    "0",
-    "false",
-    "no",
-}
-ENABLE_HLS_TRANSCODE = ENABLE_LEGACY_MEDIA_PIPELINE and ENABLE_HLS_TRANSCODE
+ENABLE_HLS_TRANSCODE = False
 FFMPEG_BIN = os.environ.get("FFMPEG_BIN") or shutil.which("ffmpeg")
 FFPROBE_BIN = os.environ.get("FFPROBE_BIN") or shutil.which("ffprobe")
 HLS_SEGMENT_SECONDS = max(2, min(10, int(os.environ.get("HLS_SEGMENT_SECONDS", "4"))))
@@ -292,9 +327,10 @@ socketio = SocketIO(app, **socket_options)
 class UnsafeURLError(ValueError):
     """Raised when a URL could access a non-public network resource."""
 
-    def __init__(self, message, *, code="blocked_address"):
+    def __init__(self, message, *, code="blocked_address", status_code=400):
         super().__init__(message)
         self.code = code
+        self.status_code = status_code
 
 
 DIAGNOSTIC_CATALOG = {
@@ -317,6 +353,29 @@ DIAGNOSTIC_CATALOG = {
         "stage": "地址安全检查",
         "reason": "链接指向本机、局域网或保留地址，已被安全策略阻止。",
         "suggestion": "请使用可从公网访问的视频或网页地址。",
+    },
+    "page_host_not_authorized": {
+        "stage": "来源合规检查",
+        "reason": "该网页不在本站允许同步的官方平台或管理员授权域名中。",
+        "suggestion": "请使用受支持的官方视频页面；自有网页需由管理员先登记域名。",
+    },
+    "media_host_not_authorized": {
+        "stage": "来源合规检查",
+        "reason": "任意 MP4/M3U8 直链默认不接受，该媒体域名尚未登记为自有或已授权来源。",
+        "suggestion": "请改用官方视频页面；自有或已获授权的媒体请联系管理员登记域名。",
+    },
+    "media_requires_https": {
+        "stage": "传输安全检查",
+        "reason": "已授权媒体只能通过 HTTPS 播放，避免链接和访问凭据在传输中泄露。",
+        "suggestion": "请为媒体域名启用 HTTPS 后再使用。",
+    },
+    "compliance_setup_required": {
+        "stage": "上线合规检查",
+        "reason": "生产环境尚未配置真实运营者名称和可用的版权投诉邮箱。",
+        "suggestion": (
+            "管理员需设置 SERVICE_OPERATOR_NAME 和 COPYRIGHT_CONTACT_EMAIL，"
+            "重新部署并确认 /health 中 public_launch_ready 为 true。"
+        ),
     },
     "dns_failed": {
         "stage": "DNS 检查",
@@ -391,8 +450,8 @@ DIAGNOSTIC_CATALOG = {
     },
     "direct_media_ready": {
         "stage": "来源识别",
-        "reason": "这是公开媒体直链，将由每位成员的浏览器直接访问。",
-        "suggestion": "本站不会代理或缓存该视频；请确认你有权使用和分享该地址。",
+        "reason": "这是管理员登记的自有或已授权媒体，将由每位成员的浏览器直接访问。",
+        "suggestion": "本站不会代理或缓存视频；域名授权失效时，管理员应立即从白名单移除。",
     },
     "official_page_ready": {
         "stage": "官方页面",
@@ -425,7 +484,7 @@ def unsafe_url_response(error):
             error=str(error),
             extra={"ok": False},
         )
-    ), 400
+    ), getattr(error, "status_code", 400)
 
 
 def classify_parser_error(error):
@@ -698,6 +757,20 @@ def hostname_matches(hostname, domain):
     return hostname == domain or hostname.endswith(f".{domain}")
 
 
+def hostname_allowed(hostname, rules):
+    try:
+        normalized = hostname.rstrip(".").lower().encode("idna").decode("ascii")
+    except (AttributeError, UnicodeError):
+        return False
+    for rule in rules:
+        if rule.startswith("*."):
+            if normalized.endswith(f".{rule[2:]}"):
+                return True
+        elif normalized == rule:
+            return True
+    return False
+
+
 def identify_video_provider(target_url):
     parsed = urlparse(target_url)
     hostname = (parsed.hostname or "").rstrip(".").lower()
@@ -722,17 +795,35 @@ def is_direct_media_url(target_url):
 
 
 def resolve_media_source(raw_url):
+    if APP_ENV == "production" and not PUBLIC_LAUNCH_READY:
+        raise UnsafeURLError(
+            "生产环境的运营者与投诉渠道尚未配置完成",
+            code="compliance_setup_required",
+            status_code=503,
+        )
     target_url = validate_client_media_url(raw_url)
     parsed = urlparse(target_url)
     hostname = (parsed.hostname or "").rstrip(".").lower()
 
     if is_direct_media_url(target_url):
+        if parsed.scheme != "https":
+            raise UnsafeURLError(
+                "已授权媒体只允许使用 HTTPS 链接",
+                code="media_requires_https",
+                status_code=400,
+            )
+        if not hostname_allowed(hostname, AUTHORIZED_MEDIA_HOSTS):
+            raise UnsafeURLError(
+                "该媒体域名未登记为自有或已授权来源",
+                code="media_host_not_authorized",
+                status_code=403,
+            )
         return {
             "mode": "direct_media",
             "provider_key": "direct",
-            "provider_name": "公开媒体直链",
+            "provider_name": "已授权媒体",
             "media_id": None,
-            "title": Path(parsed.path).name or "网络视频",
+            "title": Path(parsed.path).name or "已授权视频",
             "page_url": target_url,
             "media_url": target_url,
             "requires_companion": False,
@@ -745,8 +836,14 @@ def resolve_media_source(raw_url):
         }
 
     provider, media_id = identify_video_provider(target_url)
-    provider_key = provider["key"] if provider else "website"
-    provider_name = provider["name"] if provider else hostname
+    if not provider and not hostname_allowed(hostname, AUTHORIZED_PAGE_HOSTS):
+        raise UnsafeURLError(
+            "该网页不是受支持的官方视频页面，也未被管理员登记",
+            code="page_host_not_authorized",
+            status_code=403,
+        )
+    provider_key = provider["key"] if provider else "authorized-website"
+    provider_name = provider["name"] if provider else f"已授权网页（{hostname}）"
     return {
         "mode": "official_page",
         "provider_key": provider_key,
@@ -771,44 +868,17 @@ def sanitize_media_source(value):
     mode = clean_text(value.get("mode"), 32)
     if mode not in MEDIA_SOURCE_MODES:
         return None
+    if mode == "direct_media":
+        candidate = value.get("media_url") or value.get("page_url")
+    else:
+        candidate = value.get("page_url")
     try:
-        page_url = validate_client_media_url(value.get("page_url"))
+        canonical_source = resolve_media_source(candidate)
     except UnsafeURLError:
         return None
-
-    provider_key = clean_text(value.get("provider_key"), 48).lower()
-    if not re.fullmatch(r"[a-z0-9_-]{1,48}", provider_key):
-        provider_key = "website"
-    provider_name = clean_text(value.get("provider_name"), 80) or "视频网站"
-    media_id = clean_text(value.get("media_id"), 128) or None
-    title = clean_text(value.get("title"), 200) or f"{provider_name}视频"
-
-    media_url = None
-    if mode == "direct_media":
-        candidate = value.get("media_url") or page_url
-        try:
-            media_url = validate_client_media_url(candidate)
-        except UnsafeURLError:
-            return None
-        if not is_direct_media_url(media_url):
-            return None
-
-    return {
-        "mode": mode,
-        "provider_key": provider_key,
-        "provider_name": provider_name,
-        "media_id": media_id,
-        "title": title,
-        "page_url": page_url,
-        "media_url": media_url,
-        "requires_companion": mode == "official_page",
-        "capabilities": {
-            "play": True,
-            "pause": True,
-            "seek": True,
-            "speed": True,
-        },
-    }
+    if canonical_source["mode"] != mode:
+        return None
+    return canonical_source
 
 
 def sanitize_video_source(value):
@@ -1218,6 +1288,11 @@ def cleanup_expired_uploads():
 
 @app.after_request
 def add_security_headers(response):
+    authorized_media_sources = " ".join(
+        f"https://{rule}" for rule in AUTHORIZED_MEDIA_HOSTS
+    )
+    media_src = f"media-src 'self' blob: {authorized_media_sources};"
+    connect_src = f"connect-src 'self' ws: wss: {authorized_media_sources};"
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
@@ -1231,8 +1306,8 @@ def add_security_headers(response):
         "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
-        "media-src 'self' blob: http: https:; "
-        "connect-src 'self' ws: wss: http: https:; "
+        f"{media_src} "
+        f"{connect_src} "
         "worker-src 'self' blob:; "
         "object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
     )
@@ -1252,7 +1327,50 @@ def upload_too_large(_error):
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template(
+        "index.html",
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+        show_deployment_warning=(
+            APP_ENV == "production" and not PUBLIC_LAUNCH_READY
+        ),
+    )
+
+
+@app.route("/terms")
+def terms():
+    return render_template(
+        "terms.html",
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+        copyright_contact_email=(
+            COPYRIGHT_CONTACT_EMAIL if COPYRIGHT_CONTACT_CONFIGURED else None
+        ),
+        service_operator_name=SERVICE_OPERATOR_NAME or None,
+    )
+
+
+@app.route("/privacy")
+def privacy():
+    return render_template(
+        "privacy.html",
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+        copyright_contact_email=(
+            COPYRIGHT_CONTACT_EMAIL if COPYRIGHT_CONTACT_CONFIGURED else None
+        ),
+        service_operator_name=SERVICE_OPERATOR_NAME or None,
+        room_retention_hours=max(1, math.ceil(ROOM_TTL_SECONDS / 3600)),
+    )
+
+
+@app.route("/copyright")
+def copyright_notice():
+    return render_template(
+        "copyright.html",
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+        copyright_contact_email=(
+            COPYRIGHT_CONTACT_EMAIL if COPYRIGHT_CONTACT_CONFIGURED else None
+        ),
+        service_operator_name=SERVICE_OPERATOR_NAME or None,
+    )
 
 
 @app.route("/room/<room_id>")
@@ -1266,6 +1384,11 @@ def room(room_id):
     return render_template(
         "room.html",
         room_id=room_id,
+        authorized_media_enabled=bool(AUTHORIZED_MEDIA_HOSTS),
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+        show_deployment_warning=(
+            APP_ENV == "production" and not PUBLIC_LAUNCH_READY
+        ),
     )
 
 
@@ -1284,7 +1407,13 @@ def health():
             "uptime_seconds": round(max(0, time.time() - APP_STARTED_AT), 1),
             "active_rooms": active_rooms,
             "connected_clients": connected_clients,
+            "compliance_mode": True,
             "legacy_media_pipeline": ENABLE_LEGACY_MEDIA_PIPELINE,
+            "authorized_media_enabled": bool(AUTHORIZED_MEDIA_HOSTS),
+            "authorized_page_hosts": len(AUTHORIZED_PAGE_HOSTS),
+            "copyright_contact_configured": COPYRIGHT_CONTACT_CONFIGURED,
+            "service_operator_configured": SERVICE_OPERATOR_CONFIGURED,
+            "public_launch_ready": PUBLIC_LAUNCH_READY,
             "turn_configured": TURN_CONFIGURED,
             "companion_archive": COMPANION_EXTENSION_ARCHIVE.is_file(),
         }
@@ -1312,7 +1441,7 @@ def legacy_media_pipeline_disabled(feature):
             "code": "legacy_media_pipeline_disabled",
             "stage": "安全播放模式",
             "reason": "本站只识别视频来源并同步播放状态，不再提取、上传或代理第三方视频。",
-            "suggestion": "请粘贴官方视频网页，或使用你有权分享的公开媒体直链。",
+            "suggestion": "请粘贴受支持的官方视频网页；自有或已授权媒体需由管理员登记域名。",
         }
     ), 410
 
@@ -1648,7 +1777,7 @@ def parse_url():
     if source["mode"] == "direct_media":
         diagnostic = diagnostic_payload(
             "direct_media_ready",
-            error="已识别公开媒体直链",
+            error="已识别管理员登记的授权媒体",
             extra={
                 "elapsed_ms": round((time.monotonic() - started_at) * 1000),
             },

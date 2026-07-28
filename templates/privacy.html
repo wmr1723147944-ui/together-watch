@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>隐私政策 - Together Watch</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="legal-page">
+    <main class="legal-shell">
+        <a class="legal-back" href="/">← 返回首页</a>
+        <article class="glass-panel legal-card">
+            <p class="legal-kicker">TOGETHER WATCH</p>
+            <h1>隐私政策</h1>
+            <p class="legal-meta">版本：{{ legal_notice_version }}</p>
+
+            <section>
+                <h2>谁在运营这项服务</h2>
+                {% if service_operator_name and copyright_contact_email %}
+                <p>运营者：{{ service_operator_name }}。隐私、安全或个人信息权利请求可发送至 <a href="mailto:{{ copyright_contact_email }}">{{ copyright_contact_email }}</a>。</p>
+                {% else %}
+                <div class="legal-alert">运营者名称或联系邮箱尚未配置。本部署只适合内部测试，不具备向公众开放的合规信息。</div>
+                {% endif %}
+            </section>
+
+            <section>
+                <h2>我们处理哪些信息</h2>
+                <p>为了建立房间并保持同步，服务会处理你填写的昵称、房间号、聊天内容、播放状态和连接状态。访问 IP 会短暂用于限流与安全防护；请不要在昵称或聊天中填写身份证号、银行卡号、账号密码等敏感信息。</p>
+            </section>
+
+            <section>
+                <h2>视频平台账号与媒体</h2>
+                <p>官方视频页面由你在自己的浏览器中打开。观影伴侣只交换房间信息和播放状态，不应读取或上传 Cookie、账号密码、Token、会员凭据或真实媒体地址。本站不接收你在视频平台输入的登录信息，也不保存视频文件。</p>
+            </section>
+
+            <section>
+                <h2>语音通话</h2>
+                <p>语音通话使用 WebRTC。条件允许时，音频会在成员浏览器之间直接传输；直连失败时，配置的 TURN 服务可能中继加密音频流。信令服务器会处理建立连接所需的信息，但不会把通话录音作为产品功能保存。</p>
+            </section>
+
+            <section>
+                <h2>本地保存与保留时间</h2>
+                <p>昵称、音量、插件房间配置和协议确认版本可能保存在你的浏览器本地，你可以通过清除本站数据删除。房间运行数据仅保存在服务器内存中，最后活动结束后最长约 {{ room_retention_hours }} 小时过期；用于限流的 IP 记录最长约 15 分钟。服务器提供商仍可能为安全、故障排查和计费生成访问日志，正式上线前管理员应按实际主机配置补充日志保留期限。</p>
+            </section>
+
+            <section>
+                <h2>如何保护自己</h2>
+                <p>只把邀请链接发给你信任的人，离开公共设备前退出视频平台账号，并定期检查浏览器扩展权限。发现账号信息被意外发送时，应立即撤回、修改相关密码并联系对应平台。</p>
+            </section>
+
+            <section>
+                <h2>联系我们</h2>
+                {% if copyright_contact_email %}
+                <p>你可以通过 <a href="mailto:{{ copyright_contact_email }}">{{ copyright_contact_email }}</a> 请求查阅、更正或删除依法可以处理的个人信息，也可以反馈隐私或安全问题。</p>
+                {% else %}
+                <p>正式向公众开放前，管理员必须配置真实运营者名称、可用的联系邮箱和与实际部署一致的数据保留说明。</p>
+                {% endif %}
+            </section>
+        </article>
+        <nav class="legal-links" aria-label="法律与合规">
+            <a href="/terms">用户协议</a>
+            <a href="/copyright">版权投诉</a>
+        </nav>
+    </main>
+</body>
+</html>

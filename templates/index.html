@@ -12,8 +12,13 @@
         <main class="glass-panel landing-panel">
             <h1 class="title">Together Watch</h1>
             <p class="landing-subtitle">创建一个私人放映间，把邀请链接发给朋友就能一起看</p>
+            {% if show_deployment_warning %}
+            <div class="deployment-warning" role="alert">
+                生产环境的运营者和版权投诉邮箱尚未配置，目前仅供内部测试，暂不能添加视频来源。
+            </div>
+            {% endif %}
 
-            <form id="loginForm" novalidate>
+            <form id="loginForm" data-legal-version="{{ legal_notice_version }}" novalidate>
                 <div class="input-group">
                     <label class="field-label" for="username">你的昵称</label>
                     <input type="text" id="username" placeholder="例如：小雨" required maxlength="32" autocomplete="nickname">
@@ -22,6 +27,13 @@
                     <label class="field-label" for="roomId">加入已有房间（可选）</label>
                     <input type="text" id="roomId" placeholder="粘贴邀请链接或输入房间号" maxlength="300" autocomplete="off">
                 </div>
+                <label class="compliance-consent" for="complianceConsent">
+                    <input type="checkbox" id="complianceConsent" required>
+                    <span>
+                        我已阅读并同意<a href="/terms" target="_blank">用户协议</a>和<a href="/privacy" target="_blank">隐私政策</a>，
+                        并承诺只同步自己有权观看的内容。
+                    </span>
+                </label>
                 <p id="formError" class="form-error" role="alert" aria-live="polite"></p>
                 <div class="landing-actions">
                     <button type="button" id="createRoomBtn" class="btn">＋ 创建新房间</button>
@@ -29,6 +41,11 @@
                 </div>
             </form>
             <p class="privacy-tip">无需上传视频。每位成员仍在原网站使用自己的观看权限，本站只同步播放状态。</p>
+            <nav class="legal-links" aria-label="法律与合规">
+                <a href="/terms">用户协议</a>
+                <a href="/privacy">隐私政策</a>
+                <a href="/copyright">版权投诉</a>
+            </nav>
         </main>
     </div>
 

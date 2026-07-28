@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户协议 - Together Watch</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="legal-page">
+    <main class="legal-shell">
+        <a class="legal-back" href="/">← 返回首页</a>
+        <article class="glass-panel legal-card">
+            <p class="legal-kicker">TOGETHER WATCH</p>
+            <h1>用户协议</h1>
+            <p class="legal-meta">版本：{{ legal_notice_version }}</p>
+
+            <section>
+                <h2>这项服务做什么</h2>
+                <p>Together Watch 提供房间、聊天、语音通话以及播放、暂停、进度和倍速等状态同步。视频仍由原网站或经管理员确认的授权媒体源直接提供，本站不出售会员、不代替用户登录，也不提供第三方影视内容的提取、破解、上传、缓存或转发。</p>
+            </section>
+
+            <section>
+                <h2>你的观看权限彼此独立</h2>
+                <p>每位房间成员都必须自行取得内容提供方要求的账号、会员资格、地区权限和其他观看许可。一个人的会员资格不能通过本服务转给其他人；如果原平台要求会员，房间中的每个人都应分别登录自己的有效账号。</p>
+            </section>
+
+            <section>
+                <h2>禁止行为</h2>
+                <ul>
+                    <li>共享账号、密码、Cookie、Token、密钥或其他登录凭据；</li>
+                    <li>提交从会员页面、受 DRM 保护页面或未经许可的网站提取出的 MP4、M3U8 等地址；</li>
+                    <li>录制、下载、复制、公开播放、转播、售卖或以其他方式传播无权使用的内容；</li>
+                    <li>规避访问控制、付费墙、地域限制、DRM 或内容平台的技术保护措施；</li>
+                    <li>利用房间、聊天或通话从事违法、侵权、欺诈、骚扰或破坏服务的行为。</li>
+                </ul>
+            </section>
+
+            <section>
+                <h2>来源管理与处置</h2>
+                <p>任意媒体直链默认被拒绝。只有服务管理员事先核验并登记的自有或已授权域名可以使用。收到有效投诉、授权到期或发现高风险使用时，管理员可以停止相关域名、链接、房间或访问权限，并保留必要记录配合处理。</p>
+            </section>
+
+            <section>
+                <h2>责任边界</h2>
+                <p>你应对自己提交的链接、播放行为和分享范围负责。本服务与各视频平台相互独立，不代表相关平台对本服务作出认可。同步可能受网络、浏览器、扩展程序和原平台页面变化影响，无法承诺始终无中断。</p>
+            </section>
+
+            <section>
+                <h2>联系我们</h2>
+                {% if service_operator_name %}
+                <p>服务运营者：{{ service_operator_name }}</p>
+                {% endif %}
+                {% if copyright_contact_email %}
+                <p>版权或合规问题可发送至 <a href="mailto:{{ copyright_contact_email }}">{{ copyright_contact_email }}</a>。</p>
+                {% else %}
+                <p>服务目前处于个人测试阶段，正式向公众开放前，管理员必须配置真实运营者信息和可用的版权联系邮箱。</p>
+                {% endif %}
+            </section>
+        </article>
+        <nav class="legal-links" aria-label="法律与合规">
+            <a href="/privacy">隐私政策</a>
+            <a href="/copyright">版权投诉</a>
+        </nav>
+    </main>
+</body>
+</html>
