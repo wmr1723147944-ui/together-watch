@@ -1,0 +1,20 @@
+.env
+.venv
+.git
+.gitignore
+.idea
+.review-artifacts
+.github
+__pycache__
+*.pyc
+tests
+static/uploads
+ngrok.exe
+.ngrok.exe.old
+ngrok-*.zip
+ngrok.yml
+README.docx
+DEPLOYMENT.md
+*.log
+新建 文本文档.txt
+无畏契约专属灵敏度生成器.html

@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: together-watch-personal
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: APP_ENV
+        value: production
+      - key: APP_VERSION
+        value: personal-v1
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: ENABLE_LEGACY_MEDIA_PIPELINE
+        value: "0"
+      - key: ROOM_TTL_SECONDS
+        value: "21600"
+      - key: MAX_ROOM_MEMBERS
+        value: "50"
+      - key: MAX_CALL_MEMBERS
+        value: "8"
+      - key: GUNICORN_THREADS
+        value: "40"

@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Together Watch 观影伴侣",
+  "version": "0.2.0",
+  "minimum_chrome_version": "116",
+  "description": "在官方视频网站页面同步播放、暂停、进度和倍速，不读取 Cookie 或媒体地址。",
+  "permissions": [
+    "storage",
+    "tabs"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Together Watch 观影伴侣",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.bilibili.com/*",
+        "https://b23.tv/*",
+        "https://v.qq.com/*",
+        "https://m.v.qq.com/*",
+        "https://*.video.qq.com/*",
+        "https://*.iqiyi.com/*",
+        "https://*.qiyi.com/*",
+        "https://*.youku.com/*",
+        "https://*.mgtv.com/*",
+        "https://*.douyin.com/*",
+        "https://*.iesdouyin.com/*",
+        "https://*.kuaishou.com/*",
+        "https://*.acfun.cn/*",
+        "https://*.youtube.com/*",
+        "https://youtu.be/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_idle"
+    }
+  ]
+}

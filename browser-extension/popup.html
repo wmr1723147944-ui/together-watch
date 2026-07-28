@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>观影伴侣</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: system-ui, "Microsoft YaHei", sans-serif;
+        }
+        body {
+            width: 320px;
+            margin: 0;
+            padding: 16px;
+            background: #0c0d1a;
+            color: #f5f7ff;
+        }
+        h1 {
+            margin: 0;
+            font-size: 18px;
+        }
+        .subtitle,
+        .status {
+            color: #aeb3c9;
+            font-size: 12px;
+            line-height: 1.55;
+        }
+        .field {
+            display: grid;
+            margin-top: 12px;
+            gap: 5px;
+        }
+        label {
+            font-size: 12px;
+            font-weight: 700;
+        }
+        input,
+        textarea,
+        button {
+            box-sizing: border-box;
+            width: 100%;
+            border: 1px solid #30344a;
+            border-radius: 8px;
+            padding: 9px 10px;
+            background: #15172a;
+            color: inherit;
+            font: inherit;
+        }
+        textarea {
+            min-height: 58px;
+            resize: vertical;
+        }
+        button {
+            margin-top: 12px;
+            border-color: #6b7fff;
+            background: #6b7fff;
+            cursor: pointer;
+            font-weight: 800;
+        }
+        button.secondary {
+            margin-top: 7px;
+            border-color: #30344a;
+            background: #1b1e34;
+        }
+        .toggle {
+            display: flex;
+            align-items: center;
+            margin-top: 12px;
+            gap: 8px;
+        }
+        .toggle input {
+            width: auto;
+        }
+        .status {
+            margin: 12px 0 0;
+        }
+        .safe {
+            margin-top: 10px;
+            color: #63dea3;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Together Watch 观影伴侣</h1>
+    <p class="subtitle">请先在房间页复制伴侣配置，再粘贴到这里。</p>
+
+    <div class="field">
+        <label for="configPaste">伴侣配置</label>
+        <textarea id="configPaste" placeholder='{"server":"https://你的域名","room":"房间号","username":"昵称"}'></textarea>
+    </div>
+    <button type="button" id="readConfigBtn" class="secondary">读取粘贴的配置</button>
+
+    <div class="field">
+        <label for="server">房间服务器</label>
+        <input id="server" type="url" placeholder="https://watch.example.com">
+    </div>
+    <div class="field">
+        <label for="room">房间号</label>
+        <input id="room" maxlength="64">
+    </div>
+    <div class="field">
+        <label for="username">昵称</label>
+        <input id="username" maxlength="32">
+    </div>
+    <label class="toggle">
+        <input id="enabled" type="checkbox" checked>
+        在当前官方视频页启用同步
+    </label>
+    <button type="button" id="saveBtn">保存并连接</button>
+    <p id="status" class="status">正在读取配置…</p>
+    <p class="safe">只同步时间和播放状态，不读取账号、Cookie、弹幕或媒体地址。</p>
+    <script src="popup.js"></script>
+</body>
+</html>

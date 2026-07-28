@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room {{ room_id }} - Together Watch</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <input type="hidden" id="roomData" value="{{ room_id }}">
+
+    <div class="room-container">
+        <header class="glass-panel room-toolbar">
+            <a href="/" class="toolbar-link" aria-label="返回首页">← 返回</a>
+            <div class="room-summary">
+                <span>房间</span>
+                <strong>{{ room_id }}</strong>
+            </div>
+            <div class="toolbar-actions">
+                <span id="connectionStatus" class="connection-status is-connecting" aria-live="polite">
+                    <span class="status-dot"></span>
+                    <span id="connectionLabel">连接中</span>
+                </span>
+                <details id="presenceMenu" class="presence-menu">
+                    <summary class="online-status">
+                        <strong id="onlineCount">1</strong> 人在线
+                        <span class="member-chevron" aria-hidden="true">⌄</span>
+                    </summary>
+                    <div class="member-popover">
+                        <div class="member-popover-title">房间成员</div>
+                        <ul id="memberList" class="member-list">
+                            <li class="member-item">正在获取成员列表…</li>
+                        </ul>
+                    </div>
+                </details>
+                <button type="button" id="joinCallBtn" class="btn btn-call btn-compact">🎙 加入语音</button>
+                <button type="button" id="copyRoomBtn" class="btn btn-secondary btn-compact">复制邀请链接</button>
+            </div>
+        </header>
+
+        <div class="video-section">
+            <div class="glass-panel video-panel">
+                <div class="video-wrapper">
+                    <video id="mainVideo" controls playsinline preload="metadata">
+                        您的浏览器不支持 HTML5 视频。
+                    </video>
+                    <div id="officialPageStage" class="official-page-stage hidden">
+                        <span class="source-mode-badge">官方页面伴随模式</span>
+                        <strong id="officialSourceTitle">请在原网站播放视频</strong>
+                        <p id="officialSourceDescription">
+                            视频由原网站提供，本站只负责同步播放、暂停和进度。
+                        </p>
+                        <div class="official-source-actions">
+                            <a id="openOfficialPageBtn" class="btn btn-small" href="#" target="_blank" rel="noopener noreferrer">
+                                打开官方视频页面
+                            </a>
+                            <button type="button" id="copyCompanionConfigBtn" class="btn btn-secondary btn-small">
+                                复制伴侣配置
+                            </button>
+                            <a class="btn btn-secondary btn-small" href="/companion-extension.zip" download>
+                                下载观影伴侣
+                            </a>
+                        </div>
+                        <span id="officialPlaybackState" class="official-playback-state">
+                            打开页面后，在浏览器扩展中加入当前房间
+                        </span>
+                    </div>
+                    <div id="videoEmptyState" class="video-empty-state">
+                        <span class="empty-icon">🎬</span>
+                        <strong>粘贴官方视频网页</strong>
+                        <span>本站只识别来源和同步状态，不解析或中转第三方影片</span>
+                    </div>
+                    <label id="qualityControl" class="video-quality-control hidden" for="qualitySelect">
+                        <span class="quality-control-label">画质</span>
+                        <select id="qualitySelect" aria-label="选择播放清晰度" disabled>
+                            <option value="-1">自动</option>
+                        </select>
+                        <span id="qualityBadge" class="quality-badge">检测中</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="glass-panel controls-section">
+                <section class="control-card source-control-card">
+                    <div class="source-control-heading">
+                        <div>
+                            <h2 class="control-title accent">选择官方视频网页</h2>
+                            <p>支持视频网站页面和你有权分享的公开 MP4/HLS 直链</p>
+                        </div>
+                        <span class="safe-mode-mark">不提取 · 不代理</span>
+                    </div>
+                    <label class="sr-only" for="videoUrlInput">视频链接</label>
+                    <div class="input-inline">
+                        <input type="url" id="videoUrlInput" placeholder="粘贴哔哩哔哩、腾讯视频、爱奇艺、优酷等官方页面" autocomplete="url">
+                        <button type="button" id="loadUrlBtn" class="btn btn-small" aria-label="识别视频来源">识别来源</button>
+                    </div>
+                    <div class="control-options">
+                        <button type="button" id="fitToggleBtn" class="btn btn-secondary btn-compact">↔ 铺满画面</button>
+                        <span class="source-policy-note">会员内容需每位成员分别登录原网站</span>
+                    </div>
+                    <div id="urlStatus" class="control-status" role="status" aria-live="polite"></div>
+                    <details class="companion-help">
+                        <summary>官方页面为什么需要观影伴侣扩展？</summary>
+                        <p>多数视频网站禁止其他网页直接控制播放器。扩展只同步播放、暂停、进度和倍速，不读取 Cookie、账号或真实媒体地址。</p>
+                        <p>第一次使用：下载扩展包并解压，在 Chrome/Edge 扩展管理页开启开发者模式，然后选择“加载已解压的扩展程序”。</p>
+                    </details>
+                </section>
+                <div class="collaboration-tip">
+                    <label class="strict-sync-option" for="strictSyncToggle">
+                        <input type="checkbox" id="strictSyncToggle" checked>
+                        强一致模式：有人缓冲时全员暂停
+                    </label>
+                    <div class="health-badges">
+                        <span id="playbackHealth" class="sync-health" title="播放缓冲与掉帧状态">
+                            缓冲检测中
+                        </span>
+                        <span id="syncHealth" class="sync-health">正在校准同步状态…</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <section id="callDock" class="call-dock hidden" aria-live="polite">
+            <div class="call-identity">
+                <span class="call-pulse" aria-hidden="true"></span>
+                <div>
+                    <strong>多人语音</strong>
+                    <span id="callStatus">正在加入通话…</span>
+                </div>
+            </div>
+            <div class="call-stats">
+                <span id="callCount">1 人在通话</span>
+                <span id="callNetwork">建立连接中</span>
+            </div>
+            <div class="call-actions">
+                <button type="button" id="muteCallBtn" class="btn btn-secondary btn-compact">🎙 静音</button>
+                <button type="button" id="leaveCallBtn" class="btn btn-danger btn-compact">挂断</button>
+            </div>
+            <div id="remoteAudioContainer" class="hidden" aria-hidden="true"></div>
+        </section>
+
+        <aside class="glass-panel chat-section">
+            <div class="chat-header">
+                <span>💬 聊天室</span>
+                <span class="chat-room-id">{{ room_id }}</span>
+            </div>
+            <div class="chat-messages" id="chatContainer">
+                <div class="message system">欢迎来到房间！</div>
+            </div>
+
+            <div class="chat-input-area">
+                <label class="sr-only" for="chatInput">聊天消息</label>
+                <input type="text" id="chatInput" placeholder="说点什么…" maxlength="500" autocomplete="off">
+                <button type="button" id="sendBtn" class="btn btn-small">发送</button>
+            </div>
+        </aside>
+    </div>
+
+    <script src="{{ url_for('static', filename='vendor/hls-1.5.18.min.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/voice-call.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+</body>
+</html>

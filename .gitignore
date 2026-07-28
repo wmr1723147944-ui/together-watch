@@ -1,0 +1,16 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+.idea/
+.review-artifacts/
+static/uploads/*
+!static/uploads/.gitkeep
+ngrok.exe
+.ngrok.exe.old
+ngrok-*.zip
+ngrok.yml
+README.docx
+新建 文本文档.txt
+无畏契约专属灵敏度生成器.html
+*.log

@@ -1,0 +1,52 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: python -m pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+      - run: node --check static/js/index.js
+      - run: node --check static/js/main.js
+      - run: node --check static/js/voice-call.js
+      - run: node --check browser-extension/background.js
+      - run: node --check browser-extension/content.js
+      - run: node --check browser-extension/popup.js
+      - name: Build production image
+        run: docker build -t together-watch:test .
+      - name: Start production container
+        run: >-
+          docker run -d --name together-watch-ci -p 5000:5000
+          -e SECRET_KEY=ci-only-secret
+          -e APP_ENV=production
+          together-watch:test
+      - name: Wait for health check
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:5000/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs together-watch-ci
+          exit 1
+      - name: Test production WebSocket runtime
+        run: python scripts/smoke_test.py http://127.0.0.1:5000
+      - name: Show production logs
+        if: always()
+        run: docker logs together-watch-ci || true
+      - name: Stop production container
+        if: always()
+        run: docker rm -f together-watch-ci || true

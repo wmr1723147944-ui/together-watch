@@ -1,0 +1,530 @@
+import time
+import unittest
+from unittest.mock import patch
+
+import app as application
+
+
+def direct_source(url="https://cdn.example.com/movie.mp4"):
+    return application.resolve_media_source(url)
+
+
+def official_source(url="https://www.bilibili.com/video/BV1xx411c7mD"):
+    return application.resolve_media_source(url)
+
+
+class TogetherWatchTests(unittest.TestCase):
+    def setUp(self):
+        application.app.config.update(TESTING=True)
+        self.client = application.app.test_client()
+        application.rate_buckets.clear()
+        with application.room_lock:
+            application.room_states.clear()
+            application.room_members.clear()
+            application.sid_membership.clear()
+            application.sid_roles.clear()
+            application.room_activity.clear()
+            application.socket_message_times.clear()
+            application.call_members.clear()
+            application.room_buffering.clear()
+            application.rooms_paused_for_buffering.clear()
+
+    def test_pages_and_security_headers(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+        self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
+
+        room = self.client.get("/room/test-room")
+        self.assertEqual(room.status_code, 200)
+        html = room.get_data(as_text=True)
+        self.assertIn("粘贴官方视频网页", html)
+        self.assertIn("复制伴侣配置", html)
+        self.assertIn("下载观影伴侣", html)
+        self.assertNotIn("上传本地视频", html)
+
+        invalid_room = self.client.get("/room/x")
+        self.assertEqual(invalid_room.status_code, 404)
+
+    def test_health_reports_public_deployment_readiness(self):
+        response = self.client.get("/health")
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "ok")
+        self.assertIn("version", payload)
+        self.assertIn("uptime_seconds", payload)
+        self.assertIn("active_rooms", payload)
+        self.assertIn("connected_clients", payload)
+        self.assertFalse(payload["legacy_media_pipeline"])
+        self.assertIsInstance(payload["turn_configured"], bool)
+        self.assertTrue(payload["companion_archive"])
+
+    def test_companion_download_and_socket_origin_policy(self):
+        extension = self.client.get("/companion-extension.zip")
+        self.assertEqual(extension.status_code, 200)
+        self.assertEqual(extension.mimetype, "application/zip")
+        self.assertIn(
+            "attachment",
+            extension.headers.get("Content-Disposition", ""),
+        )
+        extension.close()
+
+        extension_origin = f"chrome-extension://{'a' * 32}"
+        self.assertTrue(application.socket_origin_allowed(extension_origin))
+        self.assertTrue(
+            application.socket_origin_allowed(
+                "https://watch.example.com",
+                {
+                    "wsgi.url_scheme": "https",
+                    "HTTP_HOST": "watch.example.com",
+                },
+            )
+        )
+        self.assertFalse(
+            application.socket_origin_allowed("https://untrusted.example")
+        )
+
+    def test_legacy_media_pipeline_is_disabled(self):
+        checks = (
+            self.client.post("/upload"),
+            self.client.post("/probe_media", json={"url": "https://cdn.example/a.mp4"}),
+            self.client.get("/proxy", query_string={"url": "https://cdn.example/a.mp4"}),
+            self.client.get("/hls_proxy", query_string={"url": "https://cdn.example/a.m3u8"}),
+            self.client.get(f"/transcode/{'a' * 32}"),
+        )
+        for response in checks:
+            self.assertEqual(response.status_code, 410)
+            self.assertEqual(
+                response.get_json()["code"],
+                "legacy_media_pipeline_disabled",
+            )
+
+    def test_source_resolver_recognizes_official_provider_without_network(self):
+        with (
+            patch("app.socket.getaddrinfo") as dns,
+            patch("app.safe_request") as request_source,
+        ):
+            response = self.client.post(
+                "/resolve_source",
+                json={"url": "https://www.bilibili.com/video/BV1xx411c7mD"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["source"]["mode"], "official_page")
+        self.assertEqual(payload["source"]["provider_key"], "bilibili")
+        self.assertEqual(payload["source"]["media_id"], "BV1xx411c7mD")
+        self.assertTrue(payload["source"]["requires_companion"])
+        self.assertIsNone(payload["source"]["media_url"])
+        self.assertEqual(payload["diagnostic"]["code"], "official_page_ready")
+        dns.assert_not_called()
+        request_source.assert_not_called()
+
+    def test_source_resolver_recognizes_direct_media(self):
+        response = self.client.post(
+            "/resolve_source",
+            json={"url": "https://cdn.example.com/path/movie.m3u8?token=abc"},
+        )
+        self.assertEqual(response.status_code, 200)
+        source = response.get_json()["source"]
+        self.assertEqual(source["mode"], "direct_media")
+        self.assertEqual(source["provider_key"], "direct")
+        self.assertFalse(source["requires_companion"])
+        self.assertEqual(
+            source["media_url"],
+            "https://cdn.example.com/path/movie.m3u8?token=abc",
+        )
+
+    def test_source_resolver_accepts_generic_official_page_quickly(self):
+        started_at = time.monotonic()
+        response = self.client.post(
+            "/parse_url",
+            json={"url": "https://movies.example.com/watch/episode-1"},
+        )
+        elapsed = time.monotonic() - started_at
+
+        self.assertEqual(response.status_code, 200)
+        source = response.get_json()["source"]
+        self.assertEqual(source["mode"], "official_page")
+        self.assertEqual(source["provider_name"], "movies.example.com")
+        self.assertLess(elapsed, 0.3)
+
+    def test_source_resolver_rejects_local_and_unsafe_urls(self):
+        for url in (
+            "http://127.0.0.1/movie.mp4",
+            "http://localhost/movie.mp4",
+            "http://192.168.1.8/movie.mp4",
+            "javascript:alert(1)",
+        ):
+            response = self.client.post("/resolve_source", json={"url": url})
+            self.assertEqual(response.status_code, 400, url)
+            self.assertFalse(response.get_json()["ok"])
+
+    def test_sanitize_source_does_not_trust_client_mode(self):
+        spoofed = {
+            "mode": "direct_media",
+            "provider_key": "direct",
+            "provider_name": "伪装直链",
+            "page_url": "https://example.com/watch/1",
+            "media_url": "https://example.com/watch/1",
+        }
+        self.assertIsNone(application.sanitize_media_source(spoofed))
+
+        safe = application.sanitize_media_source(direct_source())
+        self.assertEqual(safe["mode"], "direct_media")
+        self.assertEqual(safe["media_url"], "https://cdn.example.com/movie.mp4")
+
+    def test_socket_room_state_and_chat(self):
+        first = application.socketio.test_client(
+            application.app,
+            flask_test_client=self.client,
+        )
+        second = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            first.emit("join", {"username": "甲", "room": "test-room"})
+            first.get_received()
+            first.emit(
+                "video_event",
+                {
+                    "room": "test-room",
+                    "type": "change_source",
+                    "time": 0,
+                    "source": official_source(),
+                },
+            )
+            first.emit(
+                "video_event",
+                {"room": "test-room", "type": "play", "time": 12.5},
+            )
+
+            time.sleep(0.01)
+            second.emit("join", {"username": "乙", "room": "test-room"})
+            received = second.get_received()
+            states = [
+                item["args"][0]
+                for item in received
+                if item["name"] == "room_state"
+            ]
+            self.assertEqual(len(states), 1)
+            self.assertTrue(states[0]["playing"])
+            self.assertGreaterEqual(states[0]["time"], 12.5)
+            self.assertEqual(states[0]["media_source"]["mode"], "official_page")
+            self.assertIsNone(states[0]["media_source"]["media_url"])
+
+            second.emit(
+                "chat_message",
+                {"room": "test-room", "message": "<img src=x onerror=alert(1)>"},
+            )
+            chat_events = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "chat_message"
+            ]
+            self.assertEqual(
+                chat_events[-1]["message"],
+                "<img src=x onerror=alert(1)>",
+            )
+        finally:
+            first.disconnect()
+            second.disconnect()
+
+    def test_three_members_receive_presence_list(self):
+        clients = [
+            application.socketio.test_client(
+                application.app,
+                flask_test_client=application.app.test_client(),
+            )
+            for _ in range(3)
+        ]
+        try:
+            for index, client in enumerate(clients, start=1):
+                client.emit(
+                    "join",
+                    {"username": f"成员{index}", "room": "multi-room"},
+                )
+
+            received = clients[-1].get_received()
+            presence_events = [
+                item["args"][0]
+                for item in received
+                if item["name"] == "presence"
+            ]
+            self.assertTrue(presence_events)
+            self.assertEqual(presence_events[-1]["count"], 3)
+            self.assertEqual(
+                presence_events[-1]["users"],
+                ["成员1", "成员2", "成员3"],
+            )
+        finally:
+            for client in clients:
+                client.disconnect()
+
+    def test_companion_connection_is_hidden_from_human_count(self):
+        room_page = application.socketio.test_client(
+            application.app,
+            flask_test_client=self.client,
+        )
+        companion = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            room_page.emit("join", {"username": "甲", "room": "companion-room"})
+            room_page.get_received()
+            companion.emit(
+                "join",
+                {
+                    "username": "甲",
+                    "room": "companion-room",
+                    "role": "companion",
+                },
+            )
+            presence = [
+                item["args"][0]
+                for item in room_page.get_received()
+                if item["name"] == "presence"
+            ][-1]
+            self.assertEqual(presence["count"], 1)
+            self.assertEqual(presence["users"], ["甲"])
+        finally:
+            room_page.disconnect()
+            companion.disconnect()
+
+    def test_latency_probe_and_room_buffering_resume(self):
+        first = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        second = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            first.emit("join", {"username": "甲", "room": "sync-room"})
+            second.emit("join", {"username": "乙", "room": "sync-room"})
+            first.emit(
+                "video_event",
+                {
+                    "room": "sync-room",
+                    "type": "change_source",
+                    "time": 0,
+                    "source": direct_source(),
+                },
+            )
+            first.emit(
+                "video_event",
+                {"room": "sync-room", "type": "play", "time": 5},
+            )
+            first.get_received()
+            second.get_received()
+
+            sent_at = int(time.time() * 1000)
+            second.emit(
+                "sync_ping",
+                {"room": "sync-room", "client_time": sent_at},
+            )
+            pong_events = [
+                item["args"][0]
+                for item in second.get_received()
+                if item["name"] == "sync_pong"
+            ]
+            self.assertEqual(pong_events[-1]["client_time"], sent_at)
+            self.assertIsInstance(pong_events[-1]["server_time"], float)
+
+            second.emit(
+                "buffering_event",
+                {"room": "sync-room", "active": True, "time": 4.5},
+            )
+            paused_events = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "buffering_state"
+            ]
+            self.assertTrue(paused_events[-1]["active"])
+            self.assertEqual(paused_events[-1]["buffering_users"], ["乙"])
+            self.assertGreaterEqual(paused_events[-1]["time"], 5)
+
+            second.emit(
+                "buffering_event",
+                {"room": "sync-room", "active": False, "time": 5},
+            )
+            resumed_events = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "buffering_state"
+            ]
+            resumed = resumed_events[-1]
+            self.assertFalse(resumed["active"])
+            self.assertTrue(resumed["playing"])
+            self.assertGreater(resumed["resume_at"], resumed["server_time"])
+        finally:
+            first.disconnect()
+            second.disconnect()
+
+    def test_multi_member_call_signaling(self):
+        first = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        second = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            first.emit("join", {"username": "甲", "room": "call-room"})
+            second.emit("join", {"username": "乙", "room": "call-room"})
+            first.get_received()
+            second.get_received()
+
+            first.emit("call_join", {"room": "call-room"})
+            first_ready = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "call_ready"
+            ][-1]
+            first_id = first_ready["self_id"]
+            self.assertEqual(first_ready["members"], [])
+            self.assertTrue(first_ready["ice_servers"])
+            self.assertEqual(
+                first_ready["turn_configured"],
+                application.TURN_CONFIGURED,
+            )
+
+            second.emit("call_join", {"room": "call-room"})
+            second_received = second.get_received()
+            second_ready = [
+                item["args"][0]
+                for item in second_received
+                if item["name"] == "call_ready"
+            ][-1]
+            second_id = second_ready["self_id"]
+            self.assertEqual(second_ready["members"][0]["id"], first_id)
+
+            first.get_received()
+            second.emit(
+                "webrtc_offer",
+                {
+                    "room": "call-room",
+                    "target": first_id,
+                    "description": {"type": "offer", "sdp": "test-sdp"},
+                },
+            )
+            offers = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "webrtc_offer"
+            ]
+            self.assertEqual(offers[-1]["from"], second_id)
+            self.assertEqual(offers[-1]["description"]["type"], "offer")
+
+            second.emit(
+                "call_mute",
+                {"room": "call-room", "muted": True},
+            )
+            updates = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "call_member_updated"
+            ]
+            self.assertEqual(updates[-1], {"id": second_id, "muted": True})
+        finally:
+            first.disconnect()
+            second.disconnect()
+
+    def test_direct_source_switch_preserves_room_position(self):
+        first = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        second = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            first.emit("join", {"username": "甲", "room": "direct-room"})
+            second.emit("join", {"username": "乙", "room": "direct-room"})
+            first.get_received()
+            second.get_received()
+
+            first.emit(
+                "video_event",
+                {
+                    "room": "direct-room",
+                    "type": "change_source",
+                    "time": 0,
+                    "source": direct_source("https://cdn.example.com/source.mp4"),
+                },
+            )
+            first.emit(
+                "video_event",
+                {
+                    "room": "direct-room",
+                    "type": "change_source",
+                    "time": 42.25,
+                    "source": direct_source("https://cdn.example.com/master.m3u8"),
+                    "preserve_position": True,
+                    "resume_playing": True,
+                },
+            )
+            switches = [
+                item["args"][0]
+                for item in second.get_received()
+                if item["name"] == "sync_video"
+                and item["args"][0]["type"] == "change_source"
+            ]
+            latest = switches[-1]
+            self.assertTrue(latest["preserve_position"])
+            self.assertTrue(latest["playing"])
+            self.assertEqual(latest["time"], 42.25)
+            self.assertEqual(latest["source"]["mode"], "direct_media")
+
+            second.emit("request_room_state", {"room": "direct-room"})
+            states = [
+                item["args"][0]
+                for item in second.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertTrue(states[-1]["playing"])
+            self.assertGreaterEqual(states[-1]["time"], 42.25)
+            self.assertEqual(
+                states[-1]["media_source"]["media_url"],
+                "https://cdn.example.com/master.m3u8",
+            )
+        finally:
+            first.disconnect()
+            second.disconnect()
+
+    def test_legacy_socket_source_is_ignored(self):
+        client = application.socketio.test_client(
+            application.app,
+            flask_test_client=self.client,
+        )
+        try:
+            client.emit("join", {"username": "甲", "room": "legacy-room"})
+            client.get_received()
+            client.emit(
+                "video_event",
+                {
+                    "room": "legacy-room",
+                    "type": "change_source",
+                    "time": 0,
+                    "src": "/static/uploads/old.mp4",
+                },
+            )
+            client.emit("request_room_state", {"room": "legacy-room"})
+            states = [
+                item
+                for item in client.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertEqual(states, [])
+        finally:
+            client.disconnect()
+
+
+if __name__ == "__main__":
+    unittest.main()

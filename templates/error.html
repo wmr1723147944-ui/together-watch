@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Together Watch</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <main class="landing-container">
+        <section class="glass-panel landing-panel error-panel">
+            <div class="error-icon">🛰️</div>
+            <h1>{{ title }}</h1>
+            <p>{{ message }}</p>
+            <a class="btn btn-block" href="/">返回首页</a>
+        </section>
+    </main>
+</body>
+</html>
