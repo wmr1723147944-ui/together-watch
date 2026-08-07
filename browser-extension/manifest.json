@@ -1,16 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Together Watch 观影伴侣",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "minimum_chrome_version": "116",
   "description": "在官方视频网站页面同步播放、暂停、进度、倍速和本机音量，不读取 Cookie 或媒体地址。",
   "permissions": [
     "storage",
     "tabs"
   ],
-  "optional_host_permissions": [
-    "http://*/*",
-    "https://*/*"
+  "host_permissions": [
+    "https://watchtogethernow.cloud/*"
   ],
   "background": {
     "service_worker": "background.js"

@@ -14,12 +14,47 @@ const DEFAULTS = {
     videoVolume: 100,
 };
 
+const TRUSTED_INVITE_SERVERS = new Set([
+    'https://watchtogethernow.cloud',
+]);
+
 let settings = { ...DEFAULTS };
 let socket = null;
 let target = null;
 let reconnectTimer = null;
 let clockSyncTimer = null;
 let serverClockOffset = 0;
+
+function generateClientKey() {
+    return Array.from(crypto.getRandomValues(new Uint8Array(24)), byte => (
+        byte.toString(16).padStart(2, '0')
+    )).join('');
+}
+
+function normalizeTrustedInvite(value) {
+    try {
+        const server = new URL(String(value?.server || '')).origin;
+        const room = String(value?.room || '').trim();
+        const username = String(value?.username || '观影成员')
+            .replace(/[\u0000-\u001f\u007f]/g, '')
+            .trim()
+            .slice(0, 32) || '观影成员';
+        const suppliedKey = String(value?.clientKey || value?.client_key || '');
+        if (!TRUSTED_INVITE_SERVERS.has(server)) return null;
+        if (!/^[\p{L}\p{N}_-]{4,64}$/u.test(room)) return null;
+        return {
+            server,
+            room,
+            username,
+            clientKey: /^[A-Za-z0-9_-]{16,96}$/.test(suppliedKey)
+                ? suppliedKey
+                : generateClientKey(),
+            enabled: true,
+        };
+    } catch (_error) {
+        return null;
+    }
+}
 
 function report(status, detail, tabId = target?.tabId) {
     if (!tabId) return;
@@ -204,6 +239,24 @@ function connect() {
 
 chrome.runtime.onMessage.addListener((message, sender) => {
     if (!message || !sender.tab?.id) return;
+
+    if (message.type === 'tw_accept_invite') {
+        const invite = normalizeTrustedInvite(message.config);
+        if (!invite) {
+            report('error', '房间邀请来源无效，已拒绝自动连接', sender.tab.id);
+            return;
+        }
+        setTarget(sender);
+        chrome.storage.local.set(invite, () => {
+            report('finding', `已自动加入房间 ${invite.room}，正在寻找播放器`, sender.tab.id);
+            chrome.tabs.sendMessage(
+                sender.tab.id,
+                { type: 'tw_clear_invite_hash' },
+                { frameId: Number(sender.frameId) || 0 },
+            ).catch(() => {});
+        });
+        return;
+    }
 
     if (message.type === 'tw_companion_status') {
         report(message.status, message.detail, sender.tab.id);

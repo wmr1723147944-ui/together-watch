@@ -25,6 +25,30 @@
         });
     }
 
+    function decodeInviteConfig() {
+        try {
+            const match = location.hash.match(/^#tw=([A-Za-z0-9_-]+)$/);
+            if (!match) return null;
+            const base64 = match[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=');
+            const bytes = Uint8Array.from(
+                atob(padded),
+                character => character.charCodeAt(0),
+            );
+            const config = JSON.parse(new TextDecoder().decode(bytes));
+            return config?.server && config?.room ? config : null;
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function acceptRoomInvite() {
+        const config = decodeInviteConfig();
+        if (!config) return;
+        notify({ type: 'tw_accept_invite', config });
+        report('finding', `已识别房间 ${config.room}，正在自动连接`);
+    }
+
     function findPrimaryVideo() {
         return [...document.querySelectorAll('video')]
             .filter(video => {
@@ -240,6 +264,7 @@
         }
     });
 
+    acceptRoomInvite();
     refreshPlayer();
     window.setInterval(refreshPlayer, 2000);
     window.addEventListener('beforeunload', () => {

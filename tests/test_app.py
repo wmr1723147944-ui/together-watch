@@ -1,5 +1,8 @@
+import io
+import json
 import time
 import unittest
+import zipfile
 from unittest.mock import patch
 
 import app as application
@@ -59,12 +62,14 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertEqual(room.status_code, 200)
         html = room.get_data(as_text=True)
         self.assertIn("粘贴官方视频网页", html)
-        self.assertIn("打开视频并连接", html)
+        self.assertIn("打开官方视频", html)
         self.assertIn(
-            'aria-label="识别来源并打开视频">打开视频并连接</button>',
+            'aria-label="识别并使用视频来源">使用这个链接</button>',
             html,
         )
-        self.assertIn("首次使用：下载插件", html)
+        self.assertIn("首次使用：安装浏览器助手", html)
+        self.assertIn("官方页面由原网站验证登录与会员权限", html)
+        self.assertIn("安装后从房间打开官方视频会自动连接", html)
         self.assertIn('id="videoVolumeSlider"', html)
         self.assertIn('id="callVolumeSlider"', html)
         self.assertIn('id="legalNoticeVersion"', html)
@@ -111,6 +116,13 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn(
             "attachment",
             extension.headers.get("Content-Disposition", ""),
+        )
+        with zipfile.ZipFile(io.BytesIO(extension.get_data())) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+        self.assertEqual(manifest["version"], "0.4.0")
+        self.assertIn(
+            "https://watchtogethernow.cloud/*",
+            manifest["host_permissions"],
         )
         extension.close()
 

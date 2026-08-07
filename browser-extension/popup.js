@@ -138,11 +138,11 @@ document.getElementById('saveBtn').addEventListener('click', async () => {
         if (!/^[\p{L}\p{N}_-]{4,64}$/u.test(config.room)) {
             throw new Error('房间号格式不正确');
         }
-        const granted = await chrome.permissions.request({
+        const granted = await chrome.permissions.contains({
             origins: [serverPermissionPattern(config.server)],
         });
         if (!granted) {
-            throw new Error('需要允许扩展连接你的房间服务器');
+            throw new Error('该版本只允许连接 Together Watch 正式站点');
         }
         chrome.storage.local.set(config, () => {
             status.textContent = '已连接当前房间，可以直接开始播放。';
