@@ -93,6 +93,15 @@ WEBRTC_ICE_SERVERS=
 
 个人测试阶段，两项 `AUTHORIZED_*` 建议保持空白。只有你能留存自有权利证明或有效书面授权时，才填写媒体或网页域名；不要把免费视频站、会员媒体域名或临时播放地址加入白名单。
 
+ICP备案后的正式站点若要增加自有或获授权媒体，不必手工编辑环境文件，也不必逐条登记视频。把媒体域名或一条完整直链交给管理脚本即可：
+
+```bash
+python3 scripts/manage_media_hosts.py --env-file .env.server add https://media.example.com/video/movie.mp4 --confirm-rights
+sudo docker compose --env-file .env.server up -d --force-recreate app
+```
+
+脚本只记录域名，并拒绝本机/IP地址和已知官方视频平台。使用 `python3 scripts/manage_media_hosts.py --env-file .env.server list` 查看当前规则，使用 `remove 域名` 移除授权到期或被投诉的来源。
+
 按 `Ctrl+O`、回车保存，再按 `Ctrl+X` 退出。`.env.server` 已被 Git 和 Docker 忽略，不会上传到 GitHub，也不要把它截图公开。
 
 ### 5. 一条命令启动
@@ -174,7 +183,7 @@ Caddy 的证书保存在 Docker 数据卷中，不要执行 `docker compose down
 - 两台设备使用不同网络，连续观看 30 分钟；播放、暂停、拖动和缓冲恢复都能重新对齐。
 - 官方页面双方打开同一集、同一版本；扩展角标显示“✓”。
 - 语音测试覆盖直连和 TURN 中继，通话过程中视频声音不变调。
-- `/health` 显示旧媒体解析链路关闭，扩展安装包存在。
+- `/health` 显示旧媒体解析链路关闭、授权媒体域名规则数量正确、扩展安装包存在。
 - 首页可以打开用户协议、隐私政策和版权投诉页面；用户未确认协议时不能进入房间。
 - 任意第三方 MP4/M3U8 地址会被拒绝；只在确有自有权利或书面授权时配置 `AUTHORIZED_MEDIA_HOSTS`。
 

@@ -70,6 +70,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("首次使用：安装浏览器助手", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
         self.assertIn("安装后从房间打开官方视频会自动连接", html)
+        self.assertIn("已登记 1 条域名规则", html)
         self.assertIn('id="videoVolumeSlider"', html)
         self.assertIn('id="callVolumeSlider"', html)
         self.assertIn('id="legalNoticeVersion"', html)
@@ -103,6 +104,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertTrue(payload["compliance_mode"])
         self.assertFalse(payload["legacy_media_pipeline"])
         self.assertTrue(payload["authorized_media_enabled"])
+        self.assertEqual(payload["authorized_media_host_rules"], 1)
         self.assertIsInstance(payload["copyright_contact_configured"], bool)
         self.assertIsInstance(payload["service_operator_configured"], bool)
         self.assertIsInstance(payload["public_launch_ready"], bool)
@@ -221,6 +223,8 @@ class TogetherWatchTests(unittest.TestCase):
             )
         self.assertEqual(media.status_code, 403)
         self.assertEqual(media.get_json()["code"], "media_host_not_authorized")
+        self.assertEqual(media.get_json()["hostname"], "cdn.example.com")
+        self.assertEqual(media.get_json()["source_kind"], "direct_media")
 
         page = self.client.post(
             "/resolve_source",
@@ -235,6 +239,16 @@ class TogetherWatchTests(unittest.TestCase):
         )
         self.assertEqual(insecure.status_code, 400)
         self.assertEqual(insecure.get_json()["code"], "media_requires_https")
+
+        official_direct = self.client.post(
+            "/resolve_source",
+            json={"url": "https://v.qq.com/member/movie.m3u8"},
+        )
+        self.assertEqual(official_direct.status_code, 403)
+        self.assertEqual(
+            official_direct.get_json()["code"],
+            "official_media_direct_forbidden",
+        )
 
     def test_production_requires_operator_and_complaint_contact(self):
         with (

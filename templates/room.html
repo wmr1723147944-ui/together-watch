@@ -107,6 +107,20 @@
                         </div>
                         <span class="safe-mode-mark">不提取 · 不代理</span>
                     </div>
+                    <div class="source-route-grid" aria-label="视频来源使用方式">
+                        <div class="source-route is-official">
+                            <strong>官方视频网页</strong>
+                            <span>每位成员在原网站登录；会员权限不共享，需要浏览器助手。</span>
+                        </div>
+                        <div class="source-route {% if authorized_media_enabled %}is-ready{% else %}is-disabled{% endif %}">
+                            <strong>自有或授权直链</strong>
+                            {% if authorized_media_enabled %}
+                            <span>已登记 {{ authorized_media_rule_count }} 条域名规则，MP4/M3U8 可直接粘贴，无需插件。</span>
+                            {% else %}
+                            <span>暂未登记媒体域名；确认拥有权利后，管理员按域名添加一次即可。</span>
+                            {% endif %}
+                        </div>
+                    </div>
                     <label class="sr-only" for="videoUrlInput">视频链接</label>
                     <div class="input-inline">
                         <input type="url" id="videoUrlInput" placeholder="粘贴官方视频页面或已登记的授权视频直链" autocomplete="url">

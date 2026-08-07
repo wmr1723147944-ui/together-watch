@@ -75,13 +75,19 @@ py -m venv .venv
 
 任意 MP4/M3U8 直链默认会被拒绝，不能由普通用户自行添加。只有管理员确认属于自有内容或已经取得足够授权后，才能把媒体域名写入 `AUTHORIZED_MEDIA_HOSTS`。登记后的媒体仍由源站直接发到每位成员的浏览器，本站不代理、不缓存。
 
-例如只允许 `media.example.com`：
+不需要逐条登记视频。服务器上可以直接把一个域名或完整媒体链接交给管理脚本：
 
-```env
-AUTHORIZED_MEDIA_HOSTS=media.example.com
+```bash
+python3 scripts/manage_media_hosts.py --env-file .env.server add https://media.example.com/videos/movie.mp4 --confirm-rights
 ```
 
-多个域名用英文逗号分隔。子域名不会被自动放行；确实需要时可明确写成 `*.media.example.com`。不要登记第三方影视站、会员媒体域名、临时签名域名或你无法持续证明授权的域名。
+脚本只保存 `media.example.com`，不会保存这条视频地址。重新创建应用容器后，同一域名下的合规 MP4/M3U8 都可以直接粘贴：
+
+```bash
+sudo docker compose --env-file .env.server up -d --force-recreate app
+```
+
+查看或移除域名可使用 `list`、`remove media.example.com`。子域名不会被自动放行；确实需要时可明确登记 `*.media.example.com`。管理脚本会拒绝本机地址、IP 地址和已知官方视频平台，避免把官方会员媒体直链误当成授权来源。不要登记第三方影视站、临时签名域名或你无法持续证明授权的域名。
 
 ## 双方网速不同时怎样保证观感
 

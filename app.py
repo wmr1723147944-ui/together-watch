@@ -165,7 +165,7 @@ KNOWN_VIDEO_PROVIDERS = (
     {
         "key": "iqiyi",
         "name": "爱奇艺",
-        "domains": ("iqiyi.com",),
+        "domains": ("iqiyi.com", "qiyi.com"),
     },
     {
         "key": "youku",
@@ -327,10 +327,18 @@ socketio = SocketIO(app, **socket_options)
 class UnsafeURLError(ValueError):
     """Raised when a URL could access a non-public network resource."""
 
-    def __init__(self, message, *, code="blocked_address", status_code=400):
+    def __init__(
+        self,
+        message,
+        *,
+        code="blocked_address",
+        status_code=400,
+        extra=None,
+    ):
         super().__init__(message)
         self.code = code
         self.status_code = status_code
+        self.extra = dict(extra or {})
 
 
 DIAGNOSTIC_CATALOG = {
@@ -357,12 +365,17 @@ DIAGNOSTIC_CATALOG = {
     "page_host_not_authorized": {
         "stage": "来源合规检查",
         "reason": "该网页不在本站允许同步的官方平台或管理员授权域名中。",
-        "suggestion": "请使用受支持的官方视频页面；自有网页需由管理员先登记域名。",
+        "suggestion": "普通网页无法通用解析；请使用受支持的官方页面，或改用自有/已授权的媒体直链。",
     },
     "media_host_not_authorized": {
         "stage": "来源合规检查",
-        "reason": "任意 MP4/M3U8 直链默认不接受，该媒体域名尚未登记为自有或已授权来源。",
-        "suggestion": "请改用官方视频页面；自有或已获授权的媒体请联系管理员登记域名。",
+        "reason": "这是媒体直链，但它所在的域名尚未登记为自有或已授权来源。",
+        "suggestion": "无需逐条登记视频；管理员确认权利后，只需登记一次该媒体域名。",
+    },
+    "official_media_direct_forbidden": {
+        "stage": "会员权限保护",
+        "reason": "官方视频平台的媒体直链不能作为授权直链使用，以免绕过原网站登录或会员校验。",
+        "suggestion": "请粘贴该视频的官方播放页面，让每位成员使用自己的账号和观看权限。",
     },
     "media_requires_https": {
         "stage": "传输安全检查",
@@ -482,7 +495,7 @@ def unsafe_url_response(error):
         diagnostic_payload(
             getattr(error, "code", "blocked_address"),
             error=str(error),
-            extra={"ok": False},
+            extra={"ok": False, **getattr(error, "extra", {})},
         )
     ), getattr(error, "status_code", 400)
 
@@ -806,6 +819,18 @@ def resolve_media_source(raw_url):
     hostname = (parsed.hostname or "").rstrip(".").lower()
 
     if is_direct_media_url(target_url):
+        official_provider, _ = identify_video_provider(target_url)
+        if official_provider:
+            raise UnsafeURLError(
+                f"{official_provider['name']}媒体直链已被拒绝",
+                code="official_media_direct_forbidden",
+                status_code=403,
+                extra={
+                    "source_kind": "official_media_direct",
+                    "hostname": hostname,
+                    "provider_key": official_provider["key"],
+                },
+            )
         if parsed.scheme != "https":
             raise UnsafeURLError(
                 "已授权媒体只允许使用 HTTPS 链接",
@@ -814,9 +839,13 @@ def resolve_media_source(raw_url):
             )
         if not hostname_allowed(hostname, AUTHORIZED_MEDIA_HOSTS):
             raise UnsafeURLError(
-                "该媒体域名未登记为自有或已授权来源",
+                f"媒体域名 {hostname} 尚未登记",
                 code="media_host_not_authorized",
                 status_code=403,
+                extra={
+                    "source_kind": "direct_media",
+                    "hostname": hostname,
+                },
             )
         return {
             "mode": "direct_media",
@@ -838,9 +867,13 @@ def resolve_media_source(raw_url):
     provider, media_id = identify_video_provider(target_url)
     if not provider and not hostname_allowed(hostname, AUTHORIZED_PAGE_HOSTS):
         raise UnsafeURLError(
-            "该网页不是受支持的官方视频页面，也未被管理员登记",
+            f"网页域名 {hostname} 不在受支持范围内",
             code="page_host_not_authorized",
             status_code=403,
+            extra={
+                "source_kind": "web_page",
+                "hostname": hostname,
+            },
         )
     provider_key = provider["key"] if provider else "authorized-website"
     provider_name = provider["name"] if provider else f"已授权网页（{hostname}）"
@@ -1385,6 +1418,7 @@ def room(room_id):
         "room.html",
         room_id=room_id,
         authorized_media_enabled=bool(AUTHORIZED_MEDIA_HOSTS),
+        authorized_media_rule_count=len(AUTHORIZED_MEDIA_HOSTS),
         legal_notice_version=LEGAL_NOTICE_VERSION,
         show_deployment_warning=(
             APP_ENV == "production" and not PUBLIC_LAUNCH_READY
@@ -1410,6 +1444,7 @@ def health():
             "compliance_mode": True,
             "legacy_media_pipeline": ENABLE_LEGACY_MEDIA_PIPELINE,
             "authorized_media_enabled": bool(AUTHORIZED_MEDIA_HOSTS),
+            "authorized_media_host_rules": len(AUTHORIZED_MEDIA_HOSTS),
             "authorized_page_hosts": len(AUTHORIZED_PAGE_HOSTS),
             "copyright_contact_configured": COPYRIGHT_CONTACT_CONFIGURED,
             "service_operator_configured": SERVICE_OPERATOR_CONFIGURED,
