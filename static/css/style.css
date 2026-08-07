@@ -305,6 +305,26 @@ input:focus-visible {
     gap: 1rem;
 }
 
+.site-records {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 0.75rem;
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 0.74rem;
+    line-height: 1.5;
+}
+
+.site-records a {
+    text-decoration: underline;
+    text-decoration-color: rgba(255, 255, 255, 0.2);
+    text-underline-offset: 3px;
+}
+
+.site-records a:hover {
+    color: #72dcff;
+}
+
 .legal-page {
     overflow-y: auto;
 }

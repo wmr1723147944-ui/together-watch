@@ -45,6 +45,9 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn('href="/terms"', landing_html)
         self.assertIn('href="/privacy"', landing_html)
         self.assertIn('href="/copyright"', landing_html)
+        self.assertIn("一起看同步工具 - Together Watch", landing_html)
+        self.assertIn("冀ICP备2026030481号-1", landing_html)
+        self.assertIn('href="https://beian.miit.gov.cn/"', landing_html)
         self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
         self.assertIn("default-src 'self'", response.headers["Content-Security-Policy"])
         self.assertIn(
@@ -68,6 +71,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("/static/js/room-gate.js", html)
         self.assertNotIn("上传本地视频", html)
         self.assertIn("只同步，不共享会员权限", html)
+        self.assertIn("冀ICP备2026030481号-1", html)
 
         for path, marker in (
             ("/terms", "用户协议"),
@@ -77,6 +81,7 @@ class TogetherWatchTests(unittest.TestCase):
             legal_page = self.client.get(path)
             self.assertEqual(legal_page.status_code, 200)
             self.assertIn(marker, legal_page.get_data(as_text=True))
+            self.assertIn("冀ICP备2026030481号-1", legal_page.get_data(as_text=True))
 
         invalid_room = self.client.get("/room/x")
         self.assertEqual(invalid_room.status_code, 404)
