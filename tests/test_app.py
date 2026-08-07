@@ -496,6 +496,55 @@ class TogetherWatchTests(unittest.TestCase):
             paired.disconnect()
             other.disconnect()
 
+    def test_companions_can_sync_without_public_media_source(self):
+        first = application.socketio.test_client(
+            application.app,
+            flask_test_client=self.client,
+        )
+        second = application.socketio.test_client(
+            application.app,
+            flask_test_client=application.app.test_client(),
+        )
+        try:
+            first.emit(
+                "join",
+                {
+                    "username": "私人测试甲",
+                    "room": "private-sync-room",
+                    "role": "companion",
+                },
+            )
+            second.emit(
+                "join",
+                {
+                    "username": "私人测试乙",
+                    "room": "private-sync-room",
+                    "role": "companion",
+                },
+            )
+            first.get_received()
+            second.get_received()
+
+            first.emit(
+                "video_event",
+                {
+                    "room": "private-sync-room",
+                    "type": "play",
+                    "time": 18.5,
+                },
+            )
+            sync_events = [
+                item["args"][0]
+                for item in second.get_received()
+                if item["name"] == "sync_video"
+            ]
+            self.assertEqual(sync_events[-1]["type"], "play")
+            self.assertEqual(sync_events[-1]["time"], 18.5)
+            self.assertEqual(sync_events[-1]["username"], "私人测试甲")
+        finally:
+            first.disconnect()
+            second.disconnect()
+
     def test_latency_probe_and_room_buffering_resume(self):
         first = application.socketio.test_client(
             application.app,
