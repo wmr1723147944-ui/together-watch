@@ -21,6 +21,7 @@ const TRUSTED_INVITE_SERVERS = new Set([
 let settings = { ...DEFAULTS };
 let socket = null;
 let target = null;
+let overlayTabId = null;
 let reconnectTimer = null;
 let clockSyncTimer = null;
 let serverClockOffset = 0;
@@ -153,6 +154,29 @@ function sendToPlayer(eventName, payload) {
     });
 }
 
+function sendToOverlay(eventName, payload) {
+    const tabId = overlayTabId || target?.tabId;
+    if (!tabId) return;
+    chrome.tabs.sendMessage(
+        tabId,
+        {
+            type: 'tw_room_event',
+            eventName,
+            payload,
+            serverClockOffset,
+        },
+        { frameId: 0 },
+    ).catch(() => {});
+}
+
+function sendConnectionState(connected) {
+    sendToOverlay('companion_connection', {
+        connected: Boolean(connected),
+        room: settings.room,
+        username: settings.username || '观影成员',
+    });
+}
+
 function sendClockProbe() {
     socket?.emit('sync_ping', {
         room: settings.room,
@@ -180,11 +204,12 @@ function handleRoomEvent(eventName, payload) {
         }
         return;
     }
-    if (
-        ['room_state', 'buffering_state', 'sync_video', 'companion_command']
-            .includes(eventName)
-    ) {
+    if (['room_state', 'buffering_state', 'sync_video', 'companion_command'].includes(eventName)) {
         sendToPlayer(eventName, payload);
+        return;
+    }
+    if (['chat_message', 'status', 'presence', 'app_error'].includes(eventName)) {
+        sendToOverlay(eventName, payload);
     }
 }
 
@@ -213,6 +238,7 @@ function connect() {
                 role: 'companion',
                 client_key: settings.clientKey,
             });
+            sendConnectionState(true);
             sendToPlayer('companion_command', {
                 command: 'set_volume',
                 value: Math.max(0, Math.min(1, Number(settings.videoVolume) / 100)),
@@ -226,9 +252,13 @@ function connect() {
         close: () => {
             clearInterval(clockSyncTimer);
             report('error', '同步连接已断开，正在重连');
+            sendConnectionState(false);
             scheduleReconnect();
         },
-        error: () => report('error', '无法连接房间服务器'),
+        error: () => {
+            report('error', '无法连接房间服务器');
+            sendConnectionState(false);
+        },
     });
     try {
         socket.connect();
@@ -247,6 +277,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
             return;
         }
         setTarget(sender);
+        overlayTabId = sender.tab.id;
         chrome.storage.local.set(invite, () => {
             report('finding', `已自动加入房间 ${invite.room}，正在寻找播放器`, sender.tab.id);
             chrome.tabs.sendMessage(
@@ -262,17 +293,43 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         report(message.status, message.detail, sender.tab.id);
         return;
     }
+    if (message.type === 'tw_overlay_ready') {
+        if (target && target.tabId !== sender.tab.id) return;
+        overlayTabId = sender.tab.id;
+        if (settings.enabled && settings.server && settings.room) {
+            sendConnectionState(Boolean(socket?.ready));
+        }
+        return;
+    }
     if (message.type === 'tw_player_ready') {
         const changedTarget = (
             target?.tabId !== sender.tab.id
             || target?.frameId !== (Number(sender.frameId) || 0)
         );
         setTarget(sender);
+        overlayTabId = sender.tab.id;
         report(socket?.ready ? 'connected' : 'finding', '已找到官方页面播放器');
         if (changedTarget || !socket?.ready) connect();
         sendToPlayer('companion_command', {
             command: 'set_volume',
             value: Math.max(0, Math.min(1, Number(settings.videoVolume) / 100)),
+        });
+        sendConnectionState(Boolean(socket?.ready));
+        return;
+    }
+    if (message.type === 'tw_chat_message') {
+        if (sender.tab.id !== (overlayTabId || target?.tabId)) return;
+        const chatMessage = String(message.payload?.message || '')
+            .replace(/[\u0000-\u001f\u007f]/g, '')
+            .trim()
+            .slice(0, 500);
+        if (!chatMessage || !socket?.ready) {
+            sendConnectionState(false);
+            return;
+        }
+        socket.emit('chat_message', {
+            room: settings.room,
+            message: chatMessage,
         });
         return;
     }
@@ -294,6 +351,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
 });
 
 chrome.tabs.onRemoved.addListener(tabId => {
+    if (overlayTabId === tabId) overlayTabId = null;
     if (target?.tabId !== tabId) return;
     target = null;
     socket?.close();

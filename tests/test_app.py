@@ -62,14 +62,14 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertEqual(room.status_code, 200)
         html = room.get_data(as_text=True)
         self.assertIn("粘贴官方视频网页", html)
-        self.assertIn("打开官方视频", html)
+        self.assertIn("打开视频并在播放页聊天", html)
         self.assertIn(
             'aria-label="识别并使用视频来源">使用这个链接</button>',
             html,
         )
         self.assertIn("首次使用：安装浏览器助手", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
-        self.assertIn("安装后从房间打开官方视频会自动连接", html)
+        self.assertIn("播放页显示悬浮聊天室", html)
         self.assertIn("已登记 1 条域名规则", html)
         self.assertIn('id="videoVolumeSlider"', html)
         self.assertIn('id="callVolumeSlider"', html)
@@ -121,7 +121,7 @@ class TogetherWatchTests(unittest.TestCase):
         )
         with zipfile.ZipFile(io.BytesIO(extension.get_data())) as archive:
             manifest = json.loads(archive.read("manifest.json"))
-        self.assertEqual(manifest["version"], "0.4.0")
+        self.assertEqual(manifest["version"], "0.5.0")
         self.assertIn(
             "https://watchtogethernow.cloud/*",
             manifest["host_permissions"],
@@ -408,6 +408,18 @@ class TogetherWatchTests(unittest.TestCase):
             ][-1]
             self.assertEqual(presence["count"], 1)
             self.assertEqual(presence["users"], ["甲"])
+
+            companion.emit(
+                "chat_message",
+                {"room": "companion-room", "message": "播放页里的消息"},
+            )
+            chat_events = [
+                item["args"][0]
+                for item in room_page.get_received()
+                if item["name"] == "chat_message"
+            ]
+            self.assertEqual(chat_events[-1]["username"], "甲")
+            self.assertEqual(chat_events[-1]["message"], "播放页里的消息")
         finally:
             room_page.disconnect()
             companion.disconnect()

@@ -1426,12 +1426,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     ? `已识别：${data.source.provider_name}官方页面`
                     : '已识别管理员登记的授权媒体',
                 suggestion: isOfficialPage
-                    ? '如果浏览器没有自动打开新页面，请点击画面中的“打开视频并连接”。'
+                    ? '为避免打断聊天室，页面不会自动跳转；准备好后点击画面中的“打开视频并连接”。'
                     : '视频将由每位成员的浏览器直接加载，本站不会中转流量。',
             });
-            if (isOfficialPage) {
-                openOfficialPageBtn.click();
-            }
         } catch (error) {
             if (error.code === 'client_timeout') {
                 showUrlDiagnostic('error', {
@@ -1450,7 +1447,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } finally {
             loadUrlBtn.disabled = false;
-            loadUrlBtn.textContent = '打开视频并连接';
+            loadUrlBtn.textContent = '使用这个链接';
         }
     }
 
