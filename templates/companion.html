@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>免安装观影助手 - Together Watch</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="web-companion-page">
+    <main class="web-companion-shell">
+        <header class="web-companion-header">
+            <div>
+                <span class="eyebrow">免安装 · 跨浏览器</span>
+                <h1>一起看助手</h1>
+            </div>
+            <span id="webCompanionStatus" class="companion-status is-waiting">正在连接</span>
+        </header>
+
+        <section class="web-companion-config" aria-labelledby="webCompanionConfigTitle">
+            <div class="web-companion-section-heading">
+                <div>
+                    <strong id="webCompanionConfigTitle">当前连接</strong>
+                    <span id="webCompanionPlayerState">正在等待播放页回应…</span>
+                </div>
+                <span id="webCompanionOnline">在线人数获取中</span>
+            </div>
+            <div class="web-companion-fields">
+                <label>
+                    <span>房间号</span>
+                    <input id="webCompanionRoom" type="text" maxlength="64" autocomplete="off">
+                </label>
+                <label>
+                    <span>昵称</span>
+                    <input id="webCompanionUsername" type="text" maxlength="32" autocomplete="nickname">
+                </label>
+                <button id="webCompanionConnect" type="button" class="btn btn-small">连接房间</button>
+            </div>
+        </section>
+
+        <section class="web-companion-chat" aria-label="房间聊天">
+            <div id="webCompanionMessages" class="web-companion-messages" aria-live="polite">
+                <div class="message system">助手窗口需要保持打开，可以最小化。</div>
+            </div>
+            <div class="web-companion-composer">
+                <label class="sr-only" for="webCompanionChatInput">聊天消息</label>
+                <input id="webCompanionChatInput" type="text" maxlength="500" placeholder="连接后可以聊天" disabled>
+                <button id="webCompanionSend" type="button" class="btn btn-small" disabled>发送</button>
+            </div>
+        </section>
+
+        <p id="webCompanionHelp" class="web-companion-help">
+            只同步播放状态和聊天，不读取账号、Cookie 或视频地址。
+        </p>
+        <nav class="legal-links" aria-label="法律与合规">
+            <span>合规版本 {{ legal_notice_version }}</span>
+            <a href="/privacy" target="_blank">隐私政策</a>
+            <a href="/copyright" target="_blank">版权投诉</a>
+        </nav>
+    </main>
+
+    <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/web-companion.js') }}" defer></script>
+</body>
+</html>

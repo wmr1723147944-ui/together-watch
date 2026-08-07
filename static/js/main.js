@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
             byte.toString(16).padStart(2, '0')
         )).join('');
     localStorage.setItem('tw_client_key', clientKey);
+    localStorage.setItem('tw_last_room', roomId);
 
     const videoPlayer = document.getElementById('mainVideo');
     const videoEmptyState = document.getElementById('videoEmptyState');
@@ -28,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const officialSourceTitle = document.getElementById('officialSourceTitle');
     const officialSourceDescription = document.getElementById('officialSourceDescription');
     const openOfficialPageBtn = document.getElementById('openOfficialPageBtn');
+    const bookmarkletLink = document.getElementById('bookmarkletLink');
+    const copyBookmarkletBtn = document.getElementById('copyBookmarkletBtn');
     const copyCompanionConfigBtn = document.getElementById('copyCompanionConfigBtn');
     const officialPlaybackState = document.getElementById('officialPlaybackState');
     const qualityControl = document.getElementById('qualityControl');
@@ -46,6 +49,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const videoVolumeValue = document.getElementById('videoVolumeValue');
     const volumeHelp = document.getElementById('volumeHelp');
     const companionStatusBadge = document.getElementById('companionStatusBadge');
+    const bookmarkletHref = window.TogetherWatchBookmarklet?.buildHref?.(window.location.origin) || '';
+    if (bookmarkletLink && bookmarkletHref) bookmarkletLink.href = bookmarkletHref;
 
     function showUrlDiagnostic(kind, payload = {}) {
         if (!urlStatus) return;
@@ -556,7 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
         companionStatusBadge.className = (
             `companion-status ${companionConnected ? 'is-connected' : 'is-waiting'}`
         );
-        companionStatusBadge.textContent = companionConnected ? '插件已连接' : '插件未连接';
+        companionStatusBadge.textContent = companionConnected ? '助手已连接' : '助手未连接';
     }
 
     function updateVolumeHelp() {
@@ -570,7 +575,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (activeMediaSource?.mode === 'official_page') {
             volumeHelp.textContent = companionConnected
                 ? '视频音量正在控制你的官方视频标签页；通话音量只影响房间语音。'
-                : '先打开官方视频并连接插件，视频音量才能从这里调整。';
+                : '先打开官方视频并连接书签助手或插件，视频音量才能从这里调整。';
         } else {
             volumeHelp.textContent = '视频音量只影响当前播放器；通话音量只影响房间语音。';
         }
@@ -611,7 +616,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const minutes = Math.floor(seconds / 60);
         const remainder = Math.floor(seconds % 60).toString().padStart(2, '0');
         const status = state.playing ? '房间正在播放' : '房间已暂停';
-        officialPlaybackState.textContent = `${status} · ${minutes}:${remainder} · 由观影伴侣同步官方页面`;
+        officialPlaybackState.textContent = `${status} · ${minutes}:${remainder} · 由观影助手同步播放页`;
     }
 
     function showOfficialPageSource(source, state = null) {
@@ -1463,17 +1468,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function copyPlainText(text, done, failureMessage) {
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => {
+                addSystemMessage(failureMessage);
+            });
+            return;
+        }
+        const helper = document.createElement('textarea');
+        helper.value = text;
+        helper.style.position = 'fixed';
+        helper.style.opacity = '0';
+        document.body.appendChild(helper);
+        helper.select();
+        if (document.execCommand('copy')) done();
+        else addSystemMessage(failureMessage);
+        helper.remove();
+    }
+
+    bookmarkletLink?.addEventListener('click', event => {
+        event.preventDefault();
+        addSystemMessage('请把“一起看助手”按钮拖到浏览器书签栏；进入视频播放页后再点击该书签。');
+    });
+    bookmarkletLink?.addEventListener('dragstart', event => {
+        if (!bookmarkletHref || !event.dataTransfer) return;
+        event.dataTransfer.setData('text/uri-list', bookmarkletHref);
+        event.dataTransfer.setData('text/plain', bookmarkletHref);
+        event.dataTransfer.effectAllowed = 'copyLink';
+    });
+    copyBookmarkletBtn?.addEventListener('click', () => {
+        if (!bookmarkletHref) {
+            addSystemMessage('书签助手代码生成失败，请刷新房间页面。');
+            return;
+        }
+        copyPlainText(
+            bookmarkletHref,
+            () => {
+                copyBookmarkletBtn.textContent = '助手代码已复制';
+                window.setTimeout(() => {
+                    copyBookmarkletBtn.textContent = '复制助手代码';
+                }, 1500);
+                addSystemMessage('已复制。请新建一个书签，把代码粘贴到书签的网址栏。');
+            },
+            '复制失败，请使用拖拽方式添加书签助手。',
+        );
+    });
+
     copyCompanionConfigBtn?.addEventListener('click', () => {
         const config = JSON.stringify(companionConfig());
         const done = () => {
             copyCompanionConfigBtn.textContent = '配置已复制';
             window.setTimeout(() => {
-                copyCompanionConfigBtn.textContent = '复制伴侣配置';
+                copyCompanionConfigBtn.textContent = '复制插件连接配置';
             }, 1500);
         };
         if (navigator.clipboard?.writeText) {
             navigator.clipboard.writeText(config).then(done).catch(() => {
-                addSystemMessage('复制失败，请手动在观影伴侣中填写服务器和房间号。');
+                addSystemMessage('复制失败，请手动在浏览器插件中填写服务器和房间号。');
             });
         }
     });

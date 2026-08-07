@@ -85,6 +85,11 @@ def run(base_url):
     room = session.get(f"{base_url}/room/{room_id}", timeout=20)
     room.raise_for_status()
     expect("粘贴官方视频网页" in room.text, "房间页面内容不完整")
+    expect("拖到书签栏：一起看助手" in room.text, "房间缺少书签助手入口")
+
+    companion = session.get(f"{base_url}/companion", timeout=20)
+    companion.raise_for_status()
+    expect("免安装观影助手" in companion.text, "网页助手页面内容不完整")
 
     resolved = session.post(
         f"{base_url}/resolve_source",

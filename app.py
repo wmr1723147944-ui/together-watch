@@ -1426,6 +1426,14 @@ def room(room_id):
     )
 
 
+@app.route("/companion")
+def web_companion():
+    return render_template(
+        "companion.html",
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+    )
+
+
 @app.route("/health")
 def health():
     with room_lock:
@@ -2123,6 +2131,7 @@ def ensure_room_state(room_id, now=None):
             "updated_at": now,
             "resume_at": None,
             "revision": 0,
+            "external_playback": False,
         },
     )
 
@@ -2130,7 +2139,11 @@ def ensure_room_state(room_id, now=None):
 def current_room_state(room_id):
     with room_lock:
         state = room_states.get(room_id)
-        if not state or not (state.get("media_source") or state.get("video_src")):
+        if not state or not (
+            state.get("media_source")
+            or state.get("video_src")
+            or state.get("external_playback")
+        ):
             return None
         snapshot = dict(state)
 
@@ -2734,6 +2747,7 @@ def handle_video_event(data):
             state.update(
                 video_src=source,
                 media_source=media_source,
+                external_playback=False,
                 time=source_time,
                 playing=resume_playing,
                 speed=source_speed,
@@ -2750,11 +2764,17 @@ def handle_video_event(data):
                 preserve_position=preserve_position,
             )
         elif event_type == "play":
+            if sid_roles.get(request.sid) == "companion":
+                state["external_playback"] = True
             state.update(time=event_time, playing=True, resume_at=None)
         elif event_type == "pause":
+            if sid_roles.get(request.sid) == "companion":
+                state["external_playback"] = True
             state.update(time=event_time, playing=False, resume_at=None)
             rooms_paused_for_buffering.discard(room_id)
         elif event_type == "seek":
+            if sid_roles.get(request.sid) == "companion":
+                state["external_playback"] = True
             state["time"] = event_time
         elif event_type == "speed":
             try:
@@ -2763,6 +2783,8 @@ def handle_video_event(data):
                 return
             if not math.isfinite(speed) or not 0.25 <= speed <= 4:
                 return
+            if sid_roles.get(request.sid) == "companion":
+                state["external_playback"] = True
             state.update(time=event_time, speed=speed)
             outgoing["speed"] = speed
 

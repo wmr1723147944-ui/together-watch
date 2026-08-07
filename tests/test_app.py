@@ -62,14 +62,16 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertEqual(room.status_code, 200)
         html = room.get_data(as_text=True)
         self.assertIn("粘贴官方视频网页", html)
-        self.assertIn("打开视频并在播放页聊天", html)
+        self.assertIn("打开视频页面", html)
         self.assertIn(
             'aria-label="识别并使用视频来源">使用这个链接</button>',
             html,
         )
-        self.assertIn("首次使用：安装浏览器助手", html)
+        self.assertIn("拖到书签栏：一起看助手", html)
+        self.assertIn("复制助手代码", html)
+        self.assertIn("/static/js/bookmarklet.js", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
-        self.assertIn("播放页显示悬浮聊天室", html)
+        self.assertIn("助手窗口需要保持打开", html)
         self.assertIn("已登记 1 条域名规则", html)
         self.assertIn('id="videoVolumeSlider"', html)
         self.assertIn('id="callVolumeSlider"', html)
@@ -78,6 +80,14 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertNotIn("上传本地视频", html)
         self.assertIn("只同步，不共享会员权限", html)
         self.assertIn("冀ICP备2026030481号-1", html)
+
+        companion = self.client.get("/companion")
+        self.assertEqual(companion.status_code, 200)
+        companion_html = companion.get_data(as_text=True)
+        self.assertIn("免安装观影助手", companion_html)
+        self.assertIn('id="webCompanionRoom"', companion_html)
+        self.assertIn("/static/js/web-companion.js", companion_html)
+        self.assertIn("不读取账号、Cookie 或视频地址", companion_html)
 
         for path, marker in (
             ("/terms", "用户协议"),
@@ -541,6 +551,17 @@ class TogetherWatchTests(unittest.TestCase):
             self.assertEqual(sync_events[-1]["type"], "play")
             self.assertEqual(sync_events[-1]["time"], 18.5)
             self.assertEqual(sync_events[-1]["username"], "私人测试甲")
+
+            second.emit("request_room_state", {"room": "private-sync-room"})
+            room_states = [
+                item["args"][0]
+                for item in second.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertTrue(room_states[-1]["external_playback"])
+            self.assertTrue(room_states[-1]["playing"])
+            self.assertGreaterEqual(room_states[-1]["time"], 18.5)
+            self.assertLess(room_states[-1]["time"], 19.5)
         finally:
             first.disconnect()
             second.disconnect()

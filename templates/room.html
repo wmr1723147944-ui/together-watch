@@ -54,21 +54,12 @@
                         </p>
                         <div class="official-source-actions">
                             <a id="openOfficialPageBtn" class="btn btn-small" href="#" target="_blank" rel="noopener noreferrer">
-                                打开视频并在播放页聊天
-                            </a>
-                            <a class="btn btn-secondary btn-small" href="/companion-extension.zip" download>
-                                首次使用：安装浏览器助手
+                                打开视频页面
                             </a>
                         </div>
                         <span id="officialPlaybackState" class="official-playback-state">
-                            不会自动跳转；打开视频后，播放页右侧会显示可收起的房间聊天室
+                            打开播放页后，点击浏览器书签栏中的“一起看助手”即可连接
                         </span>
-                        <details class="companion-manual">
-                            <summary>插件没有自动识别房间？</summary>
-                            <button type="button" id="copyCompanionConfigBtn" class="btn btn-secondary btn-small">
-                                复制手动连接配置
-                            </button>
-                        </details>
                     </div>
                     <div id="videoEmptyState" class="video-empty-state">
                         <span class="empty-icon">🎬</span>
@@ -110,7 +101,7 @@
                     <div class="source-route-grid" aria-label="视频来源使用方式">
                         <div class="source-route is-official">
                             <strong>官方视频网页</strong>
-                            <span>每位成员在原网站登录；会员权限不共享，需要浏览器助手。</span>
+                            <span>每位成员在原网站登录；优先使用免安装书签助手，特殊播放器再用插件。</span>
                         </div>
                         <div class="source-route {% if authorized_media_enabled %}is-ready{% else %}is-disabled{% endif %}">
                             <strong>自有或授权直链</strong>
@@ -121,6 +112,33 @@
                             {% endif %}
                         </div>
                     </div>
+                    <section class="bookmarklet-setup" aria-labelledby="bookmarkletSetupTitle">
+                        <div class="bookmarklet-setup-copy">
+                            <span class="safe-mode-mark">推荐 · 无需安装</span>
+                            <strong id="bookmarkletSetupTitle">让当前网页播放器加入房间</strong>
+                            <p>无需在这里粘贴或登记网址。按 Ctrl+Shift+B 显示书签栏，把按钮拖进去；以后到视频播放页点一次。</p>
+                        </div>
+                        <div class="bookmarklet-setup-actions">
+                            <a id="bookmarkletLink" class="btn btn-small bookmarklet-link" href="#" draggable="true">
+                                拖到书签栏：一起看助手
+                            </a>
+                            <button type="button" id="copyBookmarkletBtn" class="btn btn-secondary btn-small">
+                                复制助手代码
+                            </button>
+                        </div>
+                        <details class="companion-manual">
+                            <summary>书签助手找不到播放器？</summary>
+                            <p>跨域 iframe、加密或定制播放器可能无法由书签控制，可改用兼容性更强的浏览器插件。</p>
+                            <div class="companion-fallback-actions">
+                                <a class="btn btn-secondary btn-small" href="/companion-extension.zip" download>
+                                    下载插件备用
+                                </a>
+                                <button type="button" id="copyCompanionConfigBtn" class="btn btn-secondary btn-small">
+                                    复制插件连接配置
+                                </button>
+                            </div>
+                        </details>
+                    </section>
                     <label class="sr-only" for="videoUrlInput">视频链接</label>
                     <div class="input-inline">
                         <input type="url" id="videoUrlInput" placeholder="粘贴官方视频页面或已登记的授权视频直链" autocomplete="url">
@@ -132,9 +150,10 @@
                     </div>
                     <div id="urlStatus" class="control-status" role="status" aria-live="polite"></div>
                     <details class="companion-help">
-                        <summary>官方页面为什么需要观影伴侣扩展？</summary>
-                        <p>多数视频网站禁止其他网页直接控制播放器。扩展只同步播放、暂停、进度和倍速，不读取 Cookie、账号或真实媒体地址。</p>
-                        <p>浏览器不允许网站静默安装扩展。测试阶段需下载并确认安装一次；安装后从房间打开视频页面会自动连接，并在播放页显示悬浮聊天室。</p>
+                        <summary>免安装书签助手怎么用？</summary>
+                        <p>在电脑浏览器按 Ctrl+Shift+B 显示书签栏，把“拖到书签栏：一起看助手”按钮拖进去。进入播放页后点击该书签，小助手窗口会自动加入最近访问的房间。</p>
+                        <p>书签助手只同步 HTML5 播放、暂停、进度、倍速和聊天，不读取 Cookie、账号或真实媒体地址。助手窗口需要保持打开，但可以最小化。</p>
+                        <p>跨域 iframe、加密或定制播放器可能无法识别，此时才需要插件。手机浏览器对书签脚本支持不一致，手机端建议使用站内授权播放器。</p>
                         <p>自有或获得书面授权的 MP4/M3U8 直链由管理员登记域名后可直接粘贴播放，不需要扩展。</p>
                     </details>
                 </section>
@@ -156,7 +175,7 @@
                             <strong id="audioMixerTitle">本机声音</strong>
                             <span>两个音量互不影响，也不会改变其他成员的声音</span>
                         </div>
-                        <span id="companionStatusBadge" class="companion-status is-waiting">插件未连接</span>
+                        <span id="companionStatusBadge" class="companion-status is-waiting">助手未连接</span>
                     </div>
                     <div class="volume-controls">
                         <label class="volume-control" for="videoVolumeSlider">
@@ -171,7 +190,7 @@
                         </label>
                     </div>
                     <p id="volumeHelp" class="volume-help">
-                        官方网页需要先连接观影伴侣插件；视频音量与通话音量互不影响。
+                        官方网页需要先连接书签助手或插件；视频音量与通话音量互不影响。
                     </p>
                 </section>
                 <nav class="legal-links room-legal-links" aria-label="法律与合规">
@@ -224,6 +243,7 @@
     <script src="{{ url_for('static', filename='vendor/hls-1.5.18.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/bookmarklet.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
 </body>
 </html>
