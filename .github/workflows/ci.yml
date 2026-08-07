@@ -30,12 +30,20 @@ jobs:
       - name: Validate VPS Compose configuration
         run: docker compose --env-file .env.server.example config --quiet
       - name: Validate Caddy configuration
-        run: >-
-          docker run --rm
-          -e DOMAIN=watch.example.com
-          -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro"
-          caddy:2-alpine
-          caddy validate --config /etc/caddy/Caddyfile
+        run: |
+          for attempt in 1 2 3; do
+            if docker run --rm \
+              -e DOMAIN=watch.example.com \
+              -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+              caddy:2-alpine \
+              caddy validate --config /etc/caddy/Caddyfile; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+            sleep $((attempt * 5))
+          done
       - name: Build production image
         run: docker build -t together-watch:test .
       - name: Start production container
