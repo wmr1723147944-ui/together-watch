@@ -40,7 +40,7 @@
 
         <section class="web-companion-chat" aria-label="房间聊天">
             <div id="webCompanionMessages" class="web-companion-messages" aria-live="polite">
-                <div class="message system">助手窗口需要保持打开，可以最小化。</div>
+                <div class="message system">连接后请回到视频页面使用右侧房间面板；本窗口可最小化但不要关闭。</div>
             </div>
             <div class="web-companion-composer">
                 <label class="sr-only" for="webCompanionChatInput">聊天消息</label>
@@ -60,6 +60,6 @@
     </main>
 
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/web-companion.js', v='20260808-frames') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/web-companion.js', v='20260808-overlay') }}" defer></script>
 </body>
 </html>

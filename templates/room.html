@@ -116,7 +116,7 @@
                         <div class="bookmarklet-setup-copy">
                             <span class="safe-mode-mark">推荐 · 无需安装</span>
                             <strong id="bookmarkletSetupTitle">让当前网页播放器加入房间</strong>
-                            <p>无需在这里粘贴或登记网址。按 Ctrl+Shift+B 显示书签栏，把按钮拖进去；以后到视频播放页点一次。</p>
+                            <p>无需在这里粘贴或登记网址。到视频播放页点一次书签，房间聊天和同步状态会直接显示在视频右侧。</p>
                         </div>
                         <div class="bookmarklet-setup-actions">
                             <a id="bookmarkletLink" class="btn btn-small bookmarklet-link" href="#" draggable="true">
@@ -151,8 +151,8 @@
                     <div id="urlStatus" class="control-status" role="status" aria-live="polite"></div>
                     <details class="companion-help">
                         <summary>免安装书签助手怎么用？</summary>
-                        <p>在电脑浏览器按 Ctrl+Shift+B 显示书签栏，把“拖到书签栏：一起看助手”按钮拖进去。进入播放页后点击该书签，小助手窗口会自动加入最近访问的房间。</p>
-                        <p>书签助手只同步 HTML5 播放、暂停、进度、倍速和聊天，不读取 Cookie、账号或真实媒体地址。助手窗口需要保持打开，但可以最小化。</p>
+                        <p>在电脑浏览器按 Ctrl+Shift+B 显示书签栏，把“拖到书签栏：一起看助手”按钮拖进去。进入播放页后点击该书签，右侧会出现房间侧栏，可直接查看在线成员和聊天。</p>
+                        <p>书签助手只同步 HTML5 播放、暂停、进度、倍速和聊天，不读取 Cookie、账号或真实媒体地址。后台助手窗口需要保持打开，但连接后会把焦点还给视频页，可以最小化。</p>
                         <p>跨域 iframe、加密或定制播放器可能无法识别，此时才需要插件。手机浏览器对书签脚本支持不一致，手机端建议使用站内授权播放器。</p>
                         <p>自有或获得书面授权的 MP4/M3U8 直链由管理员登记域名后可直接粘贴播放，不需要扩展。</p>
                     </details>
@@ -243,7 +243,7 @@
     <script src="{{ url_for('static', filename='vendor/hls-1.5.18.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260808-frames') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260808-overlay') }}" defer></script>
     <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
 </body>
 </html>

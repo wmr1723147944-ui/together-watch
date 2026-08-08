@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let targetReady = false;
     let serverClockOffset = 0;
     let clockSyncTimer = null;
+    let onlineCount = null;
 
     function readStorage(key, fallback = '') {
         try {
@@ -54,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function setStatus(kind, text) {
         statusBadge.className = `companion-status ${kind === 'connected' ? 'is-connected' : 'is-waiting'}`;
         statusBadge.textContent = text;
+        postToTarget('companion_status', { kind, text });
     }
 
     function messageTime(value) {
@@ -88,6 +90,14 @@ document.addEventListener('DOMContentLoaded', () => {
         messages.appendChild(item);
         while (messages.children.length > 100) messages.firstElementChild?.remove();
         messages.scrollTop = messages.scrollHeight;
+        postToTarget('chat_event', {
+            system,
+            message: {
+                username: system ? '' : String(payload.username || '房间成员').slice(0, 32),
+                message: text,
+                sent_at: Number(payload.sent_at) || Date.now(),
+            },
+        });
     }
 
     function postToTarget(type, payload = {}) {
@@ -106,6 +116,15 @@ document.addEventListener('DOMContentLoaded', () => {
         playerState.textContent = targetReady
             ? '已找到播放页中的 HTML5 视频'
             : String(reason || '正在等待播放页回应…').slice(0, 120);
+    }
+
+    function pushOverlayState() {
+        postToTarget('overlay_state', {
+            connected: Boolean(socket?.connected),
+            room: activeRoom,
+            username: activeUsername,
+            online: Number.isFinite(onlineCount) ? onlineCount : null,
+        });
     }
 
     function validateRoom(value) {
@@ -156,6 +175,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         activeRoom = room;
         activeUsername = username;
+        onlineCount = null;
+        onlineState.textContent = '在线人数获取中';
         clientKey = readStorage('tw_client_key');
         if (!/^[A-Za-z0-9_-]{16,96}$/.test(clientKey)) clientKey = generateClientKey();
         writeStorage('tw_last_room', activeRoom);
@@ -182,7 +203,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 connected: true,
                 room: activeRoom,
                 username: activeUsername,
+                online: onlineCount,
             });
+            pushOverlayState();
             sendClockProbe();
             clockSyncTimer = window.setInterval(sendClockProbe, 10000);
             window.setTimeout(() => {
@@ -195,8 +218,12 @@ document.addEventListener('DOMContentLoaded', () => {
             chatInput.disabled = true;
             sendButton.disabled = true;
             postToTarget('connection', { connected: false, room: activeRoom });
+            pushOverlayState();
         });
-        socket.on('connect_error', () => setStatus('waiting', '连接失败'));
+        socket.on('connect_error', () => {
+            setStatus('waiting', '连接失败');
+            pushOverlayState();
+        });
         socket.on('sync_pong', payload => {
             const receivedAt = Date.now();
             const sentAt = Number(payload?.client_time);
@@ -216,14 +243,22 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.on('app_error', payload => addMessage(payload, true));
         socket.on('presence', payload => {
             const count = Number(payload?.count);
+            onlineCount = Number.isFinite(count) ? count : null;
             onlineState.textContent = Number.isFinite(count) ? `${count} 人在线` : '在线人数未知';
+            pushOverlayState();
         });
+    }
+
+    function submitChat(value) {
+        const message = String(value || '').trim().slice(0, 500);
+        if (!message || !socket?.connected) return;
+        socket.emit('chat_message', { room: activeRoom, message });
     }
 
     function sendChat() {
         const message = chatInput.value.trim();
-        if (!message || !socket?.connected) return;
-        socket.emit('chat_message', { room: activeRoom, message });
+        if (!message) return;
+        submitChat(message);
         chatInput.value = '';
         chatInput.focus();
     }
@@ -258,6 +293,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (data.type === 'buffering_event' && socket?.connected) {
             socket.emit('buffering_event', { room: activeRoom, ...data.payload });
+            return;
+        }
+        if (data.type === 'chat_submit') {
+            submitChat(data.payload?.message);
+            return;
+        }
+        if (data.type === 'overlay_request') {
+            pushOverlayState();
         }
     });
 
