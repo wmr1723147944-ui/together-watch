@@ -1,0 +1,42 @@
+name: android-apk
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "android-app/**"
+      - "static/js/bookmarklet.js"
+      - ".github/workflows/android.yml"
+
+jobs:
+  build-debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android 16 SDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.13"
+
+      - name: Build debug APK
+        run: gradle -p android-app :app:assembleDebug --stacktrace
+
+      - name: Upload test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: together-watch-android-debug
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

@@ -617,7 +617,10 @@
         ].join('');
     }
 
-    window.TogetherWatchBookmarklet = { buildHref };
+    window.TogetherWatchBookmarklet = {
+        buildHref,
+        start: startTogetherWatchBookmark,
+    };
 
     const currentScriptUrl = document.currentScript?.src;
     if (currentScriptUrl) {

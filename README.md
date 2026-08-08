@@ -106,6 +106,12 @@ sudo docker compose --env-file .env.server up -d --force-recreate app
 
 公网部署建议配置 TURN，否则部分运营商网络、公司网络或严格 NAT 环境下可能无法建立通话。当前语音采用 Mesh，适合小型房间；人数明显增加后应迁移到 SFU。
 
+## Android 测试版
+
+仓库中的 [`android-app`](android-app/) 是免书签的安卓 MVP：在 APP 内输入房间号和视频网页后，会自动加载现有同步助手，并提供“视频”和“房间/通话”两个常驻标签。第三方视频页不会获得 Android 原生桥接权限。
+
+推送安卓相关代码后，GitHub Actions 的 `android-apk` 工作流会生成 `app-debug.apk`。下载和安装步骤见 [`android-app/README.md`](android-app/README.md)。第一版只面向普通 HTML5 视频页面，不承诺兼容 DRM、强制官方 APP 或禁止 WebView 的平台。
+
 ## 本地与公网部署
 
 Docker 镜像不再安装 Chrome、Chromedriver 或 FFmpeg，因此体积和启动开销都更小：

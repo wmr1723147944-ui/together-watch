@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">一起看</string>
+    <string name="setup_title">一起看 · 安卓测试版</string>
+    <string name="setup_subtitle">输入房间号和视频网页，APP 会自动启动同步助手。</string>
+    <string name="nickname_hint">你的昵称</string>
+    <string name="room_hint">房间号或邀请链接</string>
+    <string name="video_url_hint">HTTPS 视频播放页地址</string>
+    <string name="consent_text">我已阅读并同意网站用户协议和隐私政策，只同步本人有权观看的内容</string>
+    <string name="open_video">打开视频并同步</string>
+    <string name="video_tab">视频</string>
+    <string name="room_tab">房间/通话</string>
+    <string name="setup_tab">重新设置</string>
+    <string name="status_preparing">准备中</string>
+</resources>

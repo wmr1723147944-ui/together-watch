@@ -70,7 +70,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("拖到书签栏：一起看助手", html)
         self.assertIn("复制助手代码", html)
         self.assertIn("/static/js/bookmarklet.js", html)
-        self.assertIn("20260808-sync", html)
+        self.assertIn("20260809-mobile", html)
         self.assertIn("20260808-audio", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
         self.assertIn("助手窗口需要保持打开", html)
@@ -98,6 +98,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("chat_submit", bookmarklet_script)
         self.assertIn("monitorPlayerState", bookmarklet_script)
         self.assertIn("Math.abs(current.time - expected) > 1.1", bookmarklet_script)
+        self.assertIn("start: startTogetherWatchBookmark", bookmarklet_script)
         with self.client.get("/static/js/web-companion.js") as script_response:
             companion_script = script_response.get_data(as_text=True)
         self.assertIn("overlay_state", companion_script)
