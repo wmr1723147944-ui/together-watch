@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let targetReady = false;
     let serverClockOffset = 0;
     let clockSyncTimer = null;
+    let roomStateTimer = null;
     let onlineCount = null;
 
     function readStorage(key, fallback = '') {
@@ -150,6 +151,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function disconnectSocket() {
         window.clearInterval(clockSyncTimer);
         clockSyncTimer = null;
+        window.clearInterval(roomStateTimer);
+        roomStateTimer = null;
         if (socket) {
             socket.removeAllListeners();
             socket.disconnect();
@@ -208,6 +211,11 @@ document.addEventListener('DOMContentLoaded', () => {
             pushOverlayState();
             sendClockProbe();
             clockSyncTimer = window.setInterval(sendClockProbe, 10000);
+            roomStateTimer = window.setInterval(() => {
+                if (socket?.connected && activeRoom) {
+                    socket.emit('request_room_state', { room: activeRoom });
+                }
+            }, 3000);
             window.setTimeout(() => {
                 socket?.emit('request_room_state', { room: activeRoom });
             }, 120);

@@ -21,8 +21,10 @@ window.createVoiceCallController = ({
     let muted = false;
     let selfId = '';
     let iceServers = [];
+    let turnConfigured = false;
     let warnedMissingTurn = false;
-    let audioContext = null;
+    let warnedAutoplay = false;
+    let warnedNetworkNeedsTurn = false;
     const storedCallVolumeRaw = localStorage.getItem('tw_call_volume');
     const storedCallVolume = Number(storedCallVolumeRaw);
     let callVolume = storedCallVolumeRaw !== null && Number.isFinite(storedCallVolume)
@@ -50,27 +52,8 @@ window.createVoiceCallController = ({
         }
         localStorage.setItem('tw_call_volume', String(callVolume));
         peerAudioNodes.forEach(record => {
-            if (record.gain && audioContext) {
-                record.gain.gain.setTargetAtTime(
-                    normalized,
-                    audioContext.currentTime,
-                    0.015,
-                );
-            }
             if (record.audio) record.audio.volume = normalized;
         });
-    }
-
-    async function ensureAudioContext() {
-        if (!window.AudioContext && !window.webkitAudioContext) return null;
-        if (!audioContext) {
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            audioContext = new AudioContextClass();
-        }
-        if (audioContext.state === 'suspended') {
-            await audioContext.resume();
-        }
-        return audioContext;
     }
 
     async function attachRemoteAudio(peerId, stream) {
@@ -80,31 +63,30 @@ window.createVoiceCallController = ({
         previous?.audio?.remove();
         peerAudioNodes.delete(peerId);
 
-        try {
-            const context = await ensureAudioContext();
-            if (context) {
-                const source = context.createMediaStreamSource(stream);
-                const gain = context.createGain();
-                gain.gain.value = callVolume / 100;
-                source.connect(gain).connect(context.destination);
-                peerAudioNodes.set(peerId, { source, gain, audio: null });
-                return;
-            }
-        } catch (error) {
-            console.debug('Web Audio volume control unavailable:', error);
-        }
-
         const audio = document.createElement('audio');
         audio.autoplay = true;
         audio.playsInline = true;
+        audio.muted = false;
         audio.dataset.peerId = peerId;
         audio.volume = callVolume / 100;
         audio.srcObject = stream;
         audioContainer.appendChild(audio);
-        peerAudioNodes.set(peerId, { source: null, gain: null, audio });
-        audio.play().catch(() => {
+        peerAudioNodes.set(peerId, { audio });
+        try {
+            await audio.play();
+            callStatus.textContent = '通话中 · 已收到对方声音';
+        } catch (_error) {
             callStatus.textContent = '点一下页面以播放通话声音';
-        });
+            if (!warnedAutoplay) {
+                warnedAutoplay = true;
+                addSystemMessage('🔊 浏览器暂停了通话声音，请点击房间页面任意位置恢复播放。');
+            }
+            window.addEventListener('pointerdown', () => {
+                audio.play().then(() => {
+                    callStatus.textContent = '通话中 · 已收到对方声音';
+                }).catch(() => {});
+            }, { capture: true, once: true });
+        }
     }
 
     setCallVolume(callVolume);
@@ -224,6 +206,24 @@ window.createVoiceCallController = ({
                 closePeer(peerId);
             }
         });
+        connection.addEventListener('iceconnectionstatechange', () => {
+            const state = connection.iceConnectionState;
+            if (state === 'checking') {
+                callNetwork.textContent = '正在建立音频通道';
+            } else if (state === 'connected' || state === 'completed') {
+                updateConnectionSummary();
+            } else if (state === 'failed') {
+                callNetwork.textContent = turnConfigured
+                    ? '音频连接失败，正在重试'
+                    : '当前网络需要 TURN 中继';
+                if (!turnConfigured && !warnedNetworkNeedsTurn) {
+                    warnedNetworkNeedsTurn = true;
+                    addSystemMessage('⚠️ 双方网络无法直接建立语音连接，需要配置 TURN 中继后才能通话。');
+                }
+            } else if (state === 'disconnected') {
+                callNetwork.textContent = '音频连接暂时中断';
+            }
+        });
 
         return connection;
     }
@@ -248,7 +248,6 @@ window.createVoiceCallController = ({
         joinButton.textContent = '正在获取麦克风…';
 
         try {
-            await ensureAudioContext();
             localStream = await navigator.mediaDevices.getUserMedia({
                 video: false,
                 audio: {
@@ -313,6 +312,7 @@ window.createVoiceCallController = ({
         if (!joined) return;
         selfId = data.self_id;
         iceServers = Array.isArray(data.ice_servers) ? data.ice_servers : [];
+        turnConfigured = Boolean(data.turn_configured);
         if (data.turn_configured === false && !warnedMissingTurn) {
             warnedMissingTurn = true;
             addSystemMessage(

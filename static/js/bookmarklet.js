@@ -33,6 +33,7 @@
         let connected = false;
         let lastPlayerReason = '正在寻找播放器';
         let returnedFocus = false;
+        let lastPlayerSample = null;
         const overlayState = {
             room: '',
             username: '',
@@ -302,6 +303,44 @@
                 time: Number.isFinite(player.currentTime) ? player.currentTime : 0,
                 ...extra,
             });
+            lastPlayerSample = readPlayerSample();
+        }
+
+        function readPlayerSample() {
+            if (!player) return null;
+            return {
+                sampledAt: performance.now(),
+                time: Number(player.currentTime) || 0,
+                paused: Boolean(player.paused),
+                speed: Number(player.playbackRate) || 1,
+            };
+        }
+
+        function monitorPlayerState() {
+            const current = readPlayerSample();
+            if (!current) {
+                lastPlayerSample = null;
+                return;
+            }
+            const previous = lastPlayerSample;
+            lastPlayerSample = current;
+            if (!previous || Date.now() < remoteGuardUntil) return;
+
+            if (current.paused !== previous.paused) {
+                emitPlayerEvent(current.paused ? 'pause' : 'play');
+                return;
+            }
+            if (Math.abs(current.speed - previous.speed) > 0.01) {
+                emitPlayerEvent('speed', { speed: current.speed });
+                return;
+            }
+            const elapsed = Math.max(0, (current.sampledAt - previous.sampledAt) / 1000);
+            const expected = previous.paused
+                ? previous.time
+                : previous.time + elapsed * previous.speed;
+            if (Math.abs(current.time - expected) > 1.1) {
+                emitPlayerEvent('seek');
+            }
         }
 
         function sendBuffering(active) {
@@ -324,6 +363,7 @@
             playerEvents = new AbortController();
             player = nextPlayer;
             lastPlayerReason = '';
+            lastPlayerSample = readPlayerSample();
             const options = { signal: playerEvents.signal };
             player.addEventListener('play', () => emitPlayerEvent('play'), options);
             player.addEventListener('pause', () => {
@@ -453,6 +493,7 @@
                 bindPlayer(nextPlayer);
             } else if (!nextPlayer) {
                 player = null;
+                lastPlayerSample = null;
                 const reason = inspection.blockedFrameCount > 0
                     ? `检测到 ${inspection.blockedFrameCount} 个跨域播放器框架，书签无权读取`
                     : inspection.frameCount > 0
@@ -538,6 +579,7 @@
         };
         refreshPlayer();
         window.setInterval(refreshPlayer, 1800);
+        window.setInterval(monitorPlayerState, 650);
         window.setInterval(() => {
             if (popupWindow && popupWindow.closed) {
                 connected = false;
