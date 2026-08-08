@@ -31,6 +31,7 @@
         let bufferingReported = false;
         let resumeTimer = null;
         let connected = false;
+        let lastPlayerReason = '正在寻找播放器';
 
         const host = document.createElement('div');
         host.id = 'together-watch-bookmark-status';
@@ -170,6 +171,7 @@
             playerEvents?.abort();
             playerEvents = new AbortController();
             player = nextPlayer;
+            lastPlayerReason = '';
             const options = { signal: playerEvents.signal };
             player.addEventListener('play', () => emitPlayerEvent('play'), options);
             player.addEventListener('pause', () => {
@@ -304,6 +306,7 @@
                     : inspection.frameCount > 0
                         ? '已检查页面框架，仍未找到 HTML5 播放器'
                         : '未找到 HTML5 播放器';
+                lastPlayerReason = reason;
                 setStatus(reason, false);
                 postToCompanion('target_ready', { playerReady: false, reason });
             }
@@ -321,16 +324,19 @@
             }
             serverClockOffset = Number(data.serverClockOffset) || serverClockOffset;
             if (data.type === 'hello') {
-                postToCompanion('hello', { playerReady: Boolean(player) });
+                postToCompanion('hello', {
+                    playerReady: Boolean(player),
+                    reason: player ? '' : lastPlayerReason,
+                });
                 return;
             }
             if (data.type === 'connection') {
                 connected = Boolean(data.payload?.connected);
                 setStatus(
                     connected
-                        ? (player ? '播放器与房间已连接' : '房间已连接，等待播放器')
+                        ? (player ? '播放器与房间已连接' : lastPlayerReason)
                         : '房间连接中断，点这里重试',
-                    connected,
+                    connected && Boolean(player),
                 );
                 return;
             }

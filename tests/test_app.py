@@ -88,6 +88,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("免安装观影助手", companion_html)
         self.assertIn('id="webCompanionRoom"', companion_html)
         self.assertIn("/static/js/web-companion.js", companion_html)
+        self.assertIn("20260808-frames", companion_html)
         self.assertIn("不读取账号、Cookie 或视频地址", companion_html)
 
         for path, marker in (
