@@ -70,7 +70,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("拖到书签栏：一起看助手", html)
         self.assertIn("复制助手代码", html)
         self.assertIn("/static/js/bookmarklet.js", html)
-        self.assertIn("20260808-short", html)
+        self.assertIn("20260808-frames", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
         self.assertIn("助手窗口需要保持打开", html)
         self.assertIn("已登记 1 条域名规则", html)

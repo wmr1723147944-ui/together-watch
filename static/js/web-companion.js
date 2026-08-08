@@ -101,11 +101,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }, '*');
     }
 
-    function updateTargetState(ready) {
+    function updateTargetState(ready, reason = '') {
         targetReady = Boolean(ready);
         playerState.textContent = targetReady
             ? '已找到播放页中的 HTML5 视频'
-            : '正在等待播放页回应…';
+            : String(reason || '正在等待播放页回应…').slice(0, 120);
     }
 
     function validateRoom(value) {
@@ -238,7 +238,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (data.type === 'hello' || data.type === 'target_ready') {
-            updateTargetState(Boolean(data.payload?.playerReady));
+            updateTargetState(
+                Boolean(data.payload?.playerReady),
+                data.payload?.reason,
+            );
             postToTarget('connection', {
                 connected: Boolean(socket?.connected),
                 room: activeRoom,

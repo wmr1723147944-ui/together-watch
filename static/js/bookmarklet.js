@@ -101,8 +101,34 @@
             }, 500);
         }
 
-        function findPrimaryVideo() {
-            return [...document.querySelectorAll('video')]
+        function inspectPlayers() {
+            const videos = [];
+            const visitedDocuments = new Set();
+            let frameCount = 0;
+            let blockedFrameCount = 0;
+
+            function scanDocument(currentDocument) {
+                if (!currentDocument || visitedDocuments.has(currentDocument)) return;
+                visitedDocuments.add(currentDocument);
+                videos.push(...currentDocument.querySelectorAll('video'));
+
+                for (const frame of currentDocument.querySelectorAll('iframe')) {
+                    frameCount += 1;
+                    try {
+                        const childDocument = frame.contentWindow?.document;
+                        if (!childDocument) {
+                            blockedFrameCount += 1;
+                            continue;
+                        }
+                        scanDocument(childDocument);
+                    } catch (_error) {
+                        blockedFrameCount += 1;
+                    }
+                }
+            }
+
+            scanDocument(document);
+            const primaryVideo = videos
                 .filter(video => {
                     const rect = video.getBoundingClientRect();
                     return rect.width >= 160 && rect.height >= 90;
@@ -112,6 +138,8 @@
                     const b = right.getBoundingClientRect();
                     return (b.width * b.height) - (a.width * a.height);
                 })[0] || null;
+
+            return { primaryVideo, frameCount, blockedFrameCount };
         }
 
         function emitPlayerEvent(type, extra = {}) {
@@ -265,13 +293,19 @@
         }
 
         function refreshPlayer() {
-            const nextPlayer = findPrimaryVideo();
+            const inspection = inspectPlayers();
+            const nextPlayer = inspection.primaryVideo;
             if (nextPlayer && nextPlayer !== player) {
                 bindPlayer(nextPlayer);
             } else if (!nextPlayer) {
                 player = null;
-                setStatus('未找到 HTML5 播放器', false);
-                postToCompanion('target_ready', { playerReady: false });
+                const reason = inspection.blockedFrameCount > 0
+                    ? `检测到 ${inspection.blockedFrameCount} 个跨域播放器框架，书签无权读取`
+                    : inspection.frameCount > 0
+                        ? '已检查页面框架，仍未找到 HTML5 播放器'
+                        : '未找到 HTML5 播放器';
+                setStatus(reason, false);
+                postToCompanion('target_ready', { playerReady: false, reason });
             }
         }
 
@@ -327,7 +361,7 @@
     function buildHref(serverUrl) {
         const origin = new URL(serverUrl, window.location.href).origin;
         const runnerUrl = new URL(
-            '/static/js/bookmarklet.js?run=1&v=20260808-short',
+            '/static/js/bookmarklet.js?run=1',
             origin,
         ).href;
         const loadErrorMessage = '该网页阻止了助手脚本，请改用浏览器插件兼容模式。';
@@ -339,7 +373,7 @@
             'if(old){old.remove()}',
             'var script=document.createElement("script");',
             'script.id="tw-bookmark-loader";',
-            `script.src=${JSON.stringify(runnerUrl)};`,
+            `script.src=${JSON.stringify(runnerUrl)}+"&v="+Date.now();`,
             'script.async=true;',
             `script.onerror=function(){alert(${JSON.stringify(loadErrorMessage)})};`,
             '(document.head||document.documentElement).appendChild(script)',
