@@ -326,8 +326,34 @@
 
     function buildHref(serverUrl) {
         const origin = new URL(serverUrl, window.location.href).origin;
-        return `javascript:(${startTogetherWatchBookmark.toString()})(${JSON.stringify(origin)})`;
+        const runnerUrl = new URL(
+            '/static/js/bookmarklet.js?run=1&v=20260808-short',
+            origin,
+        ).href;
+        const loadErrorMessage = '该网页阻止了助手脚本，请改用浏览器插件兼容模式。';
+        return [
+            'javascript:(function(){',
+            'if(window.__TW_BOOKMARK_COMPANION__&&window.__TW_BOOKMARK_COMPANION__.open){',
+            'window.__TW_BOOKMARK_COMPANION__.open();return}',
+            'var old=document.getElementById("tw-bookmark-loader");',
+            'if(old){old.remove()}',
+            'var script=document.createElement("script");',
+            'script.id="tw-bookmark-loader";',
+            `script.src=${JSON.stringify(runnerUrl)};`,
+            'script.async=true;',
+            `script.onerror=function(){alert(${JSON.stringify(loadErrorMessage)})};`,
+            '(document.head||document.documentElement).appendChild(script)',
+            '})()',
+        ].join('');
     }
 
     window.TogetherWatchBookmarklet = { buildHref };
+
+    const currentScriptUrl = document.currentScript?.src;
+    if (currentScriptUrl) {
+        const currentScript = new URL(currentScriptUrl);
+        if (currentScript.searchParams.get('run') === '1') {
+            startTogetherWatchBookmark(currentScript.origin);
+        }
+    }
 })();
