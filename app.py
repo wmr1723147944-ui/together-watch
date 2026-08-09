@@ -2467,6 +2467,11 @@ def handle_buffering_event(data):
     if not identity:
         return
     room_id, username = identity
+    # External-page companions cannot reliably distinguish a short decoder stall
+    # from actual network buffering. Never let that heuristic pause the room.
+    if sid_roles.get(request.sid) == "companion":
+        release_buffering_member(request.sid, room_id)
+        return
     active = bool(data.get("active"))
 
     if not active:
@@ -2793,6 +2798,8 @@ def handle_video_event(data):
         outgoing.update(
             revision=state["revision"],
             server_time=now,
+            playing=bool(state.get("playing")),
+            speed=state.get("speed", 1.0),
         )
         room_activity[room_id] = now
 

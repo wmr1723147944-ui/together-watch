@@ -215,7 +215,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (socket?.connected && activeRoom) {
                     socket.emit('request_room_state', { room: activeRoom });
                 }
-            }, 3000);
+            }, 10000);
             window.setTimeout(() => {
                 socket?.emit('request_room_state', { room: activeRoom });
             }, 120);
@@ -301,6 +301,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (data.type === 'buffering_event' && socket?.connected) {
             socket.emit('buffering_event', { room: activeRoom, ...data.payload });
+            return;
+        }
+        if (data.type === 'room_state_request' && socket?.connected) {
+            socket.emit('request_room_state', { room: activeRoom });
             return;
         }
         if (data.type === 'chat_submit') {

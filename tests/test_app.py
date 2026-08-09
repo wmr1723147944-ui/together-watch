@@ -70,7 +70,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("拖到书签栏：一起看助手", html)
         self.assertIn("复制助手代码", html)
         self.assertIn("/static/js/bookmarklet.js", html)
-        self.assertIn("20260809-mobile", html)
+        self.assertIn("20260809-stable", html)
         self.assertIn("20260808-audio", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
         self.assertIn("助手窗口需要保持打开", html)
@@ -89,7 +89,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("免安装观影助手", companion_html)
         self.assertIn('id="webCompanionRoom"', companion_html)
         self.assertIn("/static/js/web-companion.js", companion_html)
-        self.assertIn("20260808-sync", companion_html)
+        self.assertIn("20260809-stable", companion_html)
         self.assertIn("不读取账号、Cookie 或视频地址", companion_html)
 
         with self.client.get("/static/js/bookmarklet.js") as script_response:
@@ -97,13 +97,18 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("together-watch-room-overlay", bookmarklet_script)
         self.assertIn("chat_submit", bookmarklet_script)
         self.assertIn("monitorPlayerState", bookmarklet_script)
-        self.assertIn("Math.abs(current.time - expected) > 1.1", bookmarklet_script)
+        self.assertIn("current.paused ? 0.8 : 4.0", bookmarklet_script)
+        self.assertIn("current.readyState < 3", bookmarklet_script)
+        self.assertIn("correctionThreshold: 2.0", bookmarklet_script)
+        self.assertIn("room_state_request", bookmarklet_script)
         self.assertIn("start: startTogetherWatchBookmark", bookmarklet_script)
         with self.client.get("/static/js/web-companion.js") as script_response:
             companion_script = script_response.get_data(as_text=True)
         self.assertIn("overlay_state", companion_script)
         self.assertIn("chat_event", companion_script)
         self.assertIn("roomStateTimer", companion_script)
+        self.assertIn("}, 10000);", companion_script)
+        self.assertIn("room_state_request", companion_script)
         with self.client.get("/static/js/voice-call.js") as script_response:
             voice_call_script = script_response.get_data(as_text=True)
         self.assertIn("await audio.play()", voice_call_script)
@@ -585,6 +590,26 @@ class TogetherWatchTests(unittest.TestCase):
             self.assertTrue(room_states[-1]["playing"])
             self.assertGreaterEqual(room_states[-1]["time"], 18.5)
             self.assertLess(room_states[-1]["time"], 19.5)
+
+            first.get_received()
+            second.emit(
+                "buffering_event",
+                {"room": "private-sync-room", "active": True, "time": 18.5},
+            )
+            self.assertFalse(
+                any(item["name"] == "buffering_state" for item in first.get_received())
+            )
+            first.emit("request_room_state", {"room": "private-sync-room"})
+            stable_states = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertTrue(stable_states[-1]["playing"])
+            self.assertEqual(
+                application.room_buffering.get("private-sync-room", set()),
+                set(),
+            )
         finally:
             first.disconnect()
             second.disconnect()

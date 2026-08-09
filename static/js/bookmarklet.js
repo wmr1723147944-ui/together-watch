@@ -26,6 +26,7 @@
         let player = null;
         let playerEvents = null;
         let remoteGuardUntil = 0;
+        let localInteractionUntil = 0;
         let serverClockOffset = 0;
         let bufferingTimer = null;
         let bufferingReported = false;
@@ -298,6 +299,7 @@
 
         function emitPlayerEvent(type, extra = {}) {
             if (!player || Date.now() < remoteGuardUntil) return;
+            localInteractionUntil = Date.now() + 2500;
             postToCompanion('player_event', {
                 type,
                 time: Number.isFinite(player.currentTime) ? player.currentTime : 0,
@@ -313,6 +315,8 @@
                 time: Number(player.currentTime) || 0,
                 paused: Boolean(player.paused),
                 speed: Number(player.playbackRate) || 1,
+                readyState: Number(player.readyState) || 0,
+                seeking: Boolean(player.seeking),
             };
         }
 
@@ -334,20 +338,30 @@
                 emitPlayerEvent('speed', { speed: current.speed });
                 return;
             }
+            if (
+                current.seeking
+                || (!current.paused && current.readyState < 3)
+                || (!current.paused && document.visibilityState === 'hidden')
+            ) {
+                return;
+            }
             const elapsed = Math.max(0, (current.sampledAt - previous.sampledAt) / 1000);
             const expected = previous.paused
                 ? previous.time
                 : previous.time + elapsed * previous.speed;
-            if (Math.abs(current.time - expected) > 1.1) {
+            const seekThreshold = current.paused ? 0.8 : 4.0;
+            if (Math.abs(current.time - expected) > seekThreshold) {
                 emitPlayerEvent('seek');
             }
         }
 
         function sendBuffering(active) {
-            postToCompanion('buffering_event', {
-                active,
-                time: Number(player?.currentTime) || 0,
-            });
+            if (active) {
+                setStatus('当前设备缓冲中，其他成员继续播放', false);
+                return;
+            }
+            setStatus('缓冲已恢复，正在追赶房间进度', connected);
+            postToCompanion('room_state_request');
         }
 
         function clearBuffering() {
@@ -369,6 +383,11 @@
             player.addEventListener('pause', () => {
                 if (!player.seeking) emitPlayerEvent('pause');
             }, options);
+            player.addEventListener('seeking', () => {
+                if (Date.now() >= remoteGuardUntil) {
+                    localInteractionUntil = Date.now() + 3000;
+                }
+            }, options);
             player.addEventListener('seeked', () => emitPlayerEvent('seek'), options);
             player.addEventListener('ratechange', () => {
                 emitPlayerEvent('speed', { speed: Number(player.playbackRate) || 1 });
@@ -380,7 +399,7 @@
                         bufferingReported = true;
                         sendBuffering(true);
                     }
-                }, 1200);
+                }, 3500);
             }, options);
             for (const eventName of ['playing', 'canplay', 'canplaythrough']) {
                 player.addEventListener(eventName, clearBuffering, options);
@@ -402,11 +421,14 @@
             return Math.max(0, position);
         }
 
-        function applyState(state) {
+        function applyState(state, { correctionThreshold = 0.75 } = {}) {
             if (!player || !state) return;
-            remoteGuardUntil = Date.now() + 900;
+            remoteGuardUntil = Date.now() + 1200;
             const position = expectedPosition(state);
-            if (Math.abs((Number(player.currentTime) || 0) - position) > 0.6) {
+            if (
+                Math.abs((Number(player.currentTime) || 0) - position)
+                > correctionThreshold
+            ) {
                 try {
                     player.currentTime = position;
                 } catch (_error) {
@@ -447,15 +469,22 @@
                 return;
             }
             if (eventName === 'room_state') {
+                if (Date.now() < localInteractionUntil) return;
                 const resumeAt = Number(payload?.resume_at);
                 if (payload?.playing && Number.isFinite(resumeAt) && resumeAt > estimatedServerNow()) {
-                    applyState({ ...payload, playing: false });
+                    applyState(
+                        { ...payload, playing: false },
+                        { correctionThreshold: 2.0 },
+                    );
                     resumeTimer = window.setTimeout(() => {
-                        applyState({ ...payload, server_time: resumeAt, resume_at: null });
+                        applyState(
+                            { ...payload, server_time: resumeAt, resume_at: null },
+                            { correctionThreshold: 2.0 },
+                        );
                     }, Math.max(0, (resumeAt - estimatedServerNow()) * 1000));
                     return;
                 }
-                applyState(payload);
+                applyState(payload, { correctionThreshold: 2.0 });
                 return;
             }
             if (eventName === 'buffering_state') {
@@ -481,8 +510,10 @@
                 time: payload?.time,
                 speed: payload?.speed || player?.playbackRate || 1,
                 server_time: payload?.server_time,
-                playing: eventType === 'play'
-                    || ((eventType === 'seek' || eventType === 'speed') && !player?.paused),
+                playing: typeof payload?.playing === 'boolean'
+                    ? payload.playing
+                    : eventType === 'play'
+                        || ((eventType === 'seek' || eventType === 'speed') && !player?.paused),
             });
         }
 
