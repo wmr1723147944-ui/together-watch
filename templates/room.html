@@ -159,8 +159,8 @@
                 </section>
                 <div class="collaboration-tip">
                     <label class="strict-sync-option" for="strictSyncToggle">
-                        <input type="checkbox" id="strictSyncToggle" checked>
-                        强一致模式：有人缓冲时全员暂停
+                        <input type="checkbox" id="strictSyncToggle">
+                        影院模式：连续缓冲时全员暂停（可选）
                     </label>
                     <div class="health-badges">
                         <span id="playbackHealth" class="sync-health" title="播放缓冲与掉帧状态">
@@ -243,7 +243,7 @@
     <script src="{{ url_for('static', filename='vendor/hls-1.5.18.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20260808-audio') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260809-stable') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260825-stability') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/main.js', v='20260825-stability') }}" defer></script>
 </body>
 </html>

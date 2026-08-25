@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Together Watch 观影伴侣",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "minimum_chrome_version": "116",
   "description": "在官方视频网站页面同步播放状态，并提供房间悬浮聊天；不读取 Cookie 或媒体地址。",
   "permissions": [

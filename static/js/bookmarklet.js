@@ -619,6 +619,20 @@
                 setStatus('助手窗口已关闭，点这里重开', false);
             }
         }, 1600);
+        let lastForegroundSyncAt = 0;
+        const requestFreshRoomState = () => {
+            const now = Date.now();
+            if (now - lastForegroundSyncAt < 500) return;
+            lastForegroundSyncAt = now;
+            lastPlayerSample = readPlayerSample();
+            postToCompanion('room_state_request');
+        };
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') requestFreshRoomState();
+        });
+        window.addEventListener('focus', requestFreshRoomState);
+        window.addEventListener('pageshow', requestFreshRoomState);
+        window.addEventListener('online', requestFreshRoomState);
         window.addEventListener('beforeunload', () => {
             if (bufferingReported) sendBuffering(false);
         });

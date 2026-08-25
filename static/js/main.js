@@ -205,6 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeSource = '';
     let activeMediaSource = null;
     let remoteGuardUntil = 0;
+    let localInteractionUntil = 0;
     let sourceChangeUntil = 0;
     let lastRevision = 0;
     let lastEventAt = 0;
@@ -247,7 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const HIGH_LATENCY_SYNC_THRESHOLD = 0.65;
     const SYNC_DRIFT_CONFIRMATIONS = 2;
     const SYNC_SEEK_COOLDOWN = 3500;
-    const BUFFER_REPORT_DELAY = 1200;
+    const BUFFER_REPORT_DELAY = 5000;
     const CRITICAL_BUFFER_AHEAD = 0.35;
     const PROGRESSIVE_RECOVERY_BUFFER = 2;
     const BASE_RECOVERY_BUFFER = 2.5;
@@ -268,6 +269,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function isRemoteUpdate() {
         return Date.now() < remoteGuardUntil;
     }
+
+    const savedStrictSync = localStorage.getItem('tw_strict_sync');
+    strictSyncToggle.checked = savedStrictSync === 'true';
 
     function trimMessages() {
         while (chatContainer.children.length > 160) {
@@ -845,6 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             return;
         }
+        if (Date.now() < localInteractionUntil) return;
         applyPlaybackState(state);
     }
 
@@ -865,6 +870,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const threshold = videoPlayer.paused ? 0.1 : SEEK_THRESHOLD;
             if (Math.abs(videoPlayer.currentTime - lastSeekTime) < threshold) return;
             lastSeekTime = videoPlayer.currentTime;
+        }
+
+        if (type !== 'change_source') {
+            localInteractionUntil = now + 2500;
         }
 
         lastEventAt = now;
@@ -1117,11 +1126,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (usesOfficialPage) {
                     updateOfficialPlaybackState({
                         time: data.time,
-                        playing: false,
+                        playing: typeof data.playing === 'boolean' ? data.playing : false,
                     });
                     break;
                 }
                 setVideoTime(Number(data.time) || 0);
+                if (typeof data.playing === 'boolean') {
+                    if (data.playing) requestPlayback();
+                    else if (!videoPlayer.paused) videoPlayer.pause();
+                }
                 break;
             case 'change_source':
                 changeMediaSource(
@@ -1328,6 +1341,9 @@ document.addEventListener('DOMContentLoaded', () => {
     videoPlayer.addEventListener('pause', () => {
         if (!videoPlayer.seeking) emitVideoEvent('pause');
     });
+    videoPlayer.addEventListener('seeking', () => {
+        if (!isRemoteUpdate()) localInteractionUntil = Date.now() + 3000;
+    });
     videoPlayer.addEventListener('seeked', () => emitVideoEvent('seek'));
     videoPlayer.addEventListener('ratechange', () => {
         if (Date.now() < internalRateChangeUntil) return;
@@ -1341,6 +1357,7 @@ document.addEventListener('DOMContentLoaded', () => {
     videoPlayer.addEventListener('canplaythrough', scheduleBufferRecovery);
 
     strictSyncToggle.addEventListener('change', () => {
+        localStorage.setItem('tw_strict_sync', strictSyncToggle.checked ? 'true' : 'false');
         if (!strictSyncToggle.checked) {
             clearBufferingReport(true);
             updateSyncHealth(null, '强一致模式已关闭');
@@ -1605,7 +1622,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (socket.connected && activeSource) {
             socket.emit('request_room_state', { room: roomId });
         }
-    }, 2000);
+    }, 10000);
 
     window.setInterval(sendSyncPing, 3000);
     window.setInterval(updatePlaybackHealth, 1000);

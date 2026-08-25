@@ -21,9 +21,12 @@ const TRUSTED_INVITE_SERVERS = new Set([
 let settings = { ...DEFAULTS };
 let socket = null;
 let target = null;
+let targetScore = 0;
+let targetLastSeenAt = 0;
 let overlayTabId = null;
 let reconnectTimer = null;
 let clockSyncTimer = null;
+let roomStateTimer = null;
 let serverClockOffset = 0;
 
 function generateClientKey() {
@@ -130,12 +133,43 @@ class SocketIoLite {
     }
 }
 
-function setTarget(sender) {
-    if (!sender.tab?.id) return;
+function isTarget(sender) {
+    return Boolean(
+        target
+        && target.tabId === sender.tab?.id
+        && target.frameId === (Number(sender.frameId) || 0)
+    );
+}
+
+function candidateScore(sender, playerInfo = {}) {
+    const area = Math.max(0, Number(playerInfo.area) || 0);
+    const duration = Math.max(0, Math.min(14400, Number(playerInfo.duration) || 0));
+    return area
+        + (playerInfo.visible ? 5_000_000 : 0)
+        + (playerInfo.playing ? 2_000_000 : 0)
+        + (playerInfo.topFrame || Number(sender.frameId) === 0 ? 250_000 : 0)
+        + duration * 200;
+}
+
+function setTarget(sender, playerInfo = {}, force = false) {
+    if (!sender.tab?.id) return false;
+    const sameTarget = isTarget(sender);
+    const nextScore = candidateScore(sender, playerInfo);
+    if (
+        !force
+        && target
+        && !sameTarget
+        && nextScore <= targetScore
+    ) {
+        return false;
+    }
     target = {
         tabId: sender.tab.id,
         frameId: Number(sender.frameId) || 0,
     };
+    targetScore = nextScore;
+    targetLastSeenAt = Date.now();
+    return true;
 }
 
 function sendToPlayer(eventName, payload) {
@@ -184,10 +218,18 @@ function sendClockProbe() {
     });
 }
 
+function requestRoomState() {
+    if (!socket?.ready || !settings.room) return;
+    socket.emit('request_room_state', { room: settings.room });
+}
+
 function startClockSync() {
     clearInterval(clockSyncTimer);
+    clearInterval(roomStateTimer);
     sendClockProbe();
+    requestRoomState();
     clockSyncTimer = setInterval(sendClockProbe, 10000);
+    roomStateTimer = setInterval(requestRoomState, 10000);
 }
 
 function handleRoomEvent(eventName, payload) {
@@ -221,6 +263,7 @@ function scheduleReconnect() {
 function connect() {
     socket?.close();
     clearInterval(clockSyncTimer);
+    clearInterval(roomStateTimer);
     if (!settings.enabled || !settings.server || !settings.room) {
         report('disabled', '请在扩展中配置服务器和房间');
         return;
@@ -245,12 +288,13 @@ function connect() {
             });
             startClockSync();
             setTimeout(() => {
-                socket.emit('request_room_state', { room: settings.room });
+                requestRoomState();
             }, 100);
         },
         event: handleRoomEvent,
         close: () => {
             clearInterval(clockSyncTimer);
+            clearInterval(roomStateTimer);
             report('error', '同步连接已断开，正在重连');
             sendConnectionState(false);
             scheduleReconnect();
@@ -276,7 +320,7 @@ chrome.runtime.onMessage.addListener((message, sender) => {
             report('error', '房间邀请来源无效，已拒绝自动连接', sender.tab.id);
             return;
         }
-        setTarget(sender);
+        setTarget(sender, {}, true);
         overlayTabId = sender.tab.id;
         chrome.storage.local.set(invite, () => {
             report('finding', `已自动加入房间 ${invite.room}，正在寻找播放器`, sender.tab.id);
@@ -302,11 +346,12 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         return;
     }
     if (message.type === 'tw_player_ready') {
+        if (overlayTabId && overlayTabId !== sender.tab.id) return;
         const changedTarget = (
             target?.tabId !== sender.tab.id
             || target?.frameId !== (Number(sender.frameId) || 0)
         );
-        setTarget(sender);
+        if (!setTarget(sender, message.player)) return;
         overlayTabId = sender.tab.id;
         report(socket?.ready ? 'connected' : 'finding', '已找到官方页面播放器');
         if (changedTarget || !socket?.ready) connect();
@@ -334,7 +379,8 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         return;
     }
     if (message.type === 'tw_video_event') {
-        setTarget(sender);
+        if (!isTarget(sender) && !setTarget(sender, message.player)) return;
+        targetLastSeenAt = Date.now();
         socket?.emit('video_event', {
             room: settings.room,
             ...message.payload,
@@ -342,11 +388,26 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         return;
     }
     if (message.type === 'tw_buffering_event') {
-        setTarget(sender);
+        if (!isTarget(sender)) return;
+        targetLastSeenAt = Date.now();
         socket?.emit('buffering_event', {
             room: settings.room,
             ...message.payload,
         });
+        return;
+    }
+    if (message.type === 'tw_request_room_state') {
+        if (!isTarget(sender)) return;
+        targetLastSeenAt = Date.now();
+        requestRoomState();
+        return;
+    }
+    if (message.type === 'tw_player_gone') {
+        if (!isTarget(sender)) return;
+        target = null;
+        targetScore = 0;
+        targetLastSeenAt = 0;
+        report('finding', '页面已切换，正在重新寻找播放器', sender.tab.id);
     }
 });
 
@@ -354,9 +415,12 @@ chrome.tabs.onRemoved.addListener(tabId => {
     if (overlayTabId === tabId) overlayTabId = null;
     if (target?.tabId !== tabId) return;
     target = null;
+    targetScore = 0;
+    targetLastSeenAt = 0;
     socket?.close();
     socket = null;
     clearInterval(clockSyncTimer);
+    clearInterval(roomStateTimer);
 });
 
 chrome.storage.local.get(DEFAULTS, config => {

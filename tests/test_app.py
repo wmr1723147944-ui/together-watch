@@ -70,8 +70,9 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("拖到书签栏：一起看助手", html)
         self.assertIn("复制助手代码", html)
         self.assertIn("/static/js/bookmarklet.js", html)
-        self.assertIn("20260809-stable", html)
+        self.assertIn("20260825-stability", html)
         self.assertIn("20260808-audio", html)
+        self.assertNotIn('id="strictSyncToggle" checked', html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
         self.assertIn("助手窗口需要保持打开", html)
         self.assertIn("已登记 1 条域名规则", html)
@@ -89,7 +90,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("免安装观影助手", companion_html)
         self.assertIn('id="webCompanionRoom"', companion_html)
         self.assertIn("/static/js/web-companion.js", companion_html)
-        self.assertIn("20260809-stable", companion_html)
+        self.assertIn("20260825-stability", companion_html)
         self.assertIn("不读取账号、Cookie 或视频地址", companion_html)
 
         with self.client.get("/static/js/bookmarklet.js") as script_response:
@@ -101,6 +102,8 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("current.readyState < 3", bookmarklet_script)
         self.assertIn("correctionThreshold: 2.0", bookmarklet_script)
         self.assertIn("room_state_request", bookmarklet_script)
+        self.assertIn("requestFreshRoomState", bookmarklet_script)
+        self.assertIn("visibilitychange", bookmarklet_script)
         self.assertIn("start: startTogetherWatchBookmark", bookmarklet_script)
         with self.client.get("/static/js/web-companion.js") as script_response:
             companion_script = script_response.get_data(as_text=True)
@@ -109,6 +112,12 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("roomStateTimer", companion_script)
         self.assertIn("}, 10000);", companion_script)
         self.assertIn("room_state_request", companion_script)
+        with self.client.get("/static/js/main.js") as script_response:
+            room_script = script_response.get_data(as_text=True)
+        self.assertIn("tw_strict_sync", room_script)
+        self.assertIn("localInteractionUntil", room_script)
+        self.assertIn("BUFFER_REPORT_DELAY = 5000", room_script)
+        self.assertIn("}, 10000);", room_script)
         with self.client.get("/static/js/voice-call.js") as script_response:
             voice_call_script = script_response.get_data(as_text=True)
         self.assertIn("await audio.play()", voice_call_script)
@@ -159,11 +168,19 @@ class TogetherWatchTests(unittest.TestCase):
         )
         with zipfile.ZipFile(io.BytesIO(extension.get_data())) as archive:
             manifest = json.loads(archive.read("manifest.json"))
-        self.assertEqual(manifest["version"], "0.5.0")
+            content_script = archive.read("content.js").decode("utf-8")
+            background_script = archive.read("background.js").decode("utf-8")
+        self.assertEqual(manifest["version"], "0.5.1")
         self.assertIn(
             "https://watchtogethernow.cloud/*",
             manifest["host_permissions"],
         )
+        self.assertIn("correctionThreshold: 2.0", content_script)
+        self.assertIn("tw_request_room_state", content_script)
+        self.assertIn("当前设备缓冲中，其他成员继续播放", content_script)
+        self.assertIn("candidateScore", background_script)
+        self.assertIn("roomStateTimer", background_script)
+        self.assertIn("tw_player_gone", background_script)
         extension.close()
 
         extension_origin = f"chrome-extension://{'a' * 32}"
