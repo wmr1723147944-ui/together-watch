@@ -402,6 +402,20 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         requestRoomState();
         return;
     }
+    if (message.type === 'tw_player_snapshot') {
+        if (
+            !isTarget(sender)
+            && !(message.payload?.recent_interaction && setTarget(sender, message.player))
+        ) {
+            return;
+        }
+        targetLastSeenAt = Date.now();
+        socket?.emit('playback_snapshot', {
+            room: settings.room,
+            ...message.payload,
+        });
+        return;
+    }
     if (message.type === 'tw_player_gone') {
         if (!isTarget(sender)) return;
         target = null;

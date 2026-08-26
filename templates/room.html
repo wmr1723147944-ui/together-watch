@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Room {{ room_id }} - Together Watch</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260826-bridge">
 </head>
 <body>
     <input type="hidden" id="roomData" value="{{ room_id }}">
@@ -145,8 +145,11 @@
                         <button type="button" id="loadUrlBtn" class="btn btn-small" aria-label="识别并使用视频来源">使用这个链接</button>
                     </div>
                     <div class="control-options">
-                        <button type="button" id="fitToggleBtn" class="btn btn-secondary btn-compact">↔ 铺满画面</button>
-                        <span class="source-policy-note">会员内容需每位成员分别登录原网站</span>
+                        <div class="local-mirror-actions">
+                            <button type="button" id="localMirrorBtn" class="btn btn-small">📺 映射播放页</button>
+                            <button type="button" id="fitToggleBtn" class="btn btn-secondary btn-compact">↔ 铺满画面</button>
+                        </div>
+                        <span id="localMirrorStatus" class="source-policy-note">映射仅在本机显示，不上传也不分享给其他成员</span>
                     </div>
                     <div id="urlStatus" class="control-status" role="status" aria-live="polite"></div>
                     <details class="companion-help">
@@ -154,6 +157,7 @@
                         <p>在电脑浏览器按 Ctrl+Shift+B 显示书签栏，把“拖到书签栏：一起看助手”按钮拖进去。进入播放页后点击该书签，右侧会出现房间侧栏，可直接查看在线成员和聊天。</p>
                         <p>书签助手只同步 HTML5 播放、暂停、进度、倍速和聊天，不读取 Cookie、账号或真实媒体地址。后台助手窗口需要保持打开，但连接后会把焦点还给视频页，可以最小化。</p>
                         <p>跨域 iframe、加密或定制播放器可能无法识别，此时才需要插件。手机浏览器对书签脚本支持不一致，手机端建议使用站内授权播放器。</p>
+                        <p>想留在房间页观看时，点击“映射播放页”，在浏览器弹窗中选择正在播放视频的标签页。映射画面只在本机显示，不会传给服务器或其他成员。</p>
                         <p>自有或获得书面授权的 MP4/M3U8 直链由管理员登记域名后可直接粘贴播放，不需要扩展。</p>
                     </details>
                 </section>
@@ -243,7 +247,7 @@
     <script src="{{ url_for('static', filename='vendor/hls-1.5.18.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20260808-audio') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260825-stability') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/main.js', v='20260825-stability') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260826-bridge') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/main.js', v='20260826-bridge') }}" defer></script>
 </body>
 </html>

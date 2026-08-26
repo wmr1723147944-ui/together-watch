@@ -2098,6 +2098,7 @@ socket_message_times = defaultdict(deque)
 call_members = defaultdict(dict)
 room_buffering = defaultdict(set)
 rooms_paused_for_buffering = set()
+room_playback_leaders = {}
 room_lock = threading.RLock()
 
 
@@ -2116,6 +2117,7 @@ def cleanup_stale_rooms():
             call_members.pop(room_id, None)
             room_buffering.pop(room_id, None)
             rooms_paused_for_buffering.discard(room_id)
+            room_playback_leaders.pop(room_id, None)
 
 
 def ensure_room_state(room_id, now=None):
@@ -2278,6 +2280,8 @@ def remove_member(sid, announce=True):
         client_key = sid_client_keys.pop(sid, "")
         room_members[room_id].pop(sid, None)
         room_activity[room_id] = time.time()
+        if room_playback_leaders.get(room_id, {}).get("sid") == sid:
+            room_playback_leaders.pop(room_id, None)
 
     if announce and role != "companion":
         socketio.emit(
@@ -2711,6 +2715,13 @@ def handle_video_event(data):
     now = time.time()
     with room_lock:
         state = ensure_room_state(room_id, now)
+        if sid_roles.get(request.sid) == "companion":
+            room_playback_leaders[room_id] = {
+                "sid": request.sid,
+                "seen_at": now,
+            }
+        else:
+            room_playback_leaders.pop(room_id, None)
 
         outgoing = {
             "room": room_id,
@@ -2804,6 +2815,62 @@ def handle_video_event(data):
         room_activity[room_id] = now
 
     emit("sync_video", outgoing, to=room_id, include_self=False)
+
+
+@socketio.on("playback_snapshot")
+def handle_playback_snapshot(data):
+    identity = socket_identity(data)
+    if not identity or sid_roles.get(request.sid) != "companion":
+        return
+    room_id, _username = identity
+
+    try:
+        event_time = float(data.get("time", 0))
+        speed = float(data.get("speed", 1))
+    except (TypeError, ValueError):
+        return
+    if not math.isfinite(event_time) or not 0 <= event_time <= 7 * 24 * 60 * 60:
+        return
+    if not math.isfinite(speed) or not 0.25 <= speed <= 4:
+        return
+
+    now = time.time()
+    recent_interaction = bool(data.get("recent_interaction"))
+    playing = bool(data.get("playing"))
+    with room_lock:
+        state = ensure_room_state(room_id, now)
+        media_source = state.get("media_source") or {}
+        if media_source.get("mode") == "direct_media":
+            return
+
+        leader = room_playback_leaders.get(room_id)
+        leader_expired = not leader or now - leader.get("seen_at", 0) > 7
+        is_leader = bool(leader and leader.get("sid") == request.sid)
+        if not (leader_expired or is_leader or recent_interaction):
+            return
+
+        if leader_expired or recent_interaction:
+            room_playback_leaders[room_id] = {
+                "sid": request.sid,
+                "seen_at": now,
+            }
+        else:
+            leader["seen_at"] = now
+
+        state.update(
+            time=event_time,
+            playing=playing,
+            speed=speed,
+            updated_at=now,
+            resume_at=None,
+            external_playback=True,
+        )
+        state["revision"] += 1
+        room_activity[room_id] = now
+
+    snapshot = current_room_state(room_id)
+    if snapshot:
+        emit("room_state", snapshot, to=room_id, include_self=False)
 
 
 @socketio.on("chat_message")

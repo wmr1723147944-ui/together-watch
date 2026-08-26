@@ -299,6 +299,10 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.emit('video_event', { room: activeRoom, ...data.payload });
             return;
         }
+        if (data.type === 'player_snapshot' && socket?.connected) {
+            socket.emit('playback_snapshot', { room: activeRoom, ...data.payload });
+            return;
+        }
         if (data.type === 'buffering_event' && socket?.connected) {
             socket.emit('buffering_event', { room: activeRoom, ...data.payload });
             return;

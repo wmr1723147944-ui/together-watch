@@ -306,6 +306,7 @@
                 ...extra,
             });
             lastPlayerSample = readPlayerSample();
+            sendPlayerSnapshot(true);
         }
 
         function readPlayerSample() {
@@ -319,6 +320,39 @@
                 seeking: Boolean(player.seeking),
             };
         }
+
+        function sendPlayerSnapshot(recentInteraction = false) {
+            const sample = readPlayerSample();
+            if (!sample) return;
+            postToCompanion('player_snapshot', {
+                time: sample.time,
+                playing: !sample.paused,
+                speed: sample.speed,
+                readyState: sample.readyState,
+                recent_interaction: recentInteraction || Date.now() < localInteractionUntil,
+            });
+        }
+
+        document.addEventListener('pointerdown', event => {
+            if (!player || Date.now() < remoteGuardUntil) return;
+            if (event.composedPath().includes(host)) return;
+            const rect = player.getBoundingClientRect();
+            if (
+                event.clientX >= rect.left
+                && event.clientX <= rect.right
+                && event.clientY >= rect.top
+                && event.clientY <= rect.bottom
+            ) {
+                localInteractionUntil = Date.now() + 5000;
+            }
+        }, true);
+        document.addEventListener('keydown', event => {
+            if (!player || Date.now() < remoteGuardUntil) return;
+            if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '')) return;
+            if ([' ', 'ArrowLeft', 'ArrowRight', 'j', 'k', 'l'].includes(event.key)) {
+                localInteractionUntil = Date.now() + 5000;
+            }
+        }, true);
 
         function monitorPlayerState() {
             const current = readPlayerSample();
@@ -406,6 +440,7 @@
             }
             setStatus(connected ? '播放器与房间已连接' : '已找到播放器，等待房间', connected);
             postToCompanion('target_ready', { playerReady: true });
+            sendPlayerSnapshot();
         }
 
         function estimatedServerNow() {
@@ -611,6 +646,7 @@
         refreshPlayer();
         window.setInterval(refreshPlayer, 1800);
         window.setInterval(monitorPlayerState, 650);
+        window.setInterval(sendPlayerSnapshot, 3000);
         window.setInterval(() => {
             if (popupWindow && popupWindow.closed) {
                 connected = false;

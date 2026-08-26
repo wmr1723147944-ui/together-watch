@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlStatus = document.getElementById('urlStatus');
     const loadUrlBtn = document.getElementById('loadUrlBtn');
     const fitToggleBtn = document.getElementById('fitToggleBtn');
+    const localMirrorBtn = document.getElementById('localMirrorBtn');
+    const localMirrorStatus = document.getElementById('localMirrorStatus');
     const officialPageStage = document.getElementById('officialPageStage');
     const officialSourceTitle = document.getElementById('officialSourceTitle');
     const officialSourceDescription = document.getElementById('officialSourceDescription');
@@ -231,6 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let hlsRecoveryAttempts = 0;
     let companionConnected = false;
     let companionVolumeTimer = null;
+    let localMirrorStream = null;
 
     function clampedStoredVolume(key, fallback = 100) {
         const rawValue = localStorage.getItem(key);
@@ -623,7 +626,92 @@ document.addEventListener('DOMContentLoaded', () => {
         officialPlaybackState.textContent = `${status} · ${minutes}:${remainder} · 由观影助手同步播放页`;
     }
 
+    function clearLocalMirror({ stopTracks = true } = {}) {
+        const stream = localMirrorStream;
+        localMirrorStream = null;
+        if (stopTracks) stream?.getTracks?.().forEach(track => track.stop());
+        if (videoPlayer.srcObject) videoPlayer.srcObject = null;
+        videoPlayer.controls = true;
+        localMirrorBtn.textContent = '📺 映射播放页';
+        localMirrorBtn.classList.remove('btn-danger');
+        localMirrorStatus.textContent = '映射仅在本机显示，不上传也不分享给其他成员';
+        localMirrorStatus.classList.remove('is-active');
+    }
+
+    function restoreStageAfterMirror() {
+        clearLocalMirror();
+        if (activeMediaSource?.mode === 'official_page') {
+            showOfficialPageSource(activeMediaSource);
+            return;
+        }
+        officialPageStage.classList.add('hidden');
+        videoPlayer.classList.remove('hidden');
+        videoEmptyState.classList.toggle('hidden', Boolean(activeSource));
+        localMirrorStatus.textContent = '映射已停止；原视频页可以继续保留在后台';
+    }
+
+    async function startLocalMirror() {
+        if (localMirrorStream) {
+            restoreStageAfterMirror();
+            return;
+        }
+        if (activeMediaSource?.mode === 'direct_media') {
+            addSystemMessage('当前直链已经在房间播放器中显示，不需要再次映射。');
+            return;
+        }
+        if (!navigator.mediaDevices?.getDisplayMedia) {
+            addSystemMessage('当前浏览器不支持标签页映射，请使用最新版 Chrome、Edge 或桌面浏览器。');
+            return;
+        }
+
+        try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({
+                video: { displaySurface: 'browser' },
+                audio: true,
+                selfBrowserSurface: 'exclude',
+                surfaceSwitching: 'include',
+                systemAudio: 'include',
+            });
+            const videoTrack = stream.getVideoTracks()[0];
+            if (!videoTrack) {
+                stream.getTracks().forEach(track => track.stop());
+                throw new Error('没有选择可映射的标签页');
+            }
+
+            localMirrorStream = stream;
+            clearHlsInstance();
+            videoPlayer.pause();
+            videoPlayer.removeAttribute('src');
+            videoPlayer.load();
+            videoPlayer.srcObject = stream;
+            videoPlayer.controls = false;
+            videoPlayer.muted = true;
+            videoPlayer.classList.remove('hidden');
+            videoEmptyState.classList.add('hidden');
+            officialPageStage.classList.add('hidden');
+            await videoPlayer.play();
+            localMirrorBtn.textContent = '■ 停止映射';
+            localMirrorBtn.classList.add('btn-danger');
+            localMirrorStatus.textContent = '正在显示所选标签页；画面仅留在本机，声音仍由原视频页播放';
+            localMirrorStatus.classList.add('is-active');
+            videoTrack.addEventListener('ended', () => {
+                if (localMirrorStream === stream) restoreStageAfterMirror();
+            }, { once: true });
+            addSystemMessage('📺 播放页已映射到房间画面。请保留原视频标签页，不要关闭。');
+        } catch (error) {
+            if (localMirrorStream) clearLocalMirror();
+            const cancelled = error?.name === 'NotAllowedError';
+            localMirrorStatus.textContent = cancelled
+                ? '没有选择标签页；需要映射时可重新点击'
+                : `映射失败：${error?.message || '浏览器没有提供画面'}`;
+            addSystemMessage(cancelled
+                ? '已取消标签页映射。'
+                : '映射失败，请选择正在播放视频的浏览器标签页。');
+        }
+    }
+
     function showOfficialPageSource(source, state = null) {
+        if (localMirrorStream) clearLocalMirror();
         activeMediaSource = source;
         activeSource = '';
         window.clearTimeout(bufferingTimer);
@@ -701,6 +789,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        if (localMirrorStream) clearLocalMirror();
         sourceChangeUntil = Date.now() + 3000;
         activeSource = source;
         activeMediaSource = activeMediaSource?.mode === 'direct_media'
@@ -854,7 +943,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function emitVideoEvent(type, additionalData = {}) {
-        if (!socket.connected || isRemoteUpdate()) return;
+        if (localMirrorStream || !socket.connected || isRemoteUpdate()) return;
         if (type !== 'change_source' && Date.now() < sourceChangeUntil) return;
 
         const now = Date.now();
@@ -1553,13 +1642,14 @@ document.addEventListener('DOMContentLoaded', () => {
     applyVideoVolume({ notifyCompanion: false });
 
     fitToggleBtn.addEventListener('click', () => {
-        if (activeMediaSource?.mode === 'official_page') {
+        if (activeMediaSource?.mode === 'official_page' && !localMirrorStream) {
             addSystemMessage('官方页面伴随模式的画面布局由原网站控制。');
             return;
         }
         const isCover = videoPlayer.classList.toggle('video-cover');
         fitToggleBtn.textContent = isCover ? '▣ 完整画面' : '↔ 铺满画面';
     });
+    localMirrorBtn?.addEventListener('click', startLocalMirror);
 
     qualitySelect.addEventListener('change', () => {
         if (!hlsInstance) return;
@@ -1636,6 +1726,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     window.addEventListener('beforeunload', () => {
+        if (localMirrorStream) clearLocalMirror();
         callController?.destroy();
         socket.emit('leave', { room: roomId });
     });

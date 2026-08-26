@@ -1186,6 +1186,22 @@ video.video-cover {
     gap: 0.7rem;
 }
 
+.local-mirror-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.55rem;
+}
+
+#localMirrorStatus {
+    max-width: 560px;
+    text-align: right;
+}
+
+#localMirrorStatus.is-active {
+    color: var(--success-color);
+}
+
 .collaboration-tip {
     display: flex;
     grid-column: 1 / -1;

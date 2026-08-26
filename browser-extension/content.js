@@ -312,7 +312,44 @@
                 ...extra,
             },
         });
+        sendSnapshot(true);
     }
+
+    function sendSnapshot(recentInteraction = false) {
+        if (!player) return;
+        notify({
+            type: 'tw_player_snapshot',
+            player: playerMetrics(player),
+            payload: {
+                time: Number(player.currentTime) || 0,
+                playing: !player.paused,
+                speed: Number(player.playbackRate) || 1,
+                readyState: Number(player.readyState) || 0,
+                recent_interaction: recentInteraction || Date.now() < localInteractionUntil,
+            },
+        });
+    }
+
+    document.addEventListener('pointerdown', event => {
+        if (!player || Date.now() < remoteGuardUntil) return;
+        if (chatUi?.host && event.composedPath().includes(chatUi.host)) return;
+        const rect = player.getBoundingClientRect();
+        if (
+            event.clientX >= rect.left
+            && event.clientX <= rect.right
+            && event.clientY >= rect.top
+            && event.clientY <= rect.bottom
+        ) {
+            localInteractionUntil = Date.now() + 5000;
+        }
+    }, true);
+    document.addEventListener('keydown', event => {
+        if (!player || Date.now() < remoteGuardUntil) return;
+        if (/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '')) return;
+        if ([' ', 'ArrowLeft', 'ArrowRight', 'j', 'k', 'l'].includes(event.key)) {
+            localInteractionUntil = Date.now() + 5000;
+        }
+    }, true);
 
     function sendBuffering(active) {
         if (active) {
@@ -376,6 +413,7 @@
         }
         report('finding', '已找到官方页面播放器');
         notify({ type: 'tw_player_ready', player: playerMetrics(player) });
+        sendSnapshot();
         for (const delay of [1000, 5000]) {
             window.setTimeout(() => {
                 if (player === nextPlayer) {
@@ -561,6 +599,7 @@
     acceptRoomInvite();
     refreshPlayer();
     window.setInterval(refreshPlayer, 2000);
+    window.setInterval(sendSnapshot, 3000);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') requestRoomState();
     });

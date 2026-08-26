@@ -39,6 +39,7 @@ class TogetherWatchTests(unittest.TestCase):
             application.call_members.clear()
             application.room_buffering.clear()
             application.rooms_paused_for_buffering.clear()
+            application.room_playback_leaders.clear()
 
     def test_pages_and_security_headers(self):
         response = self.client.get("/")
@@ -70,9 +71,11 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("拖到书签栏：一起看助手", html)
         self.assertIn("复制助手代码", html)
         self.assertIn("/static/js/bookmarklet.js", html)
-        self.assertIn("20260825-stability", html)
+        self.assertIn("20260826-bridge", html)
         self.assertIn("20260808-audio", html)
         self.assertNotIn('id="strictSyncToggle" checked', html)
+        self.assertIn('id="localMirrorBtn"', html)
+        self.assertIn("映射仅在本机显示", html)
         self.assertIn("官方页面由原网站验证登录与会员权限", html)
         self.assertIn("助手窗口需要保持打开", html)
         self.assertIn("已登记 1 条域名规则", html)
@@ -90,7 +93,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("免安装观影助手", companion_html)
         self.assertIn('id="webCompanionRoom"', companion_html)
         self.assertIn("/static/js/web-companion.js", companion_html)
-        self.assertIn("20260825-stability", companion_html)
+        self.assertIn("20260826-bridge", companion_html)
         self.assertIn("不读取账号、Cookie 或视频地址", companion_html)
 
         with self.client.get("/static/js/bookmarklet.js") as script_response:
@@ -104,6 +107,8 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("room_state_request", bookmarklet_script)
         self.assertIn("requestFreshRoomState", bookmarklet_script)
         self.assertIn("visibilitychange", bookmarklet_script)
+        self.assertIn("player_snapshot", bookmarklet_script)
+        self.assertIn("sendPlayerSnapshot", bookmarklet_script)
         self.assertIn("start: startTogetherWatchBookmark", bookmarklet_script)
         with self.client.get("/static/js/web-companion.js") as script_response:
             companion_script = script_response.get_data(as_text=True)
@@ -112,12 +117,15 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("roomStateTimer", companion_script)
         self.assertIn("}, 10000);", companion_script)
         self.assertIn("room_state_request", companion_script)
+        self.assertIn("playback_snapshot", companion_script)
         with self.client.get("/static/js/main.js") as script_response:
             room_script = script_response.get_data(as_text=True)
         self.assertIn("tw_strict_sync", room_script)
         self.assertIn("localInteractionUntil", room_script)
         self.assertIn("BUFFER_REPORT_DELAY = 5000", room_script)
         self.assertIn("}, 10000);", room_script)
+        self.assertIn("getDisplayMedia", room_script)
+        self.assertIn("localMirrorStream", room_script)
         with self.client.get("/static/js/voice-call.js") as script_response:
             voice_call_script = script_response.get_data(as_text=True)
         self.assertIn("await audio.play()", voice_call_script)
@@ -170,7 +178,7 @@ class TogetherWatchTests(unittest.TestCase):
             manifest = json.loads(archive.read("manifest.json"))
             content_script = archive.read("content.js").decode("utf-8")
             background_script = archive.read("background.js").decode("utf-8")
-        self.assertEqual(manifest["version"], "0.5.1")
+        self.assertEqual(manifest["version"], "0.5.2")
         self.assertIn(
             "https://watchtogethernow.cloud/*",
             manifest["host_permissions"],
@@ -178,9 +186,11 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("correctionThreshold: 2.0", content_script)
         self.assertIn("tw_request_room_state", content_script)
         self.assertIn("当前设备缓冲中，其他成员继续播放", content_script)
+        self.assertIn("tw_player_snapshot", content_script)
         self.assertIn("candidateScore", background_script)
         self.assertIn("roomStateTimer", background_script)
         self.assertIn("tw_player_gone", background_script)
+        self.assertIn("playback_snapshot", background_script)
         extension.close()
 
         extension_origin = f"chrome-extension://{'a' * 32}"
@@ -627,6 +637,46 @@ class TogetherWatchTests(unittest.TestCase):
                 application.room_buffering.get("private-sync-room", set()),
                 set(),
             )
+
+            first.get_received()
+            second.get_received()
+            first.emit(
+                "playback_snapshot",
+                {
+                    "room": "private-sync-room",
+                    "time": 31.25,
+                    "playing": True,
+                    "speed": 1,
+                    "recent_interaction": True,
+                },
+            )
+            snapshot_states = [
+                item["args"][0]
+                for item in second.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertTrue(snapshot_states[-1]["external_playback"])
+            self.assertTrue(snapshot_states[-1]["playing"])
+            self.assertGreaterEqual(snapshot_states[-1]["time"], 31.25)
+
+            second.emit(
+                "playback_snapshot",
+                {
+                    "room": "private-sync-room",
+                    "time": 5,
+                    "playing": False,
+                    "speed": 1,
+                    "recent_interaction": False,
+                },
+            )
+            first.emit("request_room_state", {"room": "private-sync-room"})
+            protected_states = [
+                item["args"][0]
+                for item in first.get_received()
+                if item["name"] == "room_state"
+            ]
+            self.assertTrue(protected_states[-1]["playing"])
+            self.assertGreaterEqual(protected_states[-1]["time"], 31.25)
         finally:
             first.disconnect()
             second.disconnect()
