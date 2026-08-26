@@ -166,6 +166,7 @@ function setTarget(sender, playerInfo = {}, force = false) {
     target = {
         tabId: sender.tab.id,
         frameId: Number(sender.frameId) || 0,
+        bridgeId: String(playerInfo.bridgeId || ''),
     };
     targetScore = nextScore;
     targetLastSeenAt = Date.now();
@@ -413,6 +414,21 @@ chrome.runtime.onMessage.addListener((message, sender) => {
         socket?.emit('playback_snapshot', {
             room: settings.room,
             ...message.payload,
+        });
+        return;
+    }
+    if (message.type === 'tw_player_layout_bridge') {
+        if (
+            !target
+            || target.tabId !== sender.tab?.id
+            || !target.bridgeId
+            || target.bridgeId !== String(message.bridgeId || '')
+        ) {
+            return;
+        }
+        socket?.emit('companion_layout', {
+            room: settings.room,
+            layout: message.layout,
         });
         return;
     }

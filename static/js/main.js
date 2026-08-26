@@ -27,6 +27,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const fitToggleBtn = document.getElementById('fitToggleBtn');
     const localMirrorBtn = document.getElementById('localMirrorBtn');
     const localMirrorStatus = document.getElementById('localMirrorStatus');
+    const mirrorPlaybackControls = document.getElementById('mirrorPlaybackControls');
+    const mirrorPlayToggle = document.getElementById('mirrorPlayToggle');
+    const mirrorCurrentTime = document.getElementById('mirrorCurrentTime');
+    const mirrorSeek = document.getElementById('mirrorSeek');
+    const mirrorDuration = document.getElementById('mirrorDuration');
+    const mirrorSpeed = document.getElementById('mirrorSpeed');
     const officialPageStage = document.getElementById('officialPageStage');
     const officialSourceTitle = document.getElementById('officialSourceTitle');
     const officialSourceDescription = document.getElementById('officialSourceDescription');
@@ -234,6 +240,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let companionConnected = false;
     let companionVolumeTimer = null;
     let localMirrorStream = null;
+    let localMirrorOutputStream = null;
+    let localMirrorSourceVideo = null;
+    let localMirrorCanvas = null;
+    let localMirrorFrameId = 0;
+    let latestPlayerLayout = null;
+    let externalPlaybackState = null;
+    let mirrorSeekPreview = false;
 
     function clampedStoredVolume(key, fallback = 100) {
         const rawValue = localStorage.getItem(key);
@@ -626,16 +639,129 @@ document.addEventListener('DOMContentLoaded', () => {
         officialPlaybackState.textContent = `${status} · ${minutes}:${remainder} · 由观影助手同步播放页`;
     }
 
+    function formatMirrorTime(value, fallback = '--:--') {
+        const seconds = Number(value);
+        if (!Number.isFinite(seconds) || seconds < 0) return fallback;
+        const whole = Math.floor(seconds);
+        const hours = Math.floor(whole / 3600);
+        const minutes = Math.floor((whole % 3600) / 60);
+        const remainder = String(whole % 60).padStart(2, '0');
+        return hours > 0
+            ? `${hours}:${String(minutes).padStart(2, '0')}:${remainder}`
+            : `${String(minutes).padStart(2, '0')}:${remainder}`;
+    }
+
+    function updateMirrorPlaybackControls(state = externalPlaybackState) {
+        if (!state || !mirrorPlaybackControls) return;
+        const current = expectedPosition(state);
+        const duration = Math.max(0, Number(state.duration) || 0);
+        if (!mirrorSeekPreview) {
+            mirrorSeek.max = duration > 0 ? String(duration) : '1000';
+            mirrorSeek.value = String(Math.min(duration || 1000, current));
+            mirrorCurrentTime.textContent = formatMirrorTime(current, '00:00');
+        }
+        mirrorSeek.disabled = duration <= 0;
+        mirrorDuration.textContent = formatMirrorTime(duration);
+        mirrorPlayToggle.textContent = state.playing ? '❚❚' : '▶';
+        mirrorPlayToggle.setAttribute('aria-label', state.playing ? '暂停原视频' : '播放原视频');
+        const speedValue = String(Number(state.speed) || 1);
+        if (Array.from(mirrorSpeed.options).some(option => option.value === speedValue)) {
+            mirrorSpeed.value = speedValue;
+        }
+    }
+
+    function emitMirrorVideoEvent(type, time, additionalData = {}) {
+        if (!socket.connected) {
+            addSystemMessage('房间正在重连，暂时无法控制原视频。');
+            return;
+        }
+        const safeTime = Math.max(0, Number(time) || 0);
+        socket.emit('video_event', {
+            room: roomId,
+            type,
+            time: safeTime,
+            ...additionalData,
+        });
+        externalPlaybackState = {
+            ...(externalPlaybackState || {}),
+            time: safeTime,
+            playing: type === 'play'
+                ? true
+                : type === 'pause'
+                    ? false
+                    : Boolean(externalPlaybackState?.playing),
+            speed: Number(additionalData.speed) || Number(externalPlaybackState?.speed) || 1,
+            server_time: estimatedServerNow(),
+        };
+        updateMirrorPlaybackControls();
+    }
+
+    function drawLocalMirrorFrame() {
+        if (!localMirrorStream || !localMirrorSourceVideo || !localMirrorCanvas) return;
+        const sourceWidth = Number(localMirrorSourceVideo.videoWidth) || 0;
+        const sourceHeight = Number(localMirrorSourceVideo.videoHeight) || 0;
+        if (sourceWidth > 0 && sourceHeight > 0) {
+            const layout = latestPlayerLayout;
+            if (!(layout?.viewport_width > 0) || !(layout?.viewport_height > 0)) {
+                const waitingContext = localMirrorCanvas.getContext('2d', { alpha: false });
+                if (waitingContext) {
+                    waitingContext.fillStyle = '#05050d';
+                    waitingContext.fillRect(0, 0, localMirrorCanvas.width, localMirrorCanvas.height);
+                }
+                localMirrorFrameId = window.requestAnimationFrame(drawLocalMirrorFrame);
+                return;
+            }
+            const scaleX = sourceWidth / layout.viewport_width;
+            const scaleY = sourceHeight / layout.viewport_height;
+            const sourceX = Math.max(0, Math.min(sourceWidth - 1, layout.left * scaleX));
+            const sourceY = Math.max(0, Math.min(sourceHeight - 1, layout.top * scaleY));
+            const cropWidth = Math.max(1, Math.min(sourceWidth - sourceX, layout.width * scaleX));
+            const cropHeight = Math.max(1, Math.min(sourceHeight - sourceY, layout.height * scaleY));
+            const outputScale = Math.min(1, 1920 / cropWidth, 1080 / cropHeight);
+            const outputWidth = Math.max(2, Math.round(cropWidth * outputScale));
+            const outputHeight = Math.max(2, Math.round(cropHeight * outputScale));
+            if (localMirrorCanvas.width !== outputWidth || localMirrorCanvas.height !== outputHeight) {
+                localMirrorCanvas.width = outputWidth;
+                localMirrorCanvas.height = outputHeight;
+            }
+            const context = localMirrorCanvas.getContext('2d', { alpha: false });
+            context?.drawImage(
+                localMirrorSourceVideo,
+                sourceX,
+                sourceY,
+                cropWidth,
+                cropHeight,
+                0,
+                0,
+                outputWidth,
+                outputHeight,
+            );
+        }
+        localMirrorFrameId = window.requestAnimationFrame(drawLocalMirrorFrame);
+    }
+
     function clearLocalMirror({ stopTracks = true } = {}) {
         const stream = localMirrorStream;
         localMirrorStream = null;
+        window.cancelAnimationFrame(localMirrorFrameId);
+        localMirrorFrameId = 0;
         if (stopTracks) stream?.getTracks?.().forEach(track => track.stop());
+        localMirrorOutputStream?.getTracks?.().forEach(track => track.stop());
+        localMirrorOutputStream = null;
+        if (localMirrorSourceVideo) {
+            localMirrorSourceVideo.pause();
+            localMirrorSourceVideo.srcObject = null;
+        }
+        localMirrorSourceVideo = null;
+        localMirrorCanvas = null;
         if (videoPlayer.srcObject) videoPlayer.srcObject = null;
         videoPlayer.controls = true;
+        mirrorPlaybackControls?.classList.add('hidden');
         localMirrorBtn.textContent = '📺 映射播放页';
         localMirrorBtn.classList.remove('btn-danger');
         localMirrorStatus.textContent = '映射仅在本机显示，不上传也不分享给其他成员';
         localMirrorStatus.classList.remove('is-active');
+        applyVideoVolume({ notifyCompanion: false });
     }
 
     function restoreStageAfterMirror() {
@@ -667,10 +793,9 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 video: { displaySurface: 'browser' },
-                audio: true,
+                audio: false,
                 selfBrowserSurface: 'exclude',
                 surfaceSwitching: 'include',
-                systemAudio: 'include',
             });
             const videoTrack = stream.getVideoTracks()[0];
             if (!videoTrack) {
@@ -679,20 +804,37 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             localMirrorStream = stream;
+            localMirrorSourceVideo = document.createElement('video');
+            localMirrorSourceVideo.muted = true;
+            localMirrorSourceVideo.playsInline = true;
+            localMirrorSourceVideo.srcObject = stream;
+            await localMirrorSourceVideo.play();
+            localMirrorCanvas = document.createElement('canvas');
+            localMirrorCanvas.width = 1280;
+            localMirrorCanvas.height = 720;
+            if (typeof localMirrorCanvas.captureStream !== 'function') {
+                throw new Error('当前浏览器不支持播放器区域裁切');
+            }
+            localMirrorOutputStream = localMirrorCanvas.captureStream(30);
             clearHlsInstance();
             videoPlayer.pause();
             videoPlayer.removeAttribute('src');
             videoPlayer.load();
-            videoPlayer.srcObject = stream;
+            videoPlayer.srcObject = localMirrorOutputStream;
             videoPlayer.controls = false;
             videoPlayer.muted = true;
             videoPlayer.classList.remove('hidden');
             videoEmptyState.classList.add('hidden');
             officialPageStage.classList.add('hidden');
             await videoPlayer.play();
+            drawLocalMirrorFrame();
+            mirrorPlaybackControls?.classList.remove('hidden');
+            updateMirrorPlaybackControls();
             localMirrorBtn.textContent = '■ 停止映射';
             localMirrorBtn.classList.add('btn-danger');
-            localMirrorStatus.textContent = '正在显示所选标签页；画面仅留在本机，声音仍由原视频页播放';
+            localMirrorStatus.textContent = latestPlayerLayout
+                ? '已裁切到播放器区域；下方控制条会操作原视频页'
+                : '已开始映射，正在等待助手定位播放器区域';
             localMirrorStatus.classList.add('is-active');
             videoTrack.addEventListener('ended', () => {
                 if (localMirrorStream === stream) restoreStageAfterMirror();
@@ -712,6 +854,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showOfficialPageSource(source, state = null) {
         if (localMirrorStream) clearLocalMirror();
+        if (!state?.external_playback) externalPlaybackState = null;
         activeMediaSource = source;
         activeSource = '';
         window.clearTimeout(bufferingTimer);
@@ -790,6 +933,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (localMirrorStream) clearLocalMirror();
+        externalPlaybackState = null;
         sourceChangeUntil = Date.now() + 3000;
         activeSource = source;
         activeMediaSource = activeMediaSource?.mode === 'direct_media'
@@ -919,19 +1063,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyRoomState(state) {
-        if (!state?.media_source && !state?.video_src) return;
+        if (!state?.media_source && !state?.video_src && !state?.external_playback) return;
         const revision = Number(state.revision) || 0;
         if (revision < lastRevision) return;
         lastRevision = Math.max(lastRevision, revision);
 
-        const roomSource = state.media_source || directMediaSource(state.video_src);
-        if (sourceIdentity(activeMediaSource) !== sourceIdentity(roomSource)) {
+        if (state.external_playback) {
+            externalPlaybackState = { ...state };
+            updateOfficialPlaybackState({
+                ...state,
+                time: expectedPosition(state),
+            });
+            updateMirrorPlaybackControls(state);
+        }
+
+        const roomSource = state.media_source
+            || (state.video_src ? directMediaSource(state.video_src) : null);
+        if (roomSource && sourceIdentity(activeMediaSource) !== sourceIdentity(roomSource)) {
             guardRemoteUpdate(2500);
             changeMediaSource(roomSource, false, state);
             scheduleSourceState(state);
             return;
         }
-        if (roomSource.mode === 'official_page') {
+        if (state.external_playback || roomSource?.mode === 'official_page') {
             updateOfficialPlaybackState({
                 ...state,
                 time: expectedPosition(state),
@@ -1045,6 +1199,23 @@ document.addEventListener('DOMContentLoaded', () => {
         updateCompanionStatus(Boolean(data?.connected));
         updateVolumeHelp();
         if (data?.connected) sendCompanionVolume();
+    });
+
+    socket.on('companion_player_layout', data => {
+        const layout = data?.layout;
+        if (!layout || !(Number(layout.width) > 0) || !(Number(layout.height) > 0)) return;
+        latestPlayerLayout = {
+            viewport_width: Number(layout.viewport_width) || 0,
+            viewport_height: Number(layout.viewport_height) || 0,
+            left: Number(layout.left) || 0,
+            top: Number(layout.top) || 0,
+            width: Number(layout.width) || 0,
+            height: Number(layout.height) || 0,
+        };
+        if (localMirrorStream) {
+            localMirrorStatus.textContent = '已裁切到播放器区域；下方控制条会操作原视频页';
+            localMirrorStatus.classList.add('is-active');
+        }
     });
 
     socket.on('presence', data => {
@@ -1173,12 +1344,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (revision && revision <= lastRevision) return;
         lastRevision = Math.max(lastRevision, revision);
         guardRemoteUpdate();
-        const usesOfficialPage = activeMediaSource?.mode === 'official_page';
+        const usesOfficialPage = (
+            activeMediaSource?.mode === 'official_page'
+            || Boolean(externalPlaybackState?.external_playback)
+            || Boolean(localMirrorStream)
+        );
+        const updateExternalEventState = (playing, speed = data.speed) => {
+            externalPlaybackState = {
+                ...(externalPlaybackState || {}),
+                time: Number(data.time) || 0,
+                playing: Boolean(playing),
+                speed: Number(speed) || Number(externalPlaybackState?.speed) || 1,
+                server_time: Number(data.server_time) || estimatedServerNow(),
+                external_playback: true,
+            };
+            updateMirrorPlaybackControls();
+        };
 
         switch (data.type) {
             case 'play':
                 addSystemMessage(`▶ ${data.username} 开始播放`, true);
                 if (usesOfficialPage) {
+                    updateExternalEventState(true);
                     updateOfficialPlaybackState({
                         time: expectedPosition({
                             time: data.time,
@@ -1204,6 +1391,7 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'pause':
                 addSystemMessage(`⏸ ${data.username} 暂停了视频`, true);
                 if (usesOfficialPage) {
+                    updateExternalEventState(false);
                     updateOfficialPlaybackState({ time: data.time, playing: false });
                     break;
                 }
@@ -1213,6 +1401,11 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'seek':
                 addSystemMessage(`⏩ ${data.username} 调整了进度`, true);
                 if (usesOfficialPage) {
+                    updateExternalEventState(
+                        typeof data.playing === 'boolean'
+                            ? data.playing
+                            : Boolean(externalPlaybackState?.playing),
+                    );
                     updateOfficialPlaybackState({
                         time: data.time,
                         playing: typeof data.playing === 'boolean' ? data.playing : false,
@@ -1247,6 +1440,12 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'speed':
                 basePlaybackRate = Number(data.speed) || 1;
                 if (usesOfficialPage) {
+                    updateExternalEventState(
+                        typeof data.playing === 'boolean'
+                            ? data.playing
+                            : Boolean(externalPlaybackState?.playing),
+                        basePlaybackRate,
+                    );
                     addSystemMessage(`⏩ ${data.username} 调整倍速为 ${data.speed}x`, true);
                     break;
                 }
@@ -1650,6 +1849,37 @@ document.addEventListener('DOMContentLoaded', () => {
         fitToggleBtn.textContent = isCover ? '▣ 完整画面' : '↔ 铺满画面';
     });
     localMirrorBtn?.addEventListener('click', startLocalMirror);
+    mirrorPlayToggle?.addEventListener('click', () => {
+        const state = externalPlaybackState || {};
+        const current = state.time !== undefined
+            ? expectedPosition(state)
+            : Number(mirrorSeek?.value) || 0;
+        emitMirrorVideoEvent(state.playing ? 'pause' : 'play', current);
+    });
+    mirrorSeek?.addEventListener('input', () => {
+        mirrorSeekPreview = true;
+        mirrorCurrentTime.textContent = formatMirrorTime(mirrorSeek.value, '00:00');
+    });
+    mirrorSeek?.addEventListener('change', () => {
+        const targetTime = Math.max(0, Number(mirrorSeek.value) || 0);
+        mirrorSeekPreview = false;
+        emitMirrorVideoEvent('seek', targetTime);
+    });
+    mirrorSeek?.addEventListener('blur', () => {
+        mirrorSeekPreview = false;
+    });
+    mirrorSpeed?.addEventListener('change', () => {
+        const speed = Math.max(0.25, Math.min(4, Number(mirrorSpeed.value) || 1));
+        const current = externalPlaybackState
+            ? expectedPosition(externalPlaybackState)
+            : Number(mirrorSeek?.value) || 0;
+        emitMirrorVideoEvent('speed', current, { speed });
+    });
+    window.setInterval(() => {
+        if (localMirrorStream && externalPlaybackState && !mirrorSeekPreview) {
+            updateMirrorPlaybackControls();
+        }
+    }, 500);
 
     qualitySelect.addEventListener('change', () => {
         if (!hlsInstance) return;

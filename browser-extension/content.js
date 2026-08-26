@@ -9,6 +9,7 @@
     let resumeTimer = null;
     let localVolume = 1;
     let lastRoomStateRequestAt = 0;
+    const playerBridgeId = crypto.randomUUID();
     let chatUi = null;
     const chatState = {
         connected: false,
@@ -297,8 +298,71 @@
             playing: Boolean(video && !video.paused && !video.ended),
             topFrame: isTopFrame(),
             duration: Number.isFinite(Number(video?.duration)) ? Number(video.duration) : 0,
+            bridgeId: playerBridgeId,
         };
     }
+
+    function playerLayout(video) {
+        const rect = video?.getBoundingClientRect?.();
+        if (!rect) return null;
+        const viewportWidth = Math.max(0, Number(window.innerWidth) || 0);
+        const viewportHeight = Math.max(0, Number(window.innerHeight) || 0);
+        const left = Math.max(0, Math.min(viewportWidth, Number(rect.left) || 0));
+        const top = Math.max(0, Math.min(viewportHeight, Number(rect.top) || 0));
+        const right = Math.max(left, Math.min(viewportWidth, Number(rect.right) || 0));
+        const bottom = Math.max(top, Math.min(viewportHeight, Number(rect.bottom) || 0));
+        if (right - left < 80 || bottom - top < 45) return null;
+        return {
+            viewport_width: viewportWidth,
+            viewport_height: viewportHeight,
+            left,
+            top,
+            width: right - left,
+            height: bottom - top,
+        };
+    }
+
+    function forwardPlayerLayout(layout, bridgeId = playerBridgeId) {
+        if (!layout) return;
+        if (isTopFrame()) {
+            notify({
+                type: 'tw_player_layout_bridge',
+                bridgeId,
+                layout,
+            });
+            return;
+        }
+        window.parent.postMessage({
+            channel: 'tw-extension-player-layout',
+            bridgeId,
+            layout,
+        }, '*');
+    }
+
+    window.addEventListener('message', event => {
+        const data = event.data;
+        if (data?.channel !== 'tw-extension-player-layout' || !data.layout) return;
+        const frame = Array.from(document.querySelectorAll('iframe'))
+            .find(item => item.contentWindow === event.source);
+        if (!frame) return;
+        const frameRect = frame.getBoundingClientRect();
+        const childViewportWidth = Math.max(1, Number(data.layout.viewport_width) || 1);
+        const childViewportHeight = Math.max(1, Number(data.layout.viewport_height) || 1);
+        const scaleX = frame.clientWidth > 0
+            ? frameRect.width / frame.clientWidth
+            : frameRect.width / childViewportWidth;
+        const scaleY = frame.clientHeight > 0
+            ? frameRect.height / frame.clientHeight
+            : frameRect.height / childViewportHeight;
+        forwardPlayerLayout({
+            viewport_width: Math.max(0, Number(window.innerWidth) || 0),
+            viewport_height: Math.max(0, Number(window.innerHeight) || 0),
+            left: frameRect.left + frame.clientLeft + Number(data.layout.left || 0) * scaleX,
+            top: frameRect.top + frame.clientTop + Number(data.layout.top || 0) * scaleY,
+            width: Number(data.layout.width || 0) * scaleX,
+            height: Number(data.layout.height || 0) * scaleY,
+        }, data.bridgeId);
+    });
 
     function emit(type, extra = {}) {
         if (!player || Date.now() < remoteGuardUntil) return;
@@ -322,12 +386,14 @@
             player: playerMetrics(player),
             payload: {
                 time: Number(player.currentTime) || 0,
+                duration: Number.isFinite(Number(player.duration)) ? Number(player.duration) : 0,
                 playing: !player.paused,
                 speed: Number(player.playbackRate) || 1,
                 readyState: Number(player.readyState) || 0,
                 recent_interaction: recentInteraction || Date.now() < localInteractionUntil,
             },
         });
+        forwardPlayerLayout(playerLayout(player));
     }
 
     document.addEventListener('pointerdown', event => {

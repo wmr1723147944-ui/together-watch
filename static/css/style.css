@@ -626,6 +626,70 @@ video.video-cover {
     object-fit: cover;
 }
 
+.mirror-playback-controls {
+    position: absolute;
+    right: 0.75rem;
+    bottom: 0.75rem;
+    left: 0.75rem;
+    z-index: 5;
+    display: grid;
+    grid-template-columns: auto auto minmax(100px, 1fr) auto auto;
+    align-items: center;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 12px;
+    background: rgba(7, 8, 16, 0.84);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(12px);
+    gap: 0.55rem;
+}
+
+.mirror-playback-controls.hidden {
+    display: none;
+}
+
+.mirror-play-toggle {
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: var(--primary-gradient);
+    color: #fff;
+    cursor: pointer;
+}
+
+.mirror-playback-controls input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    accent-color: var(--secondary-color);
+}
+
+.mirror-time {
+    min-width: 3.1rem;
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 0.72rem;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+}
+
+.mirror-speed-label {
+    display: flex;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.7rem;
+    gap: 0.35rem;
+}
+
+.mirror-speed-label select {
+    min-height: 2rem;
+    padding: 0 0.4rem;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+}
+
 .official-page-stage {
     position: absolute;
     inset: 0;
@@ -1533,6 +1597,24 @@ video.video-cover {
 }
 
 @media (max-width: 680px) {
+    .mirror-playback-controls {
+        right: 0.35rem;
+        bottom: 0.35rem;
+        left: 0.35rem;
+        grid-template-columns: auto auto minmax(70px, 1fr) auto;
+        padding: 0.4rem;
+        gap: 0.3rem;
+    }
+
+    .mirror-speed-label {
+        display: none;
+    }
+
+    .mirror-time {
+        min-width: 2.7rem;
+        font-size: 0.64rem;
+    }
+
     .landing-container {
         padding: 16px;
     }

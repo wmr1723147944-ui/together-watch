@@ -314,10 +314,52 @@
             return {
                 sampledAt: performance.now(),
                 time: Number(player.currentTime) || 0,
+                duration: Number.isFinite(Number(player.duration)) ? Number(player.duration) : 0,
                 paused: Boolean(player.paused),
                 speed: Number(player.playbackRate) || 1,
                 readyState: Number(player.readyState) || 0,
                 seeking: Boolean(player.seeking),
+            };
+        }
+
+        function readPlayerLayout() {
+            if (!player) return null;
+            const rect = player.getBoundingClientRect();
+            let left = Number(rect.left) || 0;
+            let top = Number(rect.top) || 0;
+            let width = Number(rect.width) || 0;
+            let height = Number(rect.height) || 0;
+            let currentWindow = player.ownerDocument?.defaultView;
+            try {
+                while (currentWindow && currentWindow !== window) {
+                    const frame = currentWindow.frameElement;
+                    if (!frame) return null;
+                    const frameRect = frame.getBoundingClientRect();
+                    const scaleX = frame.clientWidth > 0 ? frameRect.width / frame.clientWidth : 1;
+                    const scaleY = frame.clientHeight > 0 ? frameRect.height / frame.clientHeight : 1;
+                    left = frameRect.left + frame.clientLeft + left * scaleX;
+                    top = frameRect.top + frame.clientTop + top * scaleY;
+                    width *= scaleX;
+                    height *= scaleY;
+                    currentWindow = currentWindow.parent;
+                }
+            } catch (_error) {
+                return null;
+            }
+            const viewportWidth = Math.max(0, Number(window.innerWidth) || 0);
+            const viewportHeight = Math.max(0, Number(window.innerHeight) || 0);
+            const clippedLeft = Math.max(0, Math.min(viewportWidth, left));
+            const clippedTop = Math.max(0, Math.min(viewportHeight, top));
+            const clippedRight = Math.max(clippedLeft, Math.min(viewportWidth, left + width));
+            const clippedBottom = Math.max(clippedTop, Math.min(viewportHeight, top + height));
+            if (clippedRight - clippedLeft < 80 || clippedBottom - clippedTop < 45) return null;
+            return {
+                viewport_width: viewportWidth,
+                viewport_height: viewportHeight,
+                left: clippedLeft,
+                top: clippedTop,
+                width: clippedRight - clippedLeft,
+                height: clippedBottom - clippedTop,
             };
         }
 
@@ -326,11 +368,14 @@
             if (!sample) return;
             postToCompanion('player_snapshot', {
                 time: sample.time,
+                duration: sample.duration,
                 playing: !sample.paused,
                 speed: sample.speed,
                 readyState: sample.readyState,
                 recent_interaction: recentInteraction || Date.now() < localInteractionUntil,
             });
+            const layout = readPlayerLayout();
+            if (layout) postToCompanion('player_layout', { layout });
         }
 
         document.addEventListener('pointerdown', event => {

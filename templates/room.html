@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Room {{ room_id }} - Together Watch</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260826-bridge">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260826-crop">
 </head>
 <body>
     <input type="hidden" id="roomData" value="{{ room_id }}">
@@ -46,6 +46,23 @@
                     <video id="mainVideo" controls playsinline preload="metadata">
                         您的浏览器不支持 HTML5 视频。
                     </video>
+                    <div id="mirrorPlaybackControls" class="mirror-playback-controls hidden" aria-label="映射播放器控制">
+                        <button type="button" id="mirrorPlayToggle" class="mirror-play-toggle" aria-label="播放映射视频">▶</button>
+                        <span id="mirrorCurrentTime" class="mirror-time">00:00</span>
+                        <input type="range" id="mirrorSeek" min="0" max="1000" value="0" step="1" aria-label="调整原视频进度">
+                        <span id="mirrorDuration" class="mirror-time">--:--</span>
+                        <label class="mirror-speed-label" for="mirrorSpeed">
+                            <span>倍速</span>
+                            <select id="mirrorSpeed" aria-label="调整原视频倍速">
+                                <option value="0.5">0.5×</option>
+                                <option value="0.75">0.75×</option>
+                                <option value="1" selected>1×</option>
+                                <option value="1.25">1.25×</option>
+                                <option value="1.5">1.5×</option>
+                                <option value="2">2×</option>
+                            </select>
+                        </label>
+                    </div>
                     <div id="officialPageStage" class="official-page-stage hidden">
                         <span class="source-mode-badge">官方页面伴随模式</span>
                         <strong id="officialSourceTitle">请在原网站播放视频</strong>
@@ -157,7 +174,7 @@
                         <p>在电脑浏览器按 Ctrl+Shift+B 显示书签栏，把“拖到书签栏：一起看助手”按钮拖进去。进入播放页后点击该书签，右侧会出现房间侧栏，可直接查看在线成员和聊天。</p>
                         <p>书签助手只同步 HTML5 播放、暂停、进度、倍速和聊天，不读取 Cookie、账号或真实媒体地址。后台助手窗口需要保持打开，但连接后会把焦点还给视频页，可以最小化。</p>
                         <p>跨域 iframe、加密或定制播放器可能无法识别，此时才需要插件。手机浏览器对书签脚本支持不一致，手机端建议使用站内授权播放器。</p>
-                        <p>想留在房间页观看时，点击“映射播放页”，在浏览器弹窗中选择正在播放视频的标签页。映射画面只在本机显示，不会传给服务器或其他成员。</p>
+                        <p>想留在房间页观看时，点击“映射播放页”，在浏览器弹窗中选择正在播放视频的标签页。助手会定位并裁出播放器区域；房间画面下方可以控制原视频的播放、暂停、进度和倍速。映射只在本机显示，不会传给服务器或其他成员。</p>
                         <p>自有或获得书面授权的 MP4/M3U8 直链由管理员登记域名后可直接粘贴播放，不需要扩展。</p>
                     </details>
                 </section>
@@ -247,7 +264,7 @@
     <script src="{{ url_for('static', filename='vendor/hls-1.5.18.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20260808-audio') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260826-bridge') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/main.js', v='20260826-bridge') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20260826-crop') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/main.js', v='20260826-crop') }}" defer></script>
 </body>
 </html>

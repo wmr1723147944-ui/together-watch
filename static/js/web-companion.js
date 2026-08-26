@@ -303,6 +303,10 @@ document.addEventListener('DOMContentLoaded', () => {
             socket.emit('playback_snapshot', { room: activeRoom, ...data.payload });
             return;
         }
+        if (data.type === 'player_layout' && socket?.connected) {
+            socket.emit('companion_layout', { room: activeRoom, ...data.payload });
+            return;
+        }
         if (data.type === 'buffering_event' && socket?.connected) {
             socket.emit('buffering_event', { room: activeRoom, ...data.payload });
             return;

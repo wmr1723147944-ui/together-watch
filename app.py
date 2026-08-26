@@ -2130,6 +2130,7 @@ def ensure_room_state(room_id, now=None):
             "time": 0.0,
             "playing": False,
             "speed": 1.0,
+            "duration": 0.0,
             "updated_at": now,
             "resume_at": None,
             "revision": 0,
@@ -2326,6 +2327,54 @@ def notify_companion_presence(room_id, client_key):
     }
     for sid in human_sids:
         socketio.emit("companion_presence", payload, to=sid)
+
+
+def normalize_player_layout(value):
+    if not isinstance(value, dict):
+        return None
+    try:
+        viewport_width = float(value.get("viewport_width", 0))
+        viewport_height = float(value.get("viewport_height", 0))
+        left = float(value.get("left", 0))
+        top = float(value.get("top", 0))
+        width = float(value.get("width", 0))
+        height = float(value.get("height", 0))
+    except (TypeError, ValueError):
+        return None
+    values = (viewport_width, viewport_height, left, top, width, height)
+    if not all(math.isfinite(item) for item in values):
+        return None
+    if not 160 <= viewport_width <= 16_384 or not 90 <= viewport_height <= 16_384:
+        return None
+
+    clipped_left = max(0.0, min(viewport_width, left))
+    clipped_top = max(0.0, min(viewport_height, top))
+    clipped_right = max(clipped_left, min(viewport_width, left + width))
+    clipped_bottom = max(clipped_top, min(viewport_height, top + height))
+    clipped_width = clipped_right - clipped_left
+    clipped_height = clipped_bottom - clipped_top
+    if clipped_width < 80 or clipped_height < 45:
+        return None
+    return {
+        "viewport_width": round(viewport_width, 2),
+        "viewport_height": round(viewport_height, 2),
+        "left": round(clipped_left, 2),
+        "top": round(clipped_top, 2),
+        "width": round(clipped_width, 2),
+        "height": round(clipped_height, 2),
+    }
+
+
+def paired_human_sids(room_id, client_key):
+    if not client_key:
+        return []
+    with room_lock:
+        return [
+            sid
+            for sid in room_members.get(room_id, {})
+            if sid_roles.get(sid, "member") != "companion"
+            and sid_client_keys.get(sid) == client_key
+        ]
 
 
 @socketio.on("join")
@@ -2827,12 +2876,15 @@ def handle_playback_snapshot(data):
     try:
         event_time = float(data.get("time", 0))
         speed = float(data.get("speed", 1))
+        duration = float(data.get("duration", 0))
     except (TypeError, ValueError):
         return
     if not math.isfinite(event_time) or not 0 <= event_time <= 7 * 24 * 60 * 60:
         return
     if not math.isfinite(speed) or not 0.25 <= speed <= 4:
         return
+    if not math.isfinite(duration) or not 0 <= duration <= 7 * 24 * 60 * 60:
+        duration = 0
 
     now = time.time()
     recent_interaction = bool(data.get("recent_interaction"))
@@ -2865,12 +2917,29 @@ def handle_playback_snapshot(data):
             resume_at=None,
             external_playback=True,
         )
+        if duration > 0:
+            state["duration"] = duration
         state["revision"] += 1
         room_activity[room_id] = now
 
     snapshot = current_room_state(room_id)
     if snapshot:
         emit("room_state", snapshot, to=room_id, include_self=False)
+
+
+@socketio.on("companion_layout")
+def handle_companion_layout(data):
+    identity = socket_identity(data)
+    if not identity or sid_roles.get(request.sid) != "companion":
+        return
+    room_id, _username = identity
+    layout = normalize_player_layout(data.get("layout"))
+    if not layout:
+        return
+    client_key = sid_client_keys.get(request.sid, "")
+    payload = {"layout": layout}
+    for sid in paired_human_sids(room_id, client_key):
+        socketio.emit("companion_player_layout", payload, to=sid)
 
 
 @socketio.on("chat_message")
