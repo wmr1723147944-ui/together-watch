@@ -119,10 +119,12 @@ def run(base_url):
 
     first_events = []
     second_events = []
+    companion_events = []
     first = socketio.Client(reconnection=False, request_timeout=20)
     second = socketio.Client(reconnection=False, request_timeout=20)
+    player = socketio.Client(reconnection=False, request_timeout=20)
 
-    for event_name in ("presence", "room_state", "sync_video", "app_error"):
+    for event_name in ("presence", "room_state", "sync_video", "app_error", "playback_ack", "companion_player_layout"):
         first.on(
             event_name,
             lambda payload, name=event_name: first_events.append((name, payload)),
@@ -131,11 +133,16 @@ def run(base_url):
             event_name,
             lambda payload, name=event_name: second_events.append((name, payload)),
         )
+        player.on(
+            event_name,
+            lambda payload, name=event_name: companion_events.append((name, payload)),
+        )
 
     try:
         first.connect(base_url, transports=["websocket"], wait_timeout=20)
         second.connect(base_url, transports=["websocket"], wait_timeout=20)
-        first.emit("join", {"username": "冒烟甲", "room": room_id})
+        client_key = uuid.uuid4().hex
+        first.emit("join", {"username": "冒烟甲", "room": room_id, "client_key": client_key})
         second.emit("join", {"username": "冒烟乙", "room": room_id})
 
         presence = wait_for(first_events, "presence")
@@ -174,11 +181,34 @@ def run(base_url):
             state.get("media_source", {}).get("provider_key") == "bilibili",
             "房间来源状态不正确",
         )
+
+        player.connect(base_url, transports=["websocket"], wait_timeout=20)
+        player.emit("join", {"username": "冒烟甲", "room": room_id,
+                             "role": "companion", "client_key": client_key})
+        observed = wait_for(companion_events, "room_state")
+        while wait_for(first_events, "playback_ack").get("playing") is not True:
+            pass
+        first.emit("video_event", {"room": room_id, "type": "seek", "time": 120})
+        accepted = wait_for(first_events, "playback_ack")
+        expect(accepted.get("time", 0) >= 120, "房间进度控制没有确认")
+        player.emit("playback_snapshot", {
+            "room": room_id, "time": 1, "playing": True, "speed": 1,
+            "readyState": 4, "recent_interaction": True,
+            "observed_revision": observed["revision"],
+        })
+        corrected = wait_for(companion_events, "room_state")
+        expect(corrected.get("force_sync") is True and corrected.get("time", 0) >= 120,
+               "迟到的播放器快照覆盖了房间进度")
+        player.emit("companion_layout", {"room": room_id, "layout": None})
+        cleared = wait_for(first_events, "companion_player_layout")
+        expect(cleared.get("layout") is None, "播放器消失后没有清空映射位置")
     finally:
         if first.connected:
             first.disconnect()
         if second.connected:
             second.disconnect()
+        if player.connected:
+            player.disconnect()
 
     return {
         "base_url": base_url,
@@ -196,6 +226,8 @@ def run(base_url):
             "two-member presence",
             "playback synchronization",
             "authoritative room state",
+            "stale player sample rejection",
+            "paired crop invalidation",
         ],
     }
 

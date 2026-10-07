@@ -25,6 +25,9 @@ window.createVoiceCallController = ({
     let warnedMissingTurn = false;
     let warnedAutoplay = false;
     let warnedNetworkNeedsTurn = false;
+    let callGeneration = 0;
+    let reconnectTimer = null;
+    let audioContext = null;
     const storedCallVolumeRaw = localStorage.getItem('tw_call_volume');
     const storedCallVolume = Number(storedCallVolumeRaw);
     let callVolume = storedCallVolumeRaw !== null && Number.isFinite(storedCallVolume)
@@ -53,8 +56,18 @@ window.createVoiceCallController = ({
         localStorage.setItem('tw_call_volume', String(callVolume));
         peerAudioNodes.forEach(record => {
             if (record.audio) record.audio.volume = normalized;
+            if (record.gain) record.gain.gain.value = normalized;
         });
     }
+
+    function unlockCallAudio() {
+        if (!joined && !joining) return;
+        audioContext?.resume?.().catch(() => {});
+        peerAudioNodes.forEach(record => {
+            if (record.audio?.paused) record.audio.play().catch(() => {});
+        });
+    }
+    window.addEventListener('pointerdown', unlockCallAudio, { passive: true });
 
     async function attachRemoteAudio(peerId, stream) {
         const previous = peerAudioNodes.get(peerId);
@@ -71,10 +84,31 @@ window.createVoiceCallController = ({
         audio.volume = callVolume / 100;
         audio.srcObject = stream;
         audioContainer.appendChild(audio);
-        peerAudioNodes.set(peerId, { audio });
+        const record = { audio };
+        // GainNode works independently of the system volume on mobile browsers
+        // that do not honor HTMLMediaElement.volume.
+        if (audioContext && audioContext.state !== 'closed') {
+            try {
+                record.source = audioContext.createMediaStreamSource(stream);
+                record.gain = audioContext.createGain();
+                record.gain.gain.value = callVolume / 100;
+                record.source.connect(record.gain);
+                record.gain.connect(audioContext.destination);
+                audio.muted = true; // The audio graph is the only audible path.
+            } catch (_error) {
+                record.source?.disconnect();
+                record.gain?.disconnect();
+                record.source = null;
+                record.gain = null;
+            }
+        }
+        peerAudioNodes.set(peerId, record);
         try {
             await audio.play();
-            callStatus.textContent = '通话中 · 已收到对方声音';
+            if (peerAudioNodes.get(peerId)?.audio !== audio || !joined) return;
+            callStatus.textContent = record.gain && audioContext?.state !== 'running'
+                ? '点一下页面以播放通话声音'
+                : '通话音频已连接';
         } catch (_error) {
             callStatus.textContent = '点一下页面以播放通话声音';
             if (!warnedAutoplay) {
@@ -82,8 +116,9 @@ window.createVoiceCallController = ({
                 addSystemMessage('🔊 浏览器暂停了通话声音，请点击房间页面任意位置恢复播放。');
             }
             window.addEventListener('pointerdown', () => {
+                if (peerAudioNodes.get(peerId)?.audio !== audio || !joined) return;
                 audio.play().then(() => {
-                    callStatus.textContent = '通话中 · 已收到对方声音';
+                    callStatus.textContent = '通话音频已连接';
                 }).catch(() => {});
             }, { capture: true, once: true });
         }
@@ -101,10 +136,10 @@ window.createVoiceCallController = ({
     function closePeer(peerId) {
         const record = peers.get(peerId);
         if (record) {
-            record.connection.onicecandidate = null;
-            record.connection.ontrack = null;
-            record.connection.close();
             peers.delete(peerId);
+            record.events.abort();
+            window.clearTimeout(record.restartTimer);
+            record.connection.close();
         }
         queuedCandidates.delete(peerId);
         const audioRecord = peerAudioNodes.get(peerId);
@@ -122,6 +157,7 @@ window.createVoiceCallController = ({
 
     function closeAllPeers() {
         Array.from(peers.keys()).forEach(closePeer);
+        queuedCandidates.clear();
     }
 
     function updateConnectionSummary(memberTotal = null) {
@@ -166,7 +202,8 @@ window.createVoiceCallController = ({
             iceServers,
             iceCandidatePoolSize: 4,
         });
-        const record = { connection, initiator, restartTimer: null };
+        const record = { connection, initiator, restartTimer: null, events: new AbortController() };
+        const options = { signal: record.events.signal };
         peers.set(peerId, record);
 
         localStream?.getTracks().forEach(track => {
@@ -174,6 +211,7 @@ window.createVoiceCallController = ({
         });
 
         connection.addEventListener('icecandidate', event => {
+            if (!joined || !socket.connected || peers.get(peerId) !== record) return;
             if (event.candidate) {
                 socket.emit(
                     'webrtc_ice',
@@ -183,12 +221,13 @@ window.createVoiceCallController = ({
                     }),
                 );
             }
-        });
+        }, options);
 
         connection.addEventListener('track', event => {
+            if (!joined || peers.get(peerId) !== record) return;
             const stream = event.streams[0] || new MediaStream([event.track]);
             attachRemoteAudio(peerId, stream);
-        });
+        }, options);
 
         connection.addEventListener('connectionstatechange', () => {
             const state = connection.connectionState;
@@ -205,7 +244,7 @@ window.createVoiceCallController = ({
             } else if (state === 'closed') {
                 closePeer(peerId);
             }
-        });
+        }, options);
         connection.addEventListener('iceconnectionstatechange', () => {
             const state = connection.iceConnectionState;
             if (state === 'checking') {
@@ -223,15 +262,19 @@ window.createVoiceCallController = ({
             } else if (state === 'disconnected') {
                 callNetwork.textContent = '音频连接暂时中断';
             }
-        });
+        }, options);
 
         return connection;
     }
 
     async function makeOffer(peerId, iceRestart = false) {
+        if (!joined || !socket.connected) return;
+        const generation = callGeneration;
         const connection = createPeer(peerId, true);
         const offer = await connection.createOffer({ iceRestart });
+        if (!joined || generation !== callGeneration || peers.get(peerId)?.connection !== connection) return;
         await connection.setLocalDescription(offer);
+        if (!joined || generation !== callGeneration || !socket.connected) return;
         socket.emit(
             'webrtc_offer',
             signalPayload({
@@ -243,12 +286,24 @@ window.createVoiceCallController = ({
 
     async function joinCall() {
         if (!supported || joined || joining) return;
+        if (!socket.connected) {
+            addSystemMessage('房间正在重连，请连接恢复后再加入语音。');
+            return;
+        }
+        const generation = ++callGeneration;
         joining = true;
+        try {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioContextClass && !audioContext) audioContext = new AudioContextClass();
+            unlockCallAudio();
+        } catch (_error) {
+            audioContext = null;
+        }
         joinButton.disabled = true;
         joinButton.textContent = '正在获取麦克风…';
 
         try {
-            localStream = await navigator.mediaDevices.getUserMedia({
+            const stream = await navigator.mediaDevices.getUserMedia({
                 video: false,
                 audio: {
                     echoCancellation: true,
@@ -257,6 +312,11 @@ window.createVoiceCallController = ({
                     channelCount: 1,
                 },
             });
+            if (generation !== callGeneration || !socket.connected) {
+                stream.getTracks().forEach(track => track.stop());
+                return;
+            }
+            localStream = stream;
             joined = true;
             muted = false;
             callDock.classList.remove('hidden');
@@ -265,6 +325,7 @@ window.createVoiceCallController = ({
             callStatus.textContent = '正在加入通话…';
             socket.emit('call_join', signalPayload());
         } catch (error) {
+            if (generation !== callGeneration) return;
             const denied = error?.name === 'NotAllowedError';
             addSystemMessage(
                 denied
@@ -272,20 +333,25 @@ window.createVoiceCallController = ({
                     : '❌ 无法启用麦克风，请确认使用 HTTPS 并检查音频设备。',
             );
         } finally {
-            joining = false;
-            if (!joined) {
-                joinButton.disabled = false;
+            if (generation === callGeneration) joining = false;
+            if (generation === callGeneration && !joined) {
+                joinButton.disabled = !supported;
                 joinButton.textContent = '🎙 加入语音';
             }
         }
     }
 
     function leaveCall({ notify = true, keepStream = false } = {}) {
+        ++callGeneration;
+        joining = false;
+        window.clearTimeout(reconnectTimer);
         if (notify && socket.connected) {
             socket.emit('call_leave', signalPayload());
         }
         closeAllPeers();
         if (!keepStream) {
+            audioContext?.close?.().catch(() => {});
+            audioContext = null;
             localStream?.getTracks().forEach(track => track.stop());
             localStream = null;
             joined = false;
@@ -311,6 +377,7 @@ window.createVoiceCallController = ({
     socket.on('call_ready', async data => {
         if (!joined) return;
         selfId = data.self_id;
+        if (muted) socket.emit('call_mute', signalPayload({ muted: true }));
         iceServers = Array.isArray(data.ice_servers) ? data.ice_servers : [];
         turnConfigured = Boolean(data.turn_configured);
         if (data.turn_configured === false && !warnedMissingTurn) {
@@ -360,11 +427,15 @@ window.createVoiceCallController = ({
     socket.on('webrtc_offer', async data => {
         if (!joined || !data?.from || !data.description) return;
         try {
+            const generation = callGeneration;
             const connection = createPeer(data.from, false);
             await connection.setRemoteDescription(data.description);
+            if (!joined || generation !== callGeneration) return;
             await flushCandidates(data.from);
             const answer = await connection.createAnswer();
+            if (!joined || generation !== callGeneration) return;
             await connection.setLocalDescription(answer);
+            if (!joined || generation !== callGeneration || !socket.connected) return;
             socket.emit(
                 'webrtc_answer',
                 signalPayload({
@@ -389,7 +460,7 @@ window.createVoiceCallController = ({
     });
 
     socket.on('webrtc_ice', async data => {
-        if (!data?.from || !data.candidate) return;
+        if (!joined || !data?.from || !data.candidate) return;
         const record = peers.get(data.from);
         if (!record?.connection.remoteDescription) {
             const queue = queuedCandidates.get(data.from) || [];
@@ -413,14 +484,18 @@ window.createVoiceCallController = ({
             return joined;
         },
         handleSocketDisconnect() {
+            window.clearTimeout(reconnectTimer);
+            if (joining && !joined) leaveCall({ notify: false });
             if (!joined) return;
+            ++callGeneration;
             closeAllPeers();
             callStatus.textContent = '网络中断，正在恢复通话…';
             callNetwork.textContent = '信令重连中';
         },
         handleSocketReconnect() {
             if (!joined) return;
-            window.setTimeout(() => {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = window.setTimeout(() => {
                 if (socket.connected && joined) {
                     socket.emit('call_join', signalPayload());
                 }
@@ -428,6 +503,7 @@ window.createVoiceCallController = ({
         },
         destroy() {
             leaveCall();
+            window.removeEventListener('pointerdown', unlockCallAudio);
         },
     };
 };

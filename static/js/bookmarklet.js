@@ -35,6 +35,10 @@
         let lastPlayerReason = '正在寻找播放器';
         let returnedFocus = false;
         let lastPlayerSample = null;
+        let lastRevision = 0;
+        let pendingPlayerState = null;
+        let remoteSeekUntil = 0;
+        let localVolume = 1;
         const overlayState = {
             room: '',
             username: '',
@@ -298,7 +302,7 @@
         }
 
         function emitPlayerEvent(type, extra = {}) {
-            if (!player || Date.now() < remoteGuardUntil) return;
+            if (!player || isRemotePlayerUpdate()) return;
             localInteractionUntil = Date.now() + 2500;
             postToCompanion('player_event', {
                 type,
@@ -335,10 +339,10 @@
                     const frame = currentWindow.frameElement;
                     if (!frame) return null;
                     const frameRect = frame.getBoundingClientRect();
-                    const scaleX = frame.clientWidth > 0 ? frameRect.width / frame.clientWidth : 1;
-                    const scaleY = frame.clientHeight > 0 ? frameRect.height / frame.clientHeight : 1;
-                    left = frameRect.left + frame.clientLeft + left * scaleX;
-                    top = frameRect.top + frame.clientTop + top * scaleY;
+                    const scaleX = frame.offsetWidth > 0 ? frameRect.width / frame.offsetWidth : 1;
+                    const scaleY = frame.offsetHeight > 0 ? frameRect.height / frame.offsetHeight : 1;
+                    left = frameRect.left + (frame.clientLeft + left) * scaleX;
+                    top = frameRect.top + (frame.clientTop + top) * scaleY;
                     width *= scaleX;
                     height *= scaleY;
                     currentWindow = currentWindow.parent;
@@ -366,16 +370,24 @@
         function sendPlayerSnapshot(recentInteraction = false) {
             const sample = readPlayerSample();
             if (!sample) return;
-            postToCompanion('player_snapshot', {
+            if (!isRemotePlayerUpdate()) postToCompanion('player_snapshot', {
                 time: sample.time,
                 duration: sample.duration,
                 playing: !sample.paused,
                 speed: sample.speed,
                 readyState: sample.readyState,
+                seeking: sample.seeking,
+                observed_revision: lastRevision,
                 recent_interaction: recentInteraction || Date.now() < localInteractionUntil,
             });
             const layout = readPlayerLayout();
-            if (layout) postToCompanion('player_layout', { layout });
+            postToCompanion('player_layout', { layout });
+        }
+
+        function isRemotePlayerUpdate() {
+            const now = Date.now();
+            if (now >= remoteSeekUntil) remoteSeekUntil = 0;
+            return now < remoteGuardUntil || now < remoteSeekUntil;
         }
 
         document.addEventListener('pointerdown', event => {
@@ -407,7 +419,7 @@
             }
             const previous = lastPlayerSample;
             lastPlayerSample = current;
-            if (!previous || Date.now() < remoteGuardUntil) return;
+            if (!previous || isRemotePlayerUpdate()) return;
 
             if (current.paused !== previous.paused) {
                 emitPlayerEvent(current.paused ? 'pause' : 'play');
@@ -455,6 +467,11 @@
             playerEvents?.abort();
             playerEvents = new AbortController();
             player = nextPlayer;
+            remoteSeekUntil = 0;
+            try {
+                player.volume = localVolume;
+                player.muted = localVolume === 0;
+            } catch (_error) { /* Mobile players may use hardware volume. */ }
             lastPlayerReason = '';
             lastPlayerSample = readPlayerSample();
             const options = { signal: playerEvents.signal };
@@ -463,11 +480,24 @@
                 if (!player.seeking) emitPlayerEvent('pause');
             }, options);
             player.addEventListener('seeking', () => {
-                if (Date.now() >= remoteGuardUntil) {
+                if (!isRemotePlayerUpdate()) {
                     localInteractionUntil = Date.now() + 3000;
                 }
             }, options);
-            player.addEventListener('seeked', () => emitPlayerEvent('seek'), options);
+            player.addEventListener('seeked', () => {
+                if (remoteSeekUntil) {
+                    remoteSeekUntil = 0;
+                    remoteGuardUntil = Math.max(remoteGuardUntil, Date.now() + 400);
+                }
+                emitPlayerEvent('seek');
+            }, options);
+            player.addEventListener('loadedmetadata', () => {
+                if (pendingPlayerState) {
+                    applyState(pendingPlayerState.state, pendingPlayerState.options);
+                } else {
+                    postToCompanion('room_state_request');
+                }
+            }, options);
             player.addEventListener('ratechange', () => {
                 emitPlayerEvent('speed', { speed: Number(player.playbackRate) || 1 });
             }, options);
@@ -485,6 +515,7 @@
             }
             setStatus(connected ? '播放器与房间已连接' : '已找到播放器，等待房间', connected);
             postToCompanion('target_ready', { playerReady: true });
+            if (pendingPlayerState) applyState(pendingPlayerState.state, pendingPlayerState.options);
             sendPlayerSnapshot();
         }
 
@@ -502,16 +533,23 @@
         }
 
         function applyState(state, { correctionThreshold = 0.75 } = {}) {
-            if (!player || !state) return;
+            if (!state) return;
+            pendingPlayerState = { state, options: { correctionThreshold } };
+            if (!player || player.readyState < 1) return;
+            pendingPlayerState = null;
             remoteGuardUntil = Date.now() + 1200;
-            const position = expectedPosition(state);
+            const duration = Number(player.duration);
+            const position = Math.min(expectedPosition(state),
+                Number.isFinite(duration) && duration > 0 ? duration : Infinity);
             if (
                 Math.abs((Number(player.currentTime) || 0) - position)
                 > correctionThreshold
             ) {
                 try {
+                    remoteSeekUntil = Date.now() + 15000;
                     player.currentTime = position;
                 } catch (_error) {
+                    remoteSeekUntil = 0;
                     setStatus('播放器尚未允许跳转', connected);
                 }
             }
@@ -536,10 +574,18 @@
         }
 
         function handleRoomEvent(eventName, payload) {
-            window.clearTimeout(resumeTimer);
+            if (eventName === 'sync_reset') {
+                lastRevision = 0;
+                localInteractionUntil = 0;
+                pendingPlayerState = null;
+                window.clearTimeout(resumeTimer);
+                return;
+            }
             if (eventName === 'companion_command') {
-                if (payload?.command !== 'set_volume' || !player) return;
+                if (payload?.command !== 'set_volume') return;
                 const volume = Math.max(0, Math.min(1, Number(payload.value) || 0));
+                localVolume = volume;
+                if (!player) return;
                 try {
                     player.volume = volume;
                     player.muted = volume === 0;
@@ -548,7 +594,15 @@
                 }
                 return;
             }
+            if (!['room_state', 'buffering_state', 'sync_video', 'playback_ack'].includes(eventName)) return;
+            const revision = Number(payload?.revision) || 0;
+            if (revision < lastRevision) return;
+            lastRevision = Math.max(lastRevision, revision);
+            if (eventName === 'playback_ack') return;
+            window.clearTimeout(resumeTimer);
+            if (eventName === 'sync_video') localInteractionUntil = 0;
             if (eventName === 'room_state') {
+                if (payload?.force_sync) localInteractionUntil = 0;
                 if (Date.now() < localInteractionUntil) return;
                 const resumeAt = Number(payload?.resume_at);
                 if (payload?.playing && Number.isFinite(resumeAt) && resumeAt > estimatedServerNow()) {
@@ -603,6 +657,7 @@
             if (nextPlayer && nextPlayer !== player) {
                 bindPlayer(nextPlayer);
             } else if (!nextPlayer) {
+                playerEvents?.abort();
                 player = null;
                 lastPlayerSample = null;
                 const reason = inspection.blockedFrameCount > 0
@@ -613,6 +668,7 @@
                 lastPlayerReason = reason;
                 setStatus(reason, false);
                 postToCompanion('target_ready', { playerReady: false, reason });
+                postToCompanion('player_layout', { layout: null });
             }
         }
 
@@ -692,6 +748,9 @@
         window.setInterval(refreshPlayer, 1800);
         window.setInterval(monitorPlayerState, 650);
         window.setInterval(sendPlayerSnapshot, 3000);
+        const refreshLayout = () => postToCompanion('player_layout', { layout: readPlayerLayout() });
+        window.addEventListener('resize', refreshLayout);
+        window.addEventListener('scroll', refreshLayout, { capture: true, passive: true });
         window.setInterval(() => {
             if (popupWindow && popupWindow.closed) {
                 connected = false;

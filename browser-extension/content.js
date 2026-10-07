@@ -9,7 +9,14 @@
     let resumeTimer = null;
     let localVolume = 1;
     let lastRoomStateRequestAt = 0;
-    const playerBridgeId = crypto.randomUUID();
+    let lastRevision = 0;
+    let pendingPlayerState = null;
+    let remoteSeekUntil = 0;
+    const playerBridgeId = typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : Array.from(crypto.getRandomValues(new Uint8Array(18)), byte => (
+            byte.toString(16).padStart(2, '0')
+        )).join('');
     let chatUi = null;
     const chatState = {
         connected: false,
@@ -323,7 +330,6 @@
     }
 
     function forwardPlayerLayout(layout, bridgeId = playerBridgeId) {
-        if (!layout) return;
         if (isTopFrame()) {
             notify({
                 type: 'tw_player_layout_bridge',
@@ -341,31 +347,35 @@
 
     window.addEventListener('message', event => {
         const data = event.data;
-        if (data?.channel !== 'tw-extension-player-layout' || !data.layout) return;
+        if (data?.channel !== 'tw-extension-player-layout') return;
         const frame = Array.from(document.querySelectorAll('iframe'))
             .find(item => item.contentWindow === event.source);
         if (!frame) return;
+        if (!data.layout) {
+            forwardPlayerLayout(null, data.bridgeId);
+            return;
+        }
         const frameRect = frame.getBoundingClientRect();
         const childViewportWidth = Math.max(1, Number(data.layout.viewport_width) || 1);
         const childViewportHeight = Math.max(1, Number(data.layout.viewport_height) || 1);
-        const scaleX = frame.clientWidth > 0
-            ? frameRect.width / frame.clientWidth
+        const scaleX = frame.offsetWidth > 0
+            ? frameRect.width / frame.offsetWidth
             : frameRect.width / childViewportWidth;
-        const scaleY = frame.clientHeight > 0
-            ? frameRect.height / frame.clientHeight
+        const scaleY = frame.offsetHeight > 0
+            ? frameRect.height / frame.offsetHeight
             : frameRect.height / childViewportHeight;
         forwardPlayerLayout({
             viewport_width: Math.max(0, Number(window.innerWidth) || 0),
             viewport_height: Math.max(0, Number(window.innerHeight) || 0),
-            left: frameRect.left + frame.clientLeft + Number(data.layout.left || 0) * scaleX,
-            top: frameRect.top + frame.clientTop + Number(data.layout.top || 0) * scaleY,
+            left: frameRect.left + (frame.clientLeft + Number(data.layout.left || 0)) * scaleX,
+            top: frameRect.top + (frame.clientTop + Number(data.layout.top || 0)) * scaleY,
             width: Number(data.layout.width || 0) * scaleX,
             height: Number(data.layout.height || 0) * scaleY,
         }, data.bridgeId);
     });
 
     function emit(type, extra = {}) {
-        if (!player || Date.now() < remoteGuardUntil) return;
+        if (!player || isRemotePlayerUpdate()) return;
         localInteractionUntil = Date.now() + 2500;
         notify({
             type: 'tw_video_event',
@@ -381,7 +391,7 @@
 
     function sendSnapshot(recentInteraction = false) {
         if (!player) return;
-        notify({
+        if (!isRemotePlayerUpdate()) notify({
             type: 'tw_player_snapshot',
             player: playerMetrics(player),
             payload: {
@@ -390,10 +400,18 @@
                 playing: !player.paused,
                 speed: Number(player.playbackRate) || 1,
                 readyState: Number(player.readyState) || 0,
+                seeking: Boolean(player.seeking),
+                observed_revision: lastRevision,
                 recent_interaction: recentInteraction || Date.now() < localInteractionUntil,
             },
         });
         forwardPlayerLayout(playerLayout(player));
+    }
+
+    function isRemotePlayerUpdate() {
+        const now = Date.now();
+        if (now >= remoteSeekUntil) remoteSeekUntil = 0;
+        return now < remoteGuardUntil || now < remoteSeekUntil;
     }
 
     document.addEventListener('pointerdown', event => {
@@ -445,6 +463,7 @@
         playerEvents?.abort();
         playerEvents = new AbortController();
         player = nextPlayer;
+        remoteSeekUntil = 0;
         try {
             player.volume = localVolume;
             player.muted = localVolume === 0;
@@ -457,11 +476,24 @@
             if (!player.seeking) emit('pause');
         }, options);
         player.addEventListener('seeking', () => {
-            if (Date.now() >= remoteGuardUntil) {
+            if (!isRemotePlayerUpdate()) {
                 localInteractionUntil = Date.now() + 3000;
             }
         }, options);
-        player.addEventListener('seeked', () => emit('seek'), options);
+        player.addEventListener('seeked', () => {
+            if (remoteSeekUntil) {
+                remoteSeekUntil = 0;
+                remoteGuardUntil = Math.max(remoteGuardUntil, Date.now() + 400);
+            }
+            emit('seek');
+        }, options);
+        player.addEventListener('loadedmetadata', () => {
+            if (pendingPlayerState) {
+                applyState(pendingPlayerState.state, pendingPlayerState.options);
+            } else {
+                requestRoomState();
+            }
+        }, options);
         player.addEventListener('ratechange', () => {
             emit('speed', { speed: Number(player.playbackRate) || 1 });
         }, options);
@@ -479,6 +511,7 @@
         }
         report('finding', '已找到官方页面播放器');
         notify({ type: 'tw_player_ready', player: playerMetrics(player) });
+        if (pendingPlayerState) applyState(pendingPlayerState.state, pendingPlayerState.options);
         sendSnapshot();
         for (const delay of [1000, 5000]) {
             window.setTimeout(() => {
@@ -503,19 +536,26 @@
     }
 
     function applyState(state, { correctionThreshold = 0.75 } = {}) {
-        if (!player || !state) return;
+        if (!state) return;
+        pendingPlayerState = { state, options: { correctionThreshold } };
+        if (!player || player.readyState < 1) return;
+        pendingPlayerState = null;
         remoteGuardUntil = Date.now() + 900;
-        const position = expectedPosition(state);
+        const duration = Number(player.duration);
+        const position = Math.min(expectedPosition(state),
+            Number.isFinite(duration) && duration > 0 ? duration : Infinity);
         if (Math.abs((Number(player.currentTime) || 0) - position) > correctionThreshold) {
             try {
+                remoteSeekUntil = Date.now() + 15000;
                 player.currentTime = position;
             } catch (_error) {
+                remoteSeekUntil = 0;
                 // Some players reject seeks until metadata is ready.
             }
         }
         const speed = Number(state.speed);
         if (Number.isFinite(speed) && speed >= 0.25 && speed <= 4) {
-            player.playbackRate = speed;
+            try { player.playbackRate = speed; } catch (_error) { /* Managed player. */ }
         }
         if (state.playing) {
             player.play().catch(() => {});
@@ -525,6 +565,13 @@
     }
 
     function handleEvent(eventName, payload) {
+        if (eventName === 'sync_reset') {
+            lastRevision = 0;
+            localInteractionUntil = 0;
+            pendingPlayerState = null;
+            window.clearTimeout(resumeTimer);
+            return;
+        }
         if (eventName === 'companion_connection') {
             setChatConnection(payload);
             if (chatUi) {
@@ -562,8 +609,15 @@
             }
             return;
         }
+        if (!['room_state', 'buffering_state', 'sync_video', 'playback_ack'].includes(eventName)) return;
+        const revision = Number(payload?.revision) || 0;
+        if (revision < lastRevision) return;
+        lastRevision = Math.max(lastRevision, revision);
+        if (eventName === 'playback_ack') return;
         window.clearTimeout(resumeTimer);
+        if (eventName === 'sync_video') localInteractionUntil = 0;
         if (eventName === 'room_state') {
+            if (payload?.force_sync) localInteractionUntil = 0;
             if (Date.now() < localInteractionUntil) return;
             const resumeAt = Number(payload?.resume_at);
             if (
@@ -635,6 +689,9 @@
         if (nextPlayer && nextPlayer !== player) {
             bindPlayer(nextPlayer);
         } else if (!nextPlayer) {
+            playerEvents?.abort();
+            player = null;
+            forwardPlayerLayout(null);
             report('finding', '正在等待官方页面播放器');
         }
     }
@@ -666,6 +723,9 @@
     refreshPlayer();
     window.setInterval(refreshPlayer, 2000);
     window.setInterval(sendSnapshot, 3000);
+    const refreshLayout = () => forwardPlayerLayout(playerLayout(player));
+    window.addEventListener('resize', refreshLayout);
+    window.addEventListener('scroll', refreshLayout, { capture: true, passive: true });
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') requestRoomState();
     });

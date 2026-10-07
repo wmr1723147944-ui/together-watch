@@ -247,7 +247,7 @@ function handleRoomEvent(eventName, payload) {
         }
         return;
     }
-    if (['room_state', 'buffering_state', 'sync_video', 'companion_command'].includes(eventName)) {
+    if (['room_state', 'buffering_state', 'sync_video', 'companion_command', 'playback_ack'].includes(eventName)) {
         sendToPlayer(eventName, payload);
         return;
     }
@@ -262,6 +262,7 @@ function scheduleReconnect() {
 }
 
 function connect() {
+    clearTimeout(reconnectTimer);
     socket?.close();
     clearInterval(clockSyncTimer);
     clearInterval(roomStateTimer);
@@ -275,6 +276,7 @@ function connect() {
 
     socket = new SocketIoLite(settings.server, {
         open: () => {
+            sendToPlayer('sync_reset', {});
             report('connected', `已连接房间 ${settings.room}`);
             socket.emit('join', {
                 room: settings.room,

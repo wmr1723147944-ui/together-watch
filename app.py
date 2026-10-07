@@ -2134,6 +2134,7 @@ def ensure_room_state(room_id, now=None):
             "updated_at": now,
             "resume_at": None,
             "revision": 0,
+            "control_revision": 0,
             "external_playback": False,
         },
     )
@@ -2813,6 +2814,7 @@ def handle_video_event(data):
                 video_src=source,
                 media_source=media_source,
                 external_playback=False,
+                duration=0.0,
                 time=source_time,
                 playing=resume_playing,
                 speed=source_speed,
@@ -2855,8 +2857,10 @@ def handle_video_event(data):
 
         state["updated_at"] = now
         state["revision"] += 1
+        state["control_revision"] = state["revision"]
         outgoing.update(
             revision=state["revision"],
+            control_revision=state["control_revision"],
             server_time=now,
             playing=bool(state.get("playing")),
             speed=state.get("speed", 1.0),
@@ -2864,6 +2868,9 @@ def handle_video_event(data):
         room_activity[room_id] = now
 
     emit("sync_video", outgoing, to=room_id, include_self=False)
+    # The initiating player also needs the accepted revision before reporting
+    # another sample; otherwise a delayed sample can undo this command.
+    emit("playback_ack", current_room_state(room_id))
 
 
 @socketio.on("playback_snapshot")
@@ -2877,7 +2884,8 @@ def handle_playback_snapshot(data):
         event_time = float(data.get("time", 0))
         speed = float(data.get("speed", 1))
         duration = float(data.get("duration", 0))
-    except (TypeError, ValueError):
+        ready_state = int(data.get("readyState", 4))
+    except (TypeError, ValueError, OverflowError):
         return
     if not math.isfinite(event_time) or not 0 <= event_time <= 7 * 24 * 60 * 60:
         return
@@ -2889,15 +2897,44 @@ def handle_playback_snapshot(data):
     now = time.time()
     recent_interaction = bool(data.get("recent_interaction"))
     playing = bool(data.get("playing"))
+    if data.get("seeking") or (playing and ready_state < 3):
+        return
     with room_lock:
         state = ensure_room_state(room_id, now)
         media_source = state.get("media_source") or {}
         if media_source.get("mode") == "direct_media":
             return
 
+        observed_revision = data.get("observed_revision")
+        if observed_revision is not None:
+            try:
+                observed_revision = int(observed_revision)
+            except (TypeError, ValueError, OverflowError):
+                return
+            if observed_revision < state.get("control_revision", 0):
+                emit("room_state", {**(current_room_state(room_id) or {}), "force_sync": True})
+                return
+
         leader = room_playback_leaders.get(room_id)
         leader_expired = not leader or now - leader.get("seen_at", 0) > 7
         is_leader = bool(leader and leader.get("sid") == request.sid)
+        established = bool(state.get("external_playback") or state.get("media_source"))
+        expected_time = state["time"]
+        if state.get("playing"):
+            expected_time += max(0.0, now - state["updated_at"]) * state["speed"]
+        sample_matches = (
+            abs(event_time - expected_time) <= 2.0
+            and playing == bool(state.get("playing"))
+            and abs(speed - state.get("speed", 1.0)) < 0.01
+        )
+        # Joining at 00:00, recovering from a stall, or an old client that has
+        # not observed the latest command must first catch up to the room.
+        if established and not sample_matches and (
+            (leader_expired and not recent_interaction)
+            or (observed_revision is None and state.get("control_revision", 0) > 0)
+        ):
+            emit("room_state", {**(current_room_state(room_id) or {}), "force_sync": True})
+            return
         if not (leader_expired or is_leader or recent_interaction):
             return
 
@@ -2934,7 +2971,7 @@ def handle_companion_layout(data):
         return
     room_id, _username = identity
     layout = normalize_player_layout(data.get("layout"))
-    if not layout:
+    if data.get("layout") is not None and not layout:
         return
     client_key = sid_client_keys.get(request.sid, "")
     payload = {"layout": layout}

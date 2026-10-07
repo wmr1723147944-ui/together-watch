@@ -213,6 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeSource = '';
     let activeMediaSource = null;
     let remoteGuardUntil = 0;
+    let remoteSeekUntil = 0;
     let localInteractionUntil = 0;
     let sourceChangeUntil = 0;
     let lastRevision = 0;
@@ -247,6 +248,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let latestPlayerLayout = null;
     let externalPlaybackState = null;
     let mirrorSeekPreview = false;
+    let playbackResumeTimer = null;
+    let sourceStateAbort = null;
+    let sourceStateTimer = null;
+    let mirrorStarting = false;
+    let lastMirrorDrawAt = 0;
 
     function clampedStoredVolume(key, fallback = 100) {
         const rawValue = localStorage.getItem(key);
@@ -283,7 +289,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isRemoteUpdate() {
-        return Date.now() < remoteGuardUntil;
+        const now = Date.now();
+        if (now >= remoteSeekUntil) remoteSeekUntil = 0;
+        return now < remoteGuardUntil || now < remoteSeekUntil;
     }
 
     const savedStrictSync = localStorage.getItem('tw_strict_sync');
@@ -420,8 +428,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (Math.abs(videoPlayer.currentTime - target) > threshold) {
             try {
+                remoteSeekUntil = Date.now() + 15000;
                 videoPlayer.currentTime = target;
             } catch (error) {
+                remoteSeekUntil = 0;
                 console.debug('Unable to seek yet:', error);
             }
         }
@@ -653,8 +663,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function updateMirrorPlaybackControls(state = externalPlaybackState) {
         if (!state || !mirrorPlaybackControls) return;
-        const current = expectedPosition(state);
         const duration = Math.max(0, Number(state.duration) || 0);
+        const current = Math.min(expectedPosition(state), duration || Infinity);
         if (!mirrorSeekPreview) {
             mirrorSeek.max = duration > 0 ? String(duration) : '1000';
             mirrorSeek.value = String(Math.min(duration || 1000, current));
@@ -673,6 +683,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function emitMirrorVideoEvent(type, time, additionalData = {}) {
         if (!socket.connected) {
             addSystemMessage('房间正在重连，暂时无法控制原视频。');
+            return;
+        }
+        if (!companionConnected) {
+            addSystemMessage('请先在视频页面连接一起看助手，再操作视频。');
             return;
         }
         const safeTime = Math.max(0, Number(time) || 0);
@@ -696,8 +710,13 @@ document.addEventListener('DOMContentLoaded', () => {
         updateMirrorPlaybackControls();
     }
 
-    function drawLocalMirrorFrame() {
+    function drawLocalMirrorFrame(frameTime = performance.now()) {
         if (!localMirrorStream || !localMirrorSourceVideo || !localMirrorCanvas) return;
+        if (frameTime - lastMirrorDrawAt < 1000 / 30) {
+            localMirrorFrameId = window.requestAnimationFrame(drawLocalMirrorFrame);
+            return;
+        }
+        lastMirrorDrawAt = frameTime;
         const sourceWidth = Number(localMirrorSourceVideo.videoWidth) || 0;
         const sourceHeight = Number(localMirrorSourceVideo.videoHeight) || 0;
         if (sourceWidth > 0 && sourceHeight > 0) {
@@ -745,6 +764,7 @@ document.addEventListener('DOMContentLoaded', () => {
         localMirrorStream = null;
         window.cancelAnimationFrame(localMirrorFrameId);
         localMirrorFrameId = 0;
+        lastMirrorDrawAt = 0;
         if (stopTracks) stream?.getTracks?.().forEach(track => track.stop());
         localMirrorOutputStream?.getTracks?.().forEach(track => track.stop());
         localMirrorOutputStream = null;
@@ -777,6 +797,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function startLocalMirror() {
+        if (mirrorStarting) return;
         if (localMirrorStream) {
             restoreStageAfterMirror();
             return;
@@ -790,6 +811,9 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        mirrorStarting = true;
+        localMirrorBtn.disabled = true;
+
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 video: { displaySurface: 'browser' },
@@ -801,6 +825,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!videoTrack) {
                 stream.getTracks().forEach(track => track.stop());
                 throw new Error('没有选择可映射的标签页');
+            }
+            const surface = videoTrack.getSettings?.().displaySurface;
+            if (surface && surface !== 'browser') {
+                stream.getTracks().forEach(track => track.stop());
+                throw new Error('请选择视频的浏览器标签页，窗口或整块屏幕无法准确裁切');
             }
 
             localMirrorStream = stream;
@@ -849,6 +878,9 @@ document.addEventListener('DOMContentLoaded', () => {
             addSystemMessage(cancelled
                 ? '已取消标签页映射。'
                 : '映射失败，请选择正在播放视频的浏览器标签页。');
+        } finally {
+            mirrorStarting = false;
+            localMirrorBtn.disabled = false;
         }
     }
 
@@ -881,6 +913,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function changeMediaSource(source, emitEvent = false, state = null) {
+        cancelPendingPlayback();
+        remoteSeekUntil = 0;
         if (!source || !['direct_media', 'official_page'].includes(source.mode)) return;
         const sameSource = sourceIdentity(activeMediaSource) === sourceIdentity(source);
         activeMediaSource = source;
@@ -905,12 +939,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function scheduleSourceState(state) {
+        sourceStateAbort?.abort();
+        window.clearTimeout(sourceStateTimer);
         if (activeMediaSource?.mode === 'official_page') {
             sourceChangeUntil = 0;
             updateOfficialPlaybackState(state);
             return;
         }
+        const abort = new AbortController();
+        sourceStateAbort = abort;
         const apply = () => {
+            if (abort.signal.aborted || videoPlayer.readyState < 1) return;
+            abort.abort();
+            window.clearTimeout(sourceStateTimer);
+            if (Number(state.revision) < lastRevision) return;
             sourceChangeUntil = 0;
             applyPlaybackState(state, 0);
         };
@@ -918,8 +960,8 @@ document.addEventListener('DOMContentLoaded', () => {
             apply();
             return;
         }
-        videoPlayer.addEventListener('loadedmetadata', apply, { once: true });
-        window.setTimeout(() => {
+        videoPlayer.addEventListener('loadedmetadata', apply, { once: true, signal: abort.signal });
+        sourceStateTimer = window.setTimeout(() => {
             if (videoPlayer.readyState >= 1) apply();
         }, 3000);
     }
@@ -1030,6 +1072,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyPlaybackState(state, seekThreshold = 1.2) {
+        window.clearTimeout(playbackResumeTimer);
         guardRemoteUpdate();
         basePlaybackRate = Number(state.speed) || 1;
         const expected = expectedPosition(state);
@@ -1044,7 +1087,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setVideoTime(expected, 0.12);
                 if (!videoPlayer.paused) videoPlayer.pause();
                 const delay = Math.max(0, (resumeAt - estimatedServerNow()) * 1000);
-                window.setTimeout(() => {
+                playbackResumeTimer = window.setTimeout(() => {
                     guardRemoteUpdate();
                     requestPlayback();
                 }, delay);
@@ -1093,11 +1136,22 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (Date.now() < localInteractionUntil) return;
+        if (videoPlayer.readyState < 1) {
+            scheduleSourceState(state);
+            return;
+        }
         applyPlaybackState(state);
+    }
+
+    function cancelPendingPlayback() {
+        window.clearTimeout(playbackResumeTimer);
+        sourceStateAbort?.abort();
+        window.clearTimeout(sourceStateTimer);
     }
 
     function emitVideoEvent(type, additionalData = {}) {
         if (localMirrorStream || !socket.connected || isRemoteUpdate()) return;
+        cancelPendingPlayback();
         if (type !== 'change_source' && Date.now() < sourceChangeUntil) return;
 
         const now = Date.now();
@@ -1138,6 +1192,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     socket.on('connect', () => {
+        lastRevision = 0;
+        hasClockSample = false;
+        cancelPendingPlayback();
         setConnectionStatus('online', '已连接');
         socket.emit('join', {
             username,
@@ -1149,6 +1206,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('disconnect', () => {
+        cancelPendingPlayback();
+        latestPlayerLayout = null;
         setConnectionStatus('offline', '正在重连');
         updateSyncHealth(null, '网络中断，等待重连…');
         updateCompanionStatus(false);
@@ -1196,6 +1255,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('companion_presence', data => {
+        if (!data?.connected) latestPlayerLayout = null;
         updateCompanionStatus(Boolean(data?.connected));
         updateVolumeHelp();
         if (data?.connected) sendCompanionVolume();
@@ -1203,7 +1263,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     socket.on('companion_player_layout', data => {
         const layout = data?.layout;
-        if (!layout || !(Number(layout.width) > 0) || !(Number(layout.height) > 0)) return;
+        if (!layout || !(Number(layout.width) > 0) || !(Number(layout.height) > 0)) {
+            latestPlayerLayout = null;
+            if (localMirrorStream) localMirrorStatus.textContent = '正在等待助手重新定位播放器区域';
+            return;
+        }
         latestPlayerLayout = {
             viewport_width: Number(layout.viewport_width) || 0,
             viewport_height: Number(layout.viewport_height) || 0,
@@ -1281,11 +1345,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     socket.on('room_state', applyRoomState);
+    socket.on('playback_ack', applyRoomState);
 
     socket.on('buffering_state', data => {
         const revision = Number(data?.revision) || 0;
         if (revision && revision < lastRevision) return;
         lastRevision = Math.max(lastRevision, revision);
+        window.clearTimeout(playbackResumeTimer);
         guardRemoteUpdate(1800);
         const bufferingUsers = Array.isArray(data?.buffering_users)
             ? data.buffering_users
@@ -1331,7 +1397,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (data?.playing) {
             const resumeAt = Number(data.resume_at) || estimatedServerNow();
             const delay = Math.max(0, (resumeAt - estimatedServerNow()) * 1000);
-            window.setTimeout(() => {
+            playbackResumeTimer = window.setTimeout(() => {
                 guardRemoteUpdate();
                 requestPlayback();
                 updateSyncHealth(0);
@@ -1343,6 +1409,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const revision = Number(data?.revision) || 0;
         if (revision && revision <= lastRevision) return;
         lastRevision = Math.max(lastRevision, revision);
+        cancelPendingPlayback();
         guardRemoteUpdate();
         const usesOfficialPage = (
             activeMediaSource?.mode === 'official_page'
@@ -1632,7 +1699,14 @@ document.addEventListener('DOMContentLoaded', () => {
     videoPlayer.addEventListener('seeking', () => {
         if (!isRemoteUpdate()) localInteractionUntil = Date.now() + 3000;
     });
-    videoPlayer.addEventListener('seeked', () => emitVideoEvent('seek'));
+    videoPlayer.addEventListener('seeked', () => {
+        if (remoteSeekUntil) {
+            remoteSeekUntil = 0;
+            lastSeekTime = videoPlayer.currentTime;
+            guardRemoteUpdate(400);
+        }
+        emitVideoEvent('seek');
+    });
     videoPlayer.addEventListener('ratechange', () => {
         if (Date.now() < internalRateChangeUntil) return;
         basePlaybackRate = videoPlayer.playbackRate;

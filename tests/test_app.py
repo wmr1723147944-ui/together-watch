@@ -72,7 +72,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("复制助手代码", html)
         self.assertIn("/static/js/bookmarklet.js", html)
         self.assertIn("20260826-crop", html)
-        self.assertIn("20260808-audio", html)
+        self.assertIn("20261008-sync", html)
         self.assertNotIn('id="strictSyncToggle" checked', html)
         self.assertIn('id="localMirrorBtn"', html)
         self.assertIn('id="mirrorPlaybackControls"', html)
@@ -94,7 +94,7 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("免安装观影助手", companion_html)
         self.assertIn('id="webCompanionRoom"', companion_html)
         self.assertIn("/static/js/web-companion.js", companion_html)
-        self.assertIn("20260826-crop", companion_html)
+        self.assertIn("20261008-sync", companion_html)
         self.assertIn("不读取账号、Cookie 或视频地址", companion_html)
 
         with self.client.get("/static/js/bookmarklet.js") as script_response:
@@ -181,7 +181,7 @@ class TogetherWatchTests(unittest.TestCase):
             manifest = json.loads(archive.read("manifest.json"))
             content_script = archive.read("content.js").decode("utf-8")
             background_script = archive.read("background.js").decode("utf-8")
-        self.assertEqual(manifest["version"], "0.5.3")
+            self.assertEqual(manifest["version"], "0.5.4")
         self.assertIn(
             "https://watchtogethernow.cloud/*",
             manifest["host_permissions"],
@@ -676,6 +676,7 @@ class TogetherWatchTests(unittest.TestCase):
                     "speed": 1,
                     "duration": 3600,
                     "recent_interaction": True,
+                    "observed_revision": application.room_states["private-sync-room"]["revision"],
                 },
             )
             snapshot_states = [
@@ -709,6 +710,57 @@ class TogetherWatchTests(unittest.TestCase):
         finally:
             first.disconnect()
             second.disconnect()
+
+    def test_old_player_sample_cannot_undo_room_seek(self):
+        clients = [application.socketio.test_client(application.app) for _ in range(2)]
+        self.addCleanup(lambda: [client.disconnect() for client in clients])
+        room, companion = clients
+        room.emit("join", {"username": "甲", "room": "seek-race"})
+        companion.emit("join", {"username": "甲", "room": "seek-race", "role": "companion"})
+        companion.emit("video_event", {"room": "seek-race", "type": "play", "time": 10})
+        old_revision = application.room_states["seek-race"]["revision"]
+        room.emit("video_event", {"room": "seek-race", "type": "seek", "time": 120})
+        ack = [event["args"][0] for event in room.get_received() if event["name"] == "playback_ack"][-1]
+        self.assertEqual(ack["control_revision"], ack["revision"])
+        sample = {"room": "seek-race", "time": 10, "playing": True, "speed": 1,
+                  "readyState": 4, "recent_interaction": True, "observed_revision": old_revision}
+        companion.emit("playback_snapshot", sample)
+        self.assertEqual(application.room_states["seek-race"]["time"], 120)
+        sample.update(time=121, observed_revision=ack["revision"])
+        companion.emit("playback_snapshot", sample)
+        self.assertEqual(application.room_states["seek-race"]["time"], 121)
+
+    def test_new_or_stalled_player_catches_up_without_resetting_room(self):
+        first, newcomer = [application.socketio.test_client(application.app) for _ in range(2)]
+        self.addCleanup(lambda: [client.disconnect() for client in (first, newcomer)])
+        for client in (first, newcomer):
+            client.emit("join", {"username": "成员", "room": "late-player", "role": "companion"})
+        first.emit("video_event", {"room": "late-player", "type": "play", "time": 300})
+        revision = application.room_states["late-player"]["revision"]
+        application.room_playback_leaders.clear()
+        newcomer.get_received()
+        sample = {"room": "late-player", "time": 0, "playing": False, "speed": 1,
+                  "observed_revision": revision, "recent_interaction": False}
+        newcomer.emit("playback_snapshot", sample)
+        self.assertEqual(application.room_states["late-player"]["time"], 300)
+        self.assertTrue(any(event["name"] == "room_state" for event in newcomer.get_received()))
+        for updates in ({"seeking": True}, {"readyState": 2}, {"readyState": "invalid"}):
+            first.emit("playback_snapshot", {**sample, "playing": True, "time": 5,
+                                             "recent_interaction": True, **updates})
+            self.assertEqual(application.room_states["late-player"]["time"], 300)
+
+    def test_invalid_crop_does_not_replace_layout_and_missing_player_clears_it(self):
+        human, companion = [application.socketio.test_client(application.app) for _ in range(2)]
+        self.addCleanup(lambda: [client.disconnect() for client in (human, companion)])
+        for client, role in ((human, "member"), (companion, "companion")):
+            client.emit("join", {"username": "甲", "room": "crop-clear", "role": role,
+                                 "client_key": "crop-pair-key-123456"})
+        human.get_received()
+        companion.emit("companion_layout", {"room": "crop-clear", "layout": {"width": float("nan")}})
+        self.assertFalse(any(event["name"] == "companion_player_layout" for event in human.get_received()))
+        companion.emit("companion_layout", {"room": "crop-clear", "layout": None})
+        events = [event["args"][0] for event in human.get_received() if event["name"] == "companion_player_layout"]
+        self.assertIsNone(events[-1]["layout"])
 
     def test_latency_probe_and_room_buffering_resume(self):
         first = application.socketio.test_client(

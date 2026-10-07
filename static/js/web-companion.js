@@ -149,10 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function disconnectSocket() {
-        window.clearInterval(clockSyncTimer);
-        clockSyncTimer = null;
-        window.clearInterval(roomStateTimer);
-        roomStateTimer = null;
+        clearSyncTimers();
         if (socket) {
             socket.removeAllListeners();
             socket.disconnect();
@@ -160,6 +157,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         chatInput.disabled = true;
         sendButton.disabled = true;
+    }
+
+    function clearSyncTimers() {
+        window.clearInterval(clockSyncTimer);
+        clockSyncTimer = null;
+        window.clearInterval(roomStateTimer);
+        roomStateTimer = null;
     }
 
     function connect() {
@@ -192,6 +196,9 @@ document.addEventListener('DOMContentLoaded', () => {
         socket = window.io({ transports: ['websocket', 'polling'] });
 
         socket.on('connect', () => {
+            clearSyncTimers();
+            serverClockOffset = 0;
+            forwardRoomEvent('sync_reset', {});
             socket.emit('join', {
                 room: activeRoom,
                 username: activeUsername,
@@ -222,6 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         socket.on('disconnect', () => {
+            clearSyncTimers();
             setStatus('waiting', '正在重连');
             chatInput.disabled = true;
             sendButton.disabled = true;
@@ -243,7 +251,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : sample;
         });
 
-        for (const eventName of ['room_state', 'buffering_state', 'sync_video', 'companion_command']) {
+        for (const eventName of ['room_state', 'buffering_state', 'sync_video', 'companion_command', 'playback_ack']) {
             socket.on(eventName, payload => forwardRoomEvent(eventName, payload));
         }
         socket.on('chat_message', payload => addMessage(payload));
