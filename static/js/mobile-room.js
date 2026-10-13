@@ -76,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); sendChat(); }
     });
     const sync = new window.TogetherWatchNativeSync({
+        clientId: () => companion?.id,
         emit: (name, data, ack) => {
             if (!companion?.connected) return;
             // Socket.IO treats an explicit undefined callback as a second
@@ -84,6 +85,7 @@ document.addEventListener('DOMContentLoaded', () => {
             else companion.emit(name, { ...data, room });
         },
         command: queueCommand,
+        cancelCommand: () => { commands = commands.filter(item => item.type !== 'state'); },
     });
     function stopNative() {
         companion?.removeAllListeners();

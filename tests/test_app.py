@@ -749,6 +749,55 @@ class TogetherWatchTests(unittest.TestCase):
                                              "recent_interaction": True, **updates})
             self.assertEqual(application.room_states["late-player"]["time"], 300)
 
+    def test_single_player_can_resume_after_its_snapshot_lease_expires(self):
+        human, player = [application.socketio.test_client(application.app) for _ in range(2)]
+        self.addCleanup(lambda: [client.disconnect() for client in (human, player)])
+        for client, role in ((human, "member"), (player, "companion")):
+            client.emit("join", {"username": "甲", "room": "solo-resume", "role": role,
+                                 "client_key": "solo-player-key-123456"})
+        player.emit("video_event", {"room": "solo-resume", "type": "pause", "time": 30})
+        state = application.current_room_state("solo-resume")
+        leader = application.room_playback_leaders["solo-resume"]
+        self.assertEqual(state.get("playback_owner"), leader["sid"])
+        # A stalled/downloaded video may resume locally without a new DOM
+        # gesture; the same controller must not be forced back to its own pause.
+        leader["seen_at"] = time.time() - 20
+        player.get_received()
+        player.emit("playback_snapshot", {"room": "solo-resume", "time": 32, "playing": True,
+                    "speed": 1, "readyState": 4, "observed_revision": state["revision"]})
+        self.assertTrue(application.room_states["solo-resume"]["playing"])
+        self.assertEqual(application.room_states["solo-resume"]["time"], 32)
+        self.assertFalse(any(e["name"] == "room_state" for e in player.get_received()))
+
+    def test_expired_leader_cannot_overwrite_a_new_peer_pause(self):
+        first, second = [application.socketio.test_client(application.app) for _ in range(2)]
+        self.addCleanup(lambda: [client.disconnect() for client in (first, second)])
+        for client in (first, second):
+            client.emit("join", {"username": "成员", "room": "leader-race", "role": "companion"})
+        first.emit("video_event", {"room": "leader-race", "type": "play", "time": 20})
+        old_revision = application.room_states["leader-race"]["revision"]
+        second.emit("video_event", {"room": "leader-race", "type": "pause", "time": 40})
+        application.room_playback_leaders["leader-race"]["seen_at"] = time.time() - 20
+        for revision in (old_revision, application.room_states["leader-race"]["revision"]):
+            first.get_received()
+            first.emit("playback_snapshot", {"room": "leader-race", "time": 25, "playing": True,
+                       "speed": 1, "readyState": 4, "observed_revision": revision})
+            self.assertFalse(application.room_states["leader-race"]["playing"])
+            self.assertEqual(application.room_states["leader-race"]["time"], 40)
+            self.assertTrue(any(e["name"] == "room_state" for e in first.get_received()))
+
+    def test_controller_echo_exemption_does_not_hide_server_buffering_hold(self):
+        player = application.socketio.test_client(application.app)
+        self.addCleanup(player.disconnect)
+        player.emit("join", {"username": "甲", "room": "controller-hold", "role": "companion"})
+        player.emit("video_event", {"room": "controller-hold", "type": "play", "time": 20})
+        self.assertTrue(application.current_room_state("controller-hold")["playback_owner"])
+        application.rooms_paused_for_buffering.add("controller-hold")
+        self.assertIsNone(application.current_room_state("controller-hold")["playback_owner"])
+        application.rooms_paused_for_buffering.discard("controller-hold")
+        application.room_states["controller-hold"]["resume_at"] = time.time() + 1
+        self.assertIsNone(application.current_room_state("controller-hold")["playback_owner"])
+
     def test_invalid_crop_does_not_replace_layout_and_missing_player_clears_it(self):
         human, companion = [application.socketio.test_client(application.app) for _ in range(2)]
         self.addCleanup(lambda: [client.disconnect() for client in (human, companion)])

@@ -10,8 +10,10 @@ function harness() {
     const emitted = [], commands = [];
     const sync = new NativeSync({
         now: () => now,
+        clientId: () => 'local-player',
         emit: (name, data, ack) => emitted.push({ name, data, ack }),
         command: data => commands.push(data),
+        cancelCommand: () => { commands.length = 0; },
     });
     let sample = { session: 1, time: 0, duration: 600, speed: 1, playing: false,
         ready: true, seeking: false, appliedCommand: 0 };
@@ -87,6 +89,20 @@ test('old revision cannot undo a newer seek', () => {
     assert.equal(h.sync.revision, 9);
 });
 
+test('a fresh local play cancels an unapplied correction and its command wait', () => {
+    const h = harness();
+    h.receive({ time: 30, playing: true }); h.reply(h.state({ time: 30, playing: true }));
+    h.sync.state(h.state({ revision: 2, time: 30, playing: false }));
+    assert.equal(h.commands.at(-1).playing, false);
+    h.receive({ playing: true }, [{ type: 'play', time: 30, speed: 1 }]);
+    assert.equal(h.commands.length, 0);
+    assert.equal(h.sync.awaitingCommand, 0);
+    h.sync.state(h.state({ revision: 3, playing: true }), 'playback_ack');
+    h.advance(3100); h.receive();
+    assert.equal(h.emitted.at(-1).name, 'playback_snapshot');
+    assert.equal(h.emitted.at(-1).data.playing, true);
+});
+
 test('clock offset and playback rate project a live room position', () => {
     const h = harness();
     h.receive(); h.sync.offset = 5;
@@ -114,6 +130,64 @@ test('buffer recovery requests fresh state before publishing stalled progress', 
     assert.equal(h.emitted.filter(e => e.name === 'playback_snapshot').length, 0);
     h.reply(h.state({ time: 40, playing: true }));
     assert.equal(h.commands.at(-1).time, 40);
+});
+
+test('buffer recovery does not discard a fresh local play or replay the old pause', () => {
+    const h = harness();
+    h.receive({ time: 30 }); h.reply(h.state()); h.clear();
+    h.receive({ ready: false }); h.advance(10000);
+    h.receive({ ready: true, playing: true }, [{ type: 'play', time: 30, speed: 1 }]);
+    assert.equal(h.emitted.filter(e => e.name === 'video_event').length, 1);
+    h.reply(h.state({ playing: false }));
+    assert.equal(h.commands.length, 0, 'an older refresh must not cancel the user play');
+    h.sync.state(h.state({ playing: true, revision: 2 }), 'playback_ack');
+    h.receive();
+    assert.equal(h.emitted.at(-1).data.playing, true);
+});
+
+test('first local pause survives a delayed empty-room initialization', () => {
+    const h = harness();
+    h.receive({ time: 20 }, [{ type: 'pause', time: 20, speed: 1 }]);
+    assert.equal(h.emitted.filter(e => e.name === 'video_event').length, 1);
+    h.reply(null);
+    assert.equal(h.commands.length, 0);
+});
+
+test('periodic echo of our own snapshot cannot pause or seek the local leader', () => {
+    const h = harness();
+    h.receive({ time: 30 }); h.reply(h.state()); h.clear();
+    h.receive({ time: 33, playing: true });
+    h.sync.state(h.state({ revision: 2, playing: false, playback_owner: 'local-player' }));
+    assert.equal(h.commands.length, 0);
+    assert.equal(h.sync.revision, 2);
+    h.sync.state(h.state({ revision: 3, time: 10, playing: false, playback_owner: 'other-player' }));
+    assert.equal(h.commands.at(-1).playing, false, 'a peer must still be able to pause');
+    assert.equal(h.commands.at(-1).time, 10);
+});
+
+test('own echo updates revision without rolling back a buffered local position', () => {
+    const h = harness();
+    h.receive({ time: 30 }); h.reply(h.state()); h.clear();
+    h.receive({ ready: false }); h.advance(10000); h.receive({ ready: true, time: 31, playing: true });
+    h.reply(h.state({ revision: 3, time: 45, playing: false, playback_owner: 'local-player', force_sync: true }));
+    assert.equal(h.commands.length, 0);
+    h.receive();
+    assert.equal(h.emitted.at(-1).name, 'playback_snapshot');
+    assert.equal(h.emitted.at(-1).data.time, 31);
+    assert.equal(h.emitted.at(-1).data.observed_revision, 3);
+});
+
+test('buffer holds and scheduled group resumes still reach the local controller', () => {
+    const h = harness();
+    h.receive({ time: 30, playing: true }); h.reply(h.state({ playing: true })); h.clear();
+    h.sync.state(h.state({ revision: 2, playing: false, active: true, playback_owner: 'local-player' }), 'buffering_state');
+    assert.equal(h.commands.at(-1).playing, false);
+    const command = h.commands.at(-1); h.clear();
+    h.receive({ playing: false, appliedCommand: command.id });
+    h.sync.state(h.state({ revision: 3, playing: true, resume_at: 102, playback_owner: 'local-player' }));
+    assert.equal(h.commands.length, 0);
+    h.advance(2200); h.receive();
+    assert.equal(h.commands.at(-1).playing, true);
 });
 
 test('lost acknowledgement recovers without publishing uncertain local state', () => {
@@ -219,7 +293,7 @@ function mobileHarness() {
     const window = { TogetherWatchNativeSync: NativeSync, addEventListener() {},
         createVoiceCallController: () => ({ handleSocketReconnect() {}, handleSocketDisconnect() {}, destroy() {} }) };
     const io = () => {
-        const socket = { connected: false, handlers: {}, emitted: [],
+        const socket = { id: `socket-${sockets.length}`, connected: false, handlers: {}, emitted: [],
             on(name, callback) { this.handlers[name] = callback; },
             emit(name, data, ack) { this.emitted.push({ name, data, ack, argumentCount: arguments.length }); },
             removeAllListeners() { this.handlers = {}; },
@@ -268,6 +342,31 @@ test('mobile emits one payload and only includes a real acknowledgement callback
         assert.ok(message, name);
         assert.equal(message.argumentCount, 2, name + ' must not send an undefined second payload');
     }
+});
+
+test('mobile bridge identifies its own controller but still applies peer controls', () => {
+    const h = mobileHarness(); h.sockets[0].connect();
+    const sample = { active: true, session: 1, time: 30, duration: 600, ready: true, speed: 1, playing: false };
+    h.bridge.receive(sample); h.sockets[1].connect(); h.bridge.receive(sample);
+    const refresh = h.sockets[1].emitted.find(e => e.name === 'request_room_state' && e.ack);
+    refresh.ack({ ok: true, state: { revision: 1, time: 30, playing: false } });
+    h.bridge.drain();
+    h.bridge.receive({ ...sample, playing: true });
+    h.sockets[1].handlers.room_state({ revision: 2, time: 30, playing: false, playback_owner: h.sockets[1].id });
+    assert.equal(h.bridge.drain().commands.length, 0);
+    h.sockets[1].handlers.sync_video({ revision: 3, time: 40, playing: false });
+    assert.equal(h.bridge.drain().commands.at(-1).playing, false);
+});
+
+test('mobile drops superseded playback commands but retains this device volume', () => {
+    const h = mobileHarness(); h.sockets[0].connect();
+    const sample = { active: true, session: 1, time: 30, duration: 600, ready: true, speed: 1, playing: false };
+    h.bridge.receive(sample); h.sockets[1].connect(); h.bridge.receive(sample);
+    h.sockets[1].handlers.sync_video({ revision: 1, time: 60, playing: false });
+    h.bridge.receive({ ...sample, playing: true, events: [{ type: 'play', time: 30, speed: 1 }] });
+    const commands = h.bridge.drain().commands;
+    assert.equal(commands.length, 1);
+    assert.equal(commands[0].type, 'volume');
 });
 
 test('mobile volume changes stay on this device and coalesce instead of flooding playback commands', () => {

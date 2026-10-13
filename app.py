@@ -2160,6 +2160,15 @@ def current_room_state(room_id):
         ):
             return None
         snapshot = dict(state)
+        # A periodic reply is an acknowledgement of the controller's own
+        # sample, not a new instruction to that same player. Use the socket
+        # identity (never a client-supplied flag), and do not exempt a server
+        # buffering hold or scheduled group resume from synchronization.
+        snapshot["playback_owner"] = (
+            room_playback_leaders.get(room_id, {}).get("sid")
+            if room_id not in rooms_paused_for_buffering and not state.get("resume_at")
+            else None
+        )
 
     now = time.time()
     if snapshot.get("playing"):
@@ -2940,10 +2949,10 @@ def handle_playback_snapshot(data):
             and playing == bool(state.get("playing"))
             and abs(speed - state.get("speed", 1.0)) < 0.01
         )
-        # Joining at 00:00, recovering from a stall, or an old client that has
-        # not observed the latest command must first catch up to the room.
+        # A new/follower player (including one recovering from a stall), or
+        # an old client without the latest command, must catch up first.
         if established and not sample_matches and (
-            (leader_expired and not recent_interaction)
+            (leader_expired and not is_leader and not recent_interaction)
             or (observed_revision is None and state.get("control_revision", 0) > 0)
         ):
             emit("room_state", {**(current_room_state(room_id) or {}), "force_sync": True})
@@ -2951,6 +2960,9 @@ def handle_playback_snapshot(data):
         if not (leader_expired or is_leader or recent_interaction):
             return
 
+        # A controller may stop sampling while its video buffers. Expiry lets
+        # another caught-up player take over; it must not roll the unchanged
+        # controller back to its own stale pause when sampling resumes.
         if leader_expired or recent_interaction:
             room_playback_leaders[room_id] = {
                 "sid": request.sid,

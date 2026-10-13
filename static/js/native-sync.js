@@ -2,10 +2,12 @@
 (function (root) {
     'use strict';
     class NativeSync {
-        constructor({ emit, command, now = () => Date.now() }) {
+        constructor({ emit, command, cancelCommand = () => {}, now = () => Date.now(), clientId = () => null }) {
             this.emit = emit;
             this.command = command;
+            this.cancelCommand = cancelCommand;
             this.now = now;
+            this.clientId = clientId;
             // Survive reconnects and WebView reloads while the same native
             // player still holds the last applied command number.
             this.commandId = Date.now() * 1000;
@@ -34,6 +36,7 @@
             if (!payload) {
                 this.stateVersion++;
                 this.initialized = true;
+                if (this.pendingLocal) return;
                 this.pending = { time: this.sample?.time || 0, playing: true, speed: 1,
                     server_time: this.now() / 1000 + this.offset };
                 this.apply(true);
@@ -47,6 +50,17 @@
             if (Number(payload.duration) > 0) this.roomDuration = Number(payload.duration);
             if (event === 'playback_ack') {
                 this.pendingLocal = Math.max(0, this.pendingLocal - 1);
+                return;
+            }
+            // The leader already has a newer live position than its last
+            // server snapshot. Reapplying that echo can undo local playback,
+            // especially after buffering or site controls without DOM intent.
+            // A different controller, explicit event or server buffer hold
+            // still follows the normal synchronization path.
+            if (event === 'room_state' && payload.playback_owner
+                && payload.playback_owner === this.clientId() && !payload.resume_at) {
+                this.pending = null;
+                this.resumeAt = 0;
                 return;
             }
             if (event === 'sync_video' || payload.force_sync) this.pendingLocal = 0;
@@ -99,8 +113,17 @@
             if (sample.appliedCommand >= this.awaitingCommand) this.awaitingCommand = 0;
             // Explicit UI actions are independent of player callbacks, so a
             // remote seek can never masquerade as a fresh local seek.
-            if (this.initialized) for (const event of events.slice(-16)) {
-                if (!['play', 'pause', 'seek', 'speed'].includes(event.type)) continue;
+            // A user can press play while initialization or buffer recovery
+            // is fetching state. Never discard that explicit action; pendingLocal
+            // prevents the older reply from undoing it until it is acknowledged.
+            const localEvents = events.slice(-16).filter(event => ['play', 'pause', 'seek', 'speed'].includes(event.type));
+            if (localEvents.length) {
+                // A room reply can already be queued between native polls.
+                // A newer user action supersedes that unapplied correction.
+                this.cancelCommand();
+                this.awaitingCommand = 0;
+            }
+            for (const event of localEvents) {
                 this.resumeAt = 0;
                 this.pending = null;
                 this.pendingLocal++;
