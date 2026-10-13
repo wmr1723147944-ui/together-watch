@@ -57,6 +57,7 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("getOnBackPressedDispatcher().addCallback", activity)
         self.assertNotIn("public void onBackPressed()", activity)
         self.assertIn(":app:lintDebug", workflow)
+        self.assertIn("packages: platform-tools", workflow)
         backup = ET.parse(ANDROID / "app/src/main/res/xml/data_extraction_rules.xml").getroot()
         for section in ("cloud-backup", "device-transfer"):
             self.assertIsNotNone(backup.find(f"./{section}/exclude[@domain='root'][@path='.']"))
