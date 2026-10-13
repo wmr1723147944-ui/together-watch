@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>一起看 · 房间</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile-room.css') }}">
+</head>
+<body>
+    <input type="hidden" id="roomData" value="{{ room_id }}">
+    <input type="hidden" id="legalNoticeVersion" value="{{ legal_notice_version }}">
+    <header>
+        <div><strong id="mobileStatus">连接房间中…</strong> <span id="onlineCount"></span></div>
+        <button id="joinCallBtn">加入语音</button>
+    </header>
+    <p id="mobilePlayerStatus" role="status">等待 APP 播放器</p>
+    <label id="videoVolumeControl">视频音量 <input id="mobileVideoVolume" type="range" min="0" max="100" value="100"><output id="mobileVideoVolumeValue">100%</output></label>
+    <section id="callDock" class="hidden">
+        <span id="callStatus"></span> <span id="callCount"></span> <span id="callNetwork"></span>
+        <button id="muteCallBtn">静音</button> <button id="leaveCallBtn">挂断</button>
+        <label>通话音量 <input id="callVolumeSlider" type="range" min="0" max="100" value="100"><output id="callVolumeValue">100%</output></label>
+        <div id="remoteAudioContainer" class="hidden"></div>
+    </section>
+    <main id="chatContainer" aria-live="polite"><p>双方打开同一集、同一版本，即可同步观看。</p></main>
+    <form id="chatForm">
+        <input id="chatInput" aria-label="聊天消息" placeholder="说点什么…" maxlength="500" autocomplete="off">
+        <button id="sendBtn" type="button" disabled>发送</button>
+    </form>
+    <script src="{{ url_for('static', filename='js/room-gate.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/voice-call.js', v='20261008-sync') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/native-sync.js', v='20261012') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261012') }}" defer></script>
+</body>
+</html>

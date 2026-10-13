@@ -1434,6 +1434,16 @@ def web_companion():
     )
 
 
+@app.route("/mobile-room/<room_id>")
+def mobile_room(room_id):
+    if not valid_room_id(room_id):
+        return "Invalid room", 404
+    return render_template(
+        "mobile_room.html", room_id=room_id,
+        legal_notice_version=LEGAL_NOTICE_VERSION,
+    )
+
+
 @app.route("/health")
 def health():
     with room_lock:
@@ -2463,6 +2473,9 @@ def request_room_state(data):
     state = current_room_state(identity[0])
     if state:
         emit("room_state", state)
+    # A native player must distinguish a confirmed empty room from a delayed
+    # response before its first sample is allowed to establish the timeline.
+    return {"ok": True, "state": state}
 
 
 @socketio.on("companion_command")

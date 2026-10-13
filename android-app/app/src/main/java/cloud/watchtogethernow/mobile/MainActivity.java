@@ -2,13 +2,14 @@ package cloud.watchtogethernow.mobile;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
-import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
@@ -25,6 +26,7 @@ import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -32,11 +34,16 @@ import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
+import androidx.media3.ui.PlayerView;
+import androidx.activity.ComponentActivity;
+import androidx.activity.OnBackPressedCallback;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -45,10 +52,14 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public final class MainActivity extends Activity {
+public final class MainActivity extends ComponentActivity {
     private static final String PREFS = "together_watch_mobile";
     private static final String SERVER_ORIGIN = BuildConfig.SERVER_ORIGIN;
     private static final String SERVER_HOST = Uri.parse(SERVER_ORIGIN).getHost();
@@ -68,7 +79,27 @@ public final class MainActivity extends Activity {
     private EditText roomInput;
     private EditText videoUrlInput;
     private CheckBox consentCheck;
-    private FrameLayout webContainer;
+    private LinearLayout webContainer;
+    private FrameLayout videoContainer;
+    private FrameLayout roomContainer;
+    private PlayerView nativePlayerView;
+    private NativePlayerController nativePlayer;
+    private CheckBox autoNativeCheck;
+    private final LinkedHashMap<String, JSONObject> mediaCandidates = new LinkedHashMap<>();
+    private String discoveryScript = "";
+    private String sourcePageUrl = "";
+    private boolean preferWebThisPage;
+    private boolean sessionActive;
+    private boolean destroyed;
+    private boolean nativeFullscreen;
+    private long lastDiscovery;
+    private boolean discoveryInFlight;
+    private boolean protectedPage;
+    private boolean foreground = true;
+    private int bridgeGeneration;
+    private int bridgeMisses;
+    private int activeCandidateCount;
+    private String lastActiveCandidate = "";
     private FrameLayout popupContainer;
     private FrameLayout fullscreenContainer;
 
@@ -76,13 +107,14 @@ public final class MainActivity extends Activity {
     private WebView roomWebView;
     private WebView companionWebView;
     private PermissionRequest pendingAudioPermission;
+    private OnBackPressedCallback navigationBack;
     private View fullscreenView;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
 
     private String activeRoom = "";
     private String activeNickname = "";
     private boolean roomBootstrapPending = false;
-    private int videoPageGeneration = 0;
+    private volatile int videoPageGeneration = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -106,6 +138,9 @@ public final class MainActivity extends Activity {
         videoUrlInput = findViewById(R.id.videoUrlInput);
         consentCheck = findViewById(R.id.consentCheck);
         webContainer = findViewById(R.id.webContainer);
+        videoContainer = findViewById(R.id.videoContainer);
+        roomContainer = findViewById(R.id.roomContainer);
+        autoNativeCheck = findViewById(R.id.autoNativeCheck);
         popupContainer = findViewById(R.id.popupContainer);
         fullscreenContainer = findViewById(R.id.fullscreenContainer);
     }
@@ -123,14 +158,25 @@ public final class MainActivity extends Activity {
         configureWebView(roomWebView, false);
         roomWebView.setWebViewClient(new RoomPageClient());
         roomWebView.setWebChromeClient(new RoomChromeClient());
-        roomWebView.setVisibility(View.GONE);
 
         FrameLayout.LayoutParams match = new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         );
-        webContainer.addView(videoWebView, match);
-        webContainer.addView(roomWebView, match);
+        videoContainer.addView(videoWebView, match);
+        nativePlayerView = new PlayerView(this);
+        nativePlayerView.setVisibility(View.GONE);
+        nativePlayerView.setKeepScreenOn(true);
+        videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
+        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus);
+        roomContainer.addView(roomWebView, new FrameLayout.LayoutParams(-1, -1));
+        try (InputStream input = getAssets().open("media-discovery.js")) {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] bytes = new byte[4096]; int count;
+            while ((count = input.read(bytes)) != -1) output.write(bytes, 0, count);
+            discoveryScript = output.toString("UTF-8");
+        } catch (IOException error) { setStatus("资源识别组件不可用，仍可使用网页播放"); }
+        arrangePanels();
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -159,15 +205,33 @@ public final class MainActivity extends Activity {
         roomInput.setText(preferences.getString("room", ""));
         videoUrlInput.setText(preferences.getString("video_url", ""));
         consentCheck.setChecked(preferences.getBoolean("consent", false));
+        autoNativeCheck.setChecked(preferences.getBoolean("auto_native", true));
     }
 
     private void bindActions() {
+        navigationBack = new OnBackPressedCallback(false) {
+            @Override public void handleOnBackPressed() { handleBackNavigation(); }
+        };
+        getOnBackPressedDispatcher().addCallback(this, navigationBack);
         findViewById(R.id.openVideoButton).setOnClickListener(view -> startSession());
         findViewById(R.id.videoTabButton).setOnClickListener(view -> showVideoTab());
         findViewById(R.id.roomTabButton).setOnClickListener(view -> showRoomTab());
         findViewById(R.id.setupTabButton).setOnClickListener(view -> showSetup());
         findViewById(R.id.termsButton).setOnClickListener(view -> openExternal(SERVER_ORIGIN + "/terms"));
         findViewById(R.id.privacyButton).setOnClickListener(view -> openExternal(SERVER_ORIGIN + "/privacy"));
+        findViewById(R.id.sourceButton).setOnClickListener(view -> choosePlayback());
+        findViewById(R.id.sampleButton).setOnClickListener(view -> chooseSample());
+        findViewById(R.id.fullscreenButton).setOnClickListener(view -> {
+            nativeFullscreen = !nativeFullscreen;
+            roomContainer.setVisibility(nativeFullscreen ? View.GONE : View.VISIBLE);
+            videoContainer.setVisibility(View.VISIBLE);
+            ((Button) view).setText(nativeFullscreen ? "退出全屏" : "全屏视频");
+        });
+        findViewById(R.id.inviteButton).setOnClickListener(view -> {
+            Intent invite = new Intent(Intent.ACTION_SEND).setType("text/plain");
+            invite.putExtra(Intent.EXTRA_TEXT, "来一起看：" + SERVER_ORIGIN + "/room/" + Uri.encode(activeRoom));
+            startActivity(Intent.createChooser(invite, "邀请朋友"));
+        });
     }
 
     private void startSession() {
@@ -179,6 +243,7 @@ public final class MainActivity extends Activity {
             showInputError(nicknameInput, "请填写昵称");
             return;
         }
+        if (roomInput.getText().toString().trim().isEmpty()) room = UUID.randomUUID().toString().replace("-", "").substring(0, 24);
         if (room.isEmpty()) {
             showInputError(roomInput, "房间号无效，请输入房间号或完整邀请链接");
             return;
@@ -194,23 +259,37 @@ public final class MainActivity extends Activity {
 
         activeNickname = nickname.substring(0, Math.min(nickname.length(), 32));
         activeRoom = room;
+        roomInput.setText(room);
+        sourcePageUrl = videoUrl;
+        preferWebThisPage = false;
+        protectedPage = false;
+        discoveryInFlight = false;
+        sessionActive = true;
+        navigationBack.setEnabled(true);
+        bridgeMisses = 0;
+        mediaCandidates.clear();
         preferences.edit()
             .putString("nickname", activeNickname)
             .putString("room", activeRoom)
             .putString("video_url", videoUrl)
             .putBoolean("consent", true)
+            .putBoolean("auto_native", autoNativeCheck.isChecked())
             .apply();
 
         hideKeyboard();
         setupPanel.setVisibility(View.GONE);
         browserToolbar.setVisibility(View.VISIBLE);
+        findViewById(R.id.playbackToolbar).setVisibility(View.VISIBLE);
         statusText.setVisibility(View.VISIBLE);
         mainContent.setVisibility(View.VISIBLE);
         setStatus("正在打开视频页面…");
 
         bootstrapRoomPage();
         showVideoTab();
-        videoWebView.loadUrl(videoUrl);
+        if (MediaSourcePolicy.isMedia(videoUrl)) openNative(videoUrl, 0);
+        else videoWebView.loadUrl(videoUrl);
+        final int generation = ++bridgeGeneration;
+        mainHandler.post(() -> tickBridge(generation));
     }
 
     private void bootstrapRoomPage() {
@@ -219,31 +298,178 @@ public final class MainActivity extends Activity {
     }
 
     private void showVideoTab() {
-        videoWebView.setVisibility(View.VISIBLE);
-        roomWebView.setVisibility(View.GONE);
-        setStatus("视频页：助手会自动识别 HTML5 播放器");
+        videoContainer.setVisibility(View.VISIBLE);
+        roomContainer.setVisibility(View.VISIBLE);
+        nativeFullscreen = false;
+        ((Button) findViewById(R.id.fullscreenButton)).setText("全屏视频");
     }
 
     private void showRoomTab() {
-        videoWebView.setVisibility(View.GONE);
-        roomWebView.setVisibility(View.VISIBLE);
+        videoContainer.setVisibility(View.GONE);
+        roomContainer.setVisibility(View.VISIBLE);
         setStatus("房间页：可聊天、调整音量和加入语音通话");
     }
 
     private void showSetup() {
+        sessionActive = false;
+        navigationBack.setEnabled(false);
+        cancelPendingMicrophone();
+        ++bridgeGeneration;
+        nativePlayer.release();
+        nativePlayerView.setVisibility(View.GONE);
+        videoWebView.setVisibility(View.VISIBLE);
         hideFullscreenVideo();
         destroyCompanion();
         videoPageGeneration += 1;
         videoWebView.loadUrl("about:blank");
         roomWebView.loadUrl("about:blank");
         browserToolbar.setVisibility(View.GONE);
+        findViewById(R.id.playbackToolbar).setVisibility(View.GONE);
         statusText.setVisibility(View.GONE);
         setupPanel.setVisibility(View.VISIBLE);
+        mainContent.setVisibility(View.GONE);
     }
 
     private void showInputError(EditText input, String message) {
         input.setError(message);
         input.requestFocus();
+    }
+
+    private void arrangePanels() {
+        boolean landscape = getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
+        webContainer.setOrientation(landscape ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
+        videoContainer.setLayoutParams(new LinearLayout.LayoutParams(landscape ? 0 : -1, landscape ? -1 : 0, landscape ? 1.65f : 1f));
+        roomContainer.setLayoutParams(new LinearLayout.LayoutParams(landscape ? 0 : -1, landscape ? -1 : 0, 1f));
+    }
+
+    @Override public void onConfigurationChanged(Configuration configuration) {
+        super.onConfigurationChanged(configuration);
+        arrangePanels();
+    }
+
+    private void tickBridge(int generation) {
+        if (destroyed || !foreground || !sessionActive || generation != bridgeGeneration) return;
+        if (!nativePlayer.isActive() && System.currentTimeMillis() - lastDiscovery > 2000) discoverMedia();
+        String url = roomWebView.getUrl();
+        String path = url == null ? "" : Uri.parse(url).getPath();
+        if (!UrlPolicy.isTrustedServerUrl(url, SERVER_HOST) || !("/mobile-room/" + activeRoom).equals(path)) {
+            mainHandler.postDelayed(() -> tickBridge(generation), 350);
+            return;
+        }
+        String script = "(function(){const bridge=window.TogetherWatchMobile;if(!bridge)return null;"
+            + "bridge.receive(" + nativePlayer.sample().toString() + ");return bridge.drain();})()";
+        roomWebView.evaluateJavascript(script, result -> {
+            if (destroyed || !foreground || !sessionActive || generation != bridgeGeneration) return;
+            try {
+                JSONObject response = new JSONObject(result);
+                if (response.optInt("version") == 1) {
+                    bridgeMisses = 0;
+                    JSONArray commands = response.optJSONArray("commands");
+                    if (commands != null) for (int i = 0; i < Math.min(16, commands.length()); i++) {
+                        JSONObject command = commands.optJSONObject(i);
+                        if (command != null) nativePlayer.apply(command);
+                    }
+                }
+            } catch (Exception ignored) {
+                if (++bridgeMisses == 20) setStatus("房间组件尚未就绪：请更新服务器到支持安卓内置播放的版本，再重新进入房间");
+            }
+            mainHandler.postDelayed(() -> tickBridge(generation), 300);
+        });
+    }
+
+    private void rememberCandidate(String rawUrl, JSONObject details) {
+        if (!sessionActive || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
+        String url = UrlPolicy.normalizeHttpsUrl(rawUrl);
+        if (url.isEmpty() || !MediaSourcePolicy.isMedia(url)) return;
+        if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) return;
+        mediaCandidates.put(url, details == null ? new JSONObject() : details);
+        ((Button) findViewById(R.id.sourceButton)).setText("播放方式 (" + mediaCandidates.size() + ")");
+    }
+
+    private void discoverMedia() {
+        lastDiscovery = System.currentTimeMillis();
+        if (discoveryInFlight || destroyed || !sessionActive || nativePlayer.isActive()
+            || discoveryScript.isEmpty() || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
+        discoveryInFlight = true;
+        int generation = videoPageGeneration;
+        videoWebView.evaluateJavascript(discoveryScript, result -> {
+            discoveryInFlight = false;
+            if (destroyed || generation != videoPageGeneration || !sessionActive || nativePlayer.isActive()) return;
+            try {
+                JSONObject discovery = new JSONObject(result);
+                protectedPage = discovery.optBoolean("protectedVideo");
+                if (protectedPage) { mediaCandidates.clear(); return; }
+                JSONArray candidates = discovery.optJSONArray("candidates");
+                List<JSONObject> active = new ArrayList<>();
+                if (candidates != null) for (int i = 0; i < candidates.length(); i++) {
+                    JSONObject candidate = candidates.getJSONObject(i);
+                    rememberCandidate(candidate.optString("url"), candidate);
+                    if (candidate.optBoolean("active") && candidate.optDouble("duration") >= 120) active.add(candidate);
+                }
+                // Require the same visible, playing long-form video twice;
+                // network-only candidates are offered for manual selection.
+                if (active.size() == 1 && autoNativeCheck.isChecked() && !preferWebThisPage) {
+                    JSONObject candidate = active.get(0);
+                    String url = candidate.optString("url");
+                    activeCandidateCount = url.equals(lastActiveCandidate) ? activeCandidateCount + 1 : 1;
+                    lastActiveCandidate = url;
+                    if (activeCandidateCount >= 2 && mediaCandidates.containsKey(url)) openNative(url, candidate.optDouble("position", 0));
+                } else { activeCandidateCount = 0; lastActiveCandidate = ""; }
+            } catch (Exception ignored) { /* The page may navigate during evaluation. */ }
+        });
+    }
+
+    private void openNative(String url, double position) {
+        if (!MediaSourcePolicy.isMedia(url) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage) return;
+        hideFullscreenVideo();
+        destroyCompanion();
+        ++videoPageGeneration;
+        // about:blank unloads the complete frame tree, preventing hidden video
+        // or ad frames from continuing to produce a second audio track.
+        videoWebView.loadUrl("about:blank");
+        videoWebView.setVisibility(View.GONE);
+        nativePlayerView.setVisibility(View.VISIBLE);
+        String referer = MediaSourcePolicy.origin(sourcePageUrl);
+        nativePlayer.open(url, referer, videoWebView.getSettings().getUserAgentString(), position);
+        showVideoTab();
+    }
+
+    private void returnToWeb() {
+        nativePlayer.release();
+        nativePlayerView.setVisibility(View.GONE);
+        videoWebView.setVisibility(View.VISIBLE);
+        preferWebThisPage = true;
+        showVideoTab();
+        videoWebView.loadUrl(sourcePageUrl);
+    }
+
+    private void choosePlayback() {
+        List<String> urls = new ArrayList<>(mediaCandidates.keySet());
+        List<String> labels = new ArrayList<>();
+        labels.add(nativePlayer.isActive() ? "返回原网页播放 / 选集" : "继续网页播放（关闭本页自动切换）");
+        labels.add("刷新网页并重新识别");
+        for (String url : urls) labels.add("内置播放：" + MediaSourcePolicy.displayName(url));
+        new AlertDialog.Builder(this).setTitle(urls.isEmpty() ? "暂未识别到可内置播放的资源" : "选择播放方式")
+            .setItems(labels.toArray(new String[0]), (dialog, index) -> {
+                if (index == 0) { preferWebThisPage = true; if (nativePlayer.isActive()) returnToWeb(); }
+                else if (index == 1) { returnToWeb(); preferWebThisPage = false; }
+                else {
+                    String url = urls.get(index - 2);
+                    JSONObject details = mediaCandidates.get(url);
+                    openNative(url, details == null ? 0 : details.optDouble("position", 0));
+                }
+            }).setNegativeButton("取消", null).show();
+    }
+
+    private void chooseSample() {
+        String[] titles = {"Big Buck Bunny · 预告片", "Sintel · 预告片"};
+        String[] urls = {
+            "https://media.w3.org/2010/05/bunny/trailer.mp4",
+            "https://media.w3.org/2010/05/sintel/trailer.mp4"
+        };
+        new AlertDialog.Builder(this).setTitle("先用公开影片测试播放与同步")
+            .setItems(titles, (dialog, index) -> videoUrlInput.setText(urls[index]))
+            .setNegativeButton("取消", null).show();
     }
 
     private void setStatus(String text) {
@@ -281,6 +507,17 @@ public final class MainActivity extends Activity {
 
     private final class VideoPageClient extends WebViewClient {
         @Override
+        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+            // Observe only the URL. Cookies and Authorization headers stay in
+            // WebView; we neither copy them nor send them to the room server.
+            String url = request.getUrl().toString();
+            int generation = videoPageGeneration;
+            if (MediaSourcePolicy.isMedia(url)) mainHandler.post(() -> {
+                if (generation == videoPageGeneration && !nativePlayer.isActive()) rememberCandidate(url, null);
+            });
+            return null;
+        }
+        @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
             if ("https".equalsIgnoreCase(uri.getScheme()) && !UrlPolicy.normalizeHttpsUrl(uri.toString()).isEmpty()) {
@@ -293,7 +530,13 @@ public final class MainActivity extends Activity {
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
+            if ("about:blank".equals(url)) return;
             videoPageGeneration += 1;
+            protectedPage = false;
+            mediaCandidates.clear();
+            lastActiveCandidate = "";
+            activeCandidateCount = 0;
+            sourcePageUrl = url;
             destroyCompanion();
             setStatus("网页加载中…");
         }
@@ -301,10 +544,11 @@ public final class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
-            if (!UrlPolicy.isHttpsWebUrl(url)) return;
+            if (!sessionActive || nativePlayer.isActive() || !UrlPolicy.isHttpsWebUrl(url)) return;
             int generation = videoPageGeneration;
             setStatus("网页已打开，正在加载同步助手…");
             fetchAndInjectHelper(generation, url);
+            discoverMedia();
         }
 
         @Override
@@ -332,16 +576,21 @@ public final class MainActivity extends Activity {
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
-            if (!roomBootstrapPending || !UrlPolicy.isTrustedServerUrl(url, SERVER_HOST)) return;
+            if (!sessionActive || !roomBootstrapPending || !UrlPolicy.isTrustedServerUrl(url, SERVER_HOST)) return;
             roomBootstrapPending = false;
             String script = "(function(){"
                 + "localStorage.setItem('tw_legal_notice_version'," + js(activeLegalVersion()) + ");"
                 + "localStorage.setItem('tw_username'," + js(activeNickname) + ");"
                 + "localStorage.setItem('tw_last_room'," + js(activeRoom) + ");"
                 + "return true;})()";
-            view.evaluateJavascript(script, ignored -> view.loadUrl(
-                SERVER_ORIGIN + "/room/" + Uri.encode(activeRoom)
-            ));
+            view.evaluateJavascript(script, ignored -> {
+                if (sessionActive && !destroyed) view.loadUrl(SERVER_ORIGIN + "/mobile-room/" + Uri.encode(activeRoom));
+            });
+        }
+
+        @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+            if (request.isForMainFrame() && response.getStatusCode() == 404)
+                setStatus("服务器尚未更新安卓房间页，请先部署新版网站后重新进入");
         }
 
         @Override
@@ -439,7 +688,7 @@ public final class MainActivity extends Activity {
     }
 
     private void handleRoomPermissionRequest(PermissionRequest request) {
-        if (!UrlPolicy.isTrustedServerUrl(request.getOrigin().toString(), SERVER_HOST)) {
+        if (!foreground || !sessionActive || !UrlPolicy.isTrustedServerUrl(request.getOrigin().toString(), SERVER_HOST)) {
             request.deny();
             return;
         }
@@ -455,6 +704,11 @@ public final class MainActivity extends Activity {
         }
         pendingAudioPermission = request;
         requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQUEST_MICROPHONE);
+    }
+
+    private void cancelPendingMicrophone() {
+        if (pendingAudioPermission != null) pendingAudioPermission.deny();
+        pendingAudioPermission = null;
     }
 
     @Override
@@ -477,7 +731,10 @@ public final class MainActivity extends Activity {
                 String source = downloadUtf8(HELPER_URL + "?v=" + System.currentTimeMillis());
                 mainHandler.post(() -> injectHelperIfCurrent(source, generation, pageUrl));
             } catch (IOException error) {
-                mainHandler.post(() -> setStatus("同步助手下载失败，请检查网络后重新打开视频"));
+                mainHandler.post(() -> {
+                    if (generation == videoPageGeneration && !destroyed && !nativePlayer.isActive())
+                        setStatus("同步助手下载失败，请点击播放方式重新识别");
+                });
             }
         });
     }
@@ -511,10 +768,11 @@ public final class MainActivity extends Activity {
     }
 
     private void injectHelperIfCurrent(String source, int generation, String expectedUrl) {
-        if (generation != videoPageGeneration) return;
+        if (destroyed || !sessionActive || nativePlayer.isActive() || generation != videoPageGeneration) return;
         if (videoWebView.getUrl() == null || !videoWebView.getUrl().equals(expectedUrl)) return;
         String payload = source + "\n;window.TogetherWatchBookmarklet?.start(" + js(SERVER_ORIGIN) + ");";
         videoWebView.evaluateJavascript(payload, ignored -> mainHandler.postDelayed(() -> {
+            if (destroyed || nativePlayer.isActive() || generation != videoPageGeneration) return;
             videoWebView.evaluateJavascript(
                 "Boolean(window.__TW_BOOKMARK_COMPANION__)",
                 ready -> setStatus("true".equals(ready)
@@ -579,27 +837,62 @@ public final class MainActivity extends Activity {
         return JSONObject.quote(value == null ? "" : value);
     }
 
-    @Override
-    public void onBackPressed() {
+    private void handleBackNavigation() {
+        if (nativeFullscreen) { showVideoTab(); return; }
         if (fullscreenView != null) {
             hideFullscreenVideo();
             return;
         }
-        WebView visible = roomWebView.getVisibility() == View.VISIBLE ? roomWebView : videoWebView;
-        if (setupPanel.getVisibility() != View.VISIBLE && visible.canGoBack()) {
-            visible.goBack();
+        if (videoContainer.getVisibility() != View.VISIBLE) {
+            showVideoTab();
+            return;
+        }
+        if (nativePlayer.isActive() && videoContainer.getVisibility() == View.VISIBLE) {
+            returnToWeb();
+            return;
+        }
+        if (setupPanel.getVisibility() != View.VISIBLE && videoWebView.canGoBack()) {
+            videoWebView.goBack();
             return;
         }
         if (setupPanel.getVisibility() != View.VISIBLE) {
             showSetup();
             return;
         }
-        super.onBackPressed();
+        navigationBack.setEnabled(false);
+        getOnBackPressedDispatcher().onBackPressed();
+    }
+
+    @Override
+    protected void onStop() {
+        foreground = false;
+        cancelPendingMicrophone();
+        ++bridgeGeneration;
+        if (nativePlayer != null) nativePlayer.pauseLocally();
+        if (roomWebView != null && UrlPolicy.isTrustedServerUrl(roomWebView.getUrl(), SERVER_HOST)) {
+            roomWebView.evaluateJavascript("window.TogetherWatchMobile?.suspend()", null);
+        }
+        super.onStop();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        foreground = true;
+        if (sessionActive) {
+            final int generation = ++bridgeGeneration;
+            mainHandler.post(() -> tickBridge(generation));
+        }
     }
 
     @Override
     protected void onDestroy() {
-        pendingAudioPermission = null;
+        destroyed = true;
+        sessionActive = false;
+        ++bridgeGeneration;
+        mainHandler.removeCallbacksAndMessages(null);
+        nativePlayer.release();
+        cancelPendingMicrophone();
         destroyCompanion();
         if (videoWebView != null) videoWebView.destroy();
         if (roomWebView != null) roomWebView.destroy();

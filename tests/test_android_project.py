@@ -47,8 +47,19 @@ class AndroidProjectTests(unittest.TestCase):
 
         self.assertIn("TogetherWatchBookmarklet?.start", activity)
         self.assertIn("start: startTogetherWatchBookmark", helper)
-        self.assertIn("gradle -p android-app :app:assembleDebug", workflow)
+        self.assertIn(":app:assembleDebug", workflow)
         self.assertIn("app-debug.apk", workflow)
+
+    def test_native_player_has_modern_back_navigation_and_lint_gate(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        workflow = (ROOT / ".github/workflows/android.yml").read_text(encoding="utf-8")
+        self.assertIn("extends ComponentActivity", activity)
+        self.assertIn("getOnBackPressedDispatcher().addCallback", activity)
+        self.assertNotIn("public void onBackPressed()", activity)
+        self.assertIn(":app:lintDebug", workflow)
+        backup = ET.parse(ANDROID / "app/src/main/res/xml/data_extraction_rules.xml").getroot()
+        for section in ("cloud-backup", "device-transfer"):
+            self.assertIsNotNone(backup.find(f"./{section}/exclude[@domain='root'][@path='.']"))
 
 
 if __name__ == "__main__":

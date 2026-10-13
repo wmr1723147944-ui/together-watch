@@ -1,6 +1,7 @@
 package cloud.watchtogethernow.mobile;
 
 import android.net.Uri;
+import java.net.URI;
 
 import java.util.Locale;
 import java.util.regex.Matcher;
@@ -17,6 +18,11 @@ final class UrlPolicy {
         String value = rawValue == null ? "" : rawValue.trim();
         if (value.isEmpty()) return "";
         if (!value.contains("://")) value = "https://" + value;
+        try {
+            URI strict = new URI(value);
+            if (strict.getHost() == null || strict.getUserInfo() != null
+                || strict.getPort() > 65535 || strict.getPort() < -1) return "";
+        } catch (Exception ignored) { return ""; }
 
         Uri uri = Uri.parse(value);
         String scheme = uri.getScheme();
@@ -59,6 +65,7 @@ final class UrlPolicy {
     static boolean isTrustedServerUrl(String rawValue, String serverHost) {
         Uri uri = Uri.parse(rawValue == null ? "" : rawValue);
         return "https".equalsIgnoreCase(uri.getScheme())
+            && uri.getUserInfo() == null && (uri.getPort() == -1 || uri.getPort() == 443)
             && uri.getHost() != null
             && uri.getHost().equalsIgnoreCase(serverHost);
     }

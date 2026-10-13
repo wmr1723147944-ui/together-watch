@@ -113,9 +113,9 @@ sudo docker compose --env-file .env.server up -d --force-recreate app
 
 ## Android 测试版
 
-仓库中的 [`android-app`](android-app/) 是免书签的安卓 MVP：在 APP 内输入房间号和视频网页后，会自动加载现有同步助手，并提供“视频”和“房间/通话”两个常驻标签。第三方视频页不会获得 Android 原生桥接权限。
+仓库中的 [`android-app`](android-app/) 0.2 测试版加入 Media3 内置播放器和手机本地来源识别，视频、聊天和通话可同屏使用，不必拖书签。无法内置播放的来源仍可切回网页同步助手。第三方视频页不会获得 Android 原生桥接权限；房间只同步播放状态，不接收本机识别出的媒体链接。
 
-推送安卓相关代码后，GitHub Actions 的 `android-apk` 工作流会生成 `app-debug.apk`。下载和安装步骤见 [`android-app/README.md`](android-app/README.md)。第一版只面向普通 HTML5 视频页面，不承诺兼容 DRM、强制官方 APP 或禁止 WebView 的平台。
+推送安卓相关代码后，GitHub Actions 的 `android-apk` 工作流会生成 `app-debug.apk`。这版必须搭配新版网站的 `/mobile-room/<房间号>` 使用；部署、安装和两人试播步骤见 [`android-app/README.md`](android-app/README.md)。不承诺兼容 DRM、强制官方 APP 或禁止 WebView 的平台，也还没有影视搜索和自动选集。
 
 ## 本地与公网部署
 

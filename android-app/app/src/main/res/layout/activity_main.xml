@@ -3,6 +3,7 @@
     android:id="@+id/root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
     android:background="@color/background">
 
     <LinearLayout
@@ -69,11 +70,27 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
-        <FrameLayout
+        <LinearLayout
+            android:id="@+id/playbackToolbar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:visibility="gone"
+            android:padding="4dp">
+            <Button android:id="@+id/sourceButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="播放方式" />
+            <Button android:id="@+id/fullscreenButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="全屏视频" />
+            <Button android:id="@+id/inviteButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="邀请朋友" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/webContainer"
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:orientation="vertical">
+            <FrameLayout android:id="@+id/videoContainer" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+            <FrameLayout android:id="@+id/roomContainer" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+        </LinearLayout>
     </LinearLayout>
 
     <ScrollView
@@ -149,6 +166,23 @@
                 android:textColorHint="@color/text_secondary" />
 
             <CheckBox
+                android:id="@+id/autoNativeCheck"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:checked="true"
+                android:buttonTint="@color/primary"
+                android:text="自动尝试内置播放（可随时切回网页）"
+                android:textColor="@color/text_secondary" />
+
+            <Button
+                android:id="@+id/sampleButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="选择开放短片试播"
+                android:textAllCaps="false" />
+
+            <CheckBox
                 android:id="@+id/consentCheck"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -201,7 +235,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="20dp"
                 android:gravity="center"
-                android:text="视频由原网站直接提供，本 APP 只同步播放状态与聊天，不读取账号、Cookie、密码或媒体地址。"
+                android:text="视频由来源直接提供。内置播放器在本机识别和加载媒体地址，房间只同步播放状态；账号、Cookie 和识别出的媒体地址不会发送给其他成员。"
                 android:textColor="@color/text_secondary"
                 android:textSize="12sp" />
         </LinearLayout>

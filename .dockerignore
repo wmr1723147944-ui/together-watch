@@ -6,6 +6,7 @@
 .idea
 .review-artifacts
 .github
+android-app
 __pycache__
 *.pyc
 tests
