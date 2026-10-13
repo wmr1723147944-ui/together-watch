@@ -7,6 +7,7 @@
 .review-artifacts
 .github
 android-app
+desktop-app
 __pycache__
 *.pyc
 tests

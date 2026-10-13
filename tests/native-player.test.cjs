@@ -221,7 +221,7 @@ function mobileHarness() {
     const io = () => {
         const socket = { connected: false, handlers: {}, emitted: [],
             on(name, callback) { this.handlers[name] = callback; },
-            emit(name, data, ack) { this.emitted.push({ name, data, ack }); },
+            emit(name, data, ack) { this.emitted.push({ name, data, ack, argumentCount: arguments.length }); },
             removeAllListeners() { this.handlers = {}; },
             disconnect() { this.connected = false; this.handlers.disconnect?.(); },
             connect() { this.connected = true; this.handlers.connect?.(); },
@@ -252,6 +252,22 @@ test('mobile native and human sockets pair as one member; reconnect discards sta
     assert.equal(h.bridge.drain().commands.length, 0);
     h.sockets[1].connect();
     assert.equal(h.bridge.drain().commands.some(c => c.type === 'state'), false);
+});
+
+test('mobile emits one payload and only includes a real acknowledgement callback', () => {
+    const h = mobileHarness(); h.sockets[0].connect();
+    const sample = { active: true, session: 1, time: 10, duration: 600, ready: true, speed: 1, playing: false, appliedCommand: Number.MAX_SAFE_INTEGER };
+    h.bridge.receive(sample); h.sockets[1].connect(); h.bridge.receive(sample);
+    const refresh = h.sockets[1].emitted.find(e => e.name === 'request_room_state' && typeof e.ack === 'function');
+    assert.equal(refresh.argumentCount, 3);
+    refresh.ack({ ok: true, state: { revision: 1, time: 10, playing: false } });
+    h.bridge.receive(sample);
+    h.bridge.receive({ ...sample, time: 12, events: [{ type: 'seek', time: 12, speed: 1 }] });
+    for (const name of ['playback_snapshot', 'video_event']) {
+        const message = h.sockets[1].emitted.find(e => e.name === name);
+        assert.ok(message, name);
+        assert.equal(message.argumentCount, 2, name + ' must not send an undefined second payload');
+    }
 });
 
 test('mobile volume changes stay on this device and coalesce instead of flooding playback commands', () => {

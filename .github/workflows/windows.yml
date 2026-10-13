@@ -1,0 +1,38 @@
+name: windows-desktop
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'desktop-app/**'
+      - '.github/workflows/windows.yml'
+  pull_request:
+    paths:
+      - 'desktop-app/**'
+      - '.github/workflows/windows.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop-app/package-lock.json
+      - run: npm ci
+        working-directory: desktop-app
+      - run: npm test
+        working-directory: desktop-app
+      - run: npm run package:win
+        working-directory: desktop-app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TogetherWatch-Windows-x64
+          path: desktop-app/dist/TogetherWatch-win32-x64/
+          if-no-files-found: error
+          retention-days: 14

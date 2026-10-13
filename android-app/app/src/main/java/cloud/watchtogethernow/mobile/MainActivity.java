@@ -16,6 +16,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.Build;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -42,6 +44,10 @@ import android.widget.Toast;
 import org.json.JSONObject;
 import org.json.JSONArray;
 import androidx.media3.ui.PlayerView;
+import androidx.media3.ui.AspectRatioFrameLayout;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
 
@@ -59,6 +65,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+@androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 public final class MainActivity extends ComponentActivity {
     private static final String PREFS = "together_watch_mobile";
     private static final String SERVER_ORIGIN = BuildConfig.SERVER_ORIGIN;
@@ -92,6 +99,9 @@ public final class MainActivity extends ComponentActivity {
     private boolean sessionActive;
     private boolean destroyed;
     private boolean nativeFullscreen;
+    private boolean cropFullscreen;
+    private int orientationBeforeFullscreen = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
+    private LinearLayout fullscreenControls;
     private long lastDiscovery;
     private boolean discoveryInFlight;
     private boolean protectedPage;
@@ -169,6 +179,12 @@ public final class MainActivity extends ComponentActivity {
         nativePlayerView.setKeepScreenOn(true);
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus);
+        nativePlayerView.setFullscreenButtonClickListener(fullscreen -> {
+            if (nativeFullscreen) exitNativeFullscreen(); else enterNativeFullscreen();
+        });
+        nativePlayerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
+            if (nativeFullscreen && fullscreenControls != null) fullscreenControls.setVisibility(visibility);
+        });
         roomContainer.addView(roomWebView, new FrameLayout.LayoutParams(-1, -1));
         try (InputStream input = getAssets().open("media-discovery.js")) {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
@@ -222,10 +238,8 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.sourceButton).setOnClickListener(view -> choosePlayback());
         findViewById(R.id.sampleButton).setOnClickListener(view -> chooseSample());
         findViewById(R.id.fullscreenButton).setOnClickListener(view -> {
-            nativeFullscreen = !nativeFullscreen;
-            roomContainer.setVisibility(nativeFullscreen ? View.GONE : View.VISIBLE);
-            videoContainer.setVisibility(View.VISIBLE);
-            ((Button) view).setText(nativeFullscreen ? "退出全屏" : "全屏视频");
+            if (nativePlayer.isActive()) enterNativeFullscreen();
+            else enterWebFullscreen();
         });
         findViewById(R.id.inviteButton).setOnClickListener(view -> {
             Intent invite = new Intent(Intent.ACTION_SEND).setType("text/plain");
@@ -298,19 +312,21 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showVideoTab() {
+        exitNativeFullscreen();
         videoContainer.setVisibility(View.VISIBLE);
         roomContainer.setVisibility(View.VISIBLE);
-        nativeFullscreen = false;
         ((Button) findViewById(R.id.fullscreenButton)).setText("全屏视频");
     }
 
     private void showRoomTab() {
+        exitNativeFullscreen();
         videoContainer.setVisibility(View.GONE);
         roomContainer.setVisibility(View.VISIBLE);
         setStatus("房间页：可聊天、调整音量和加入语音通话");
     }
 
     private void showSetup() {
+        exitNativeFullscreen();
         sessionActive = false;
         navigationBack.setEnabled(false);
         cancelPendingMicrophone();
@@ -345,6 +361,7 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
         arrangePanels();
+        if (nativeFullscreen || fullscreenView != null) applyImmersive(true);
     }
 
     private void tickBridge(int generation) {
@@ -792,6 +809,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showFullscreenVideo(View view, WebChromeClient.CustomViewCallback callback) {
+        exitNativeFullscreen();
         if (fullscreenView != null) {
             callback.onCustomViewHidden();
             return;
@@ -805,20 +823,126 @@ public final class MainActivity extends ComponentActivity {
             ViewGroup.LayoutParams.MATCH_PARENT
         ));
         fullscreenContainer.setVisibility(View.VISIBLE);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        enterImmersive();
+        addFullscreenControls(false);
     }
 
     private void hideFullscreenVideo() {
         if (fullscreenView == null) return;
         fullscreenContainer.removeView(fullscreenView);
+        removeFullscreenControls();
         fullscreenContainer.setVisibility(View.GONE);
         fullscreenView = null;
         if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
         fullscreenCallback = null;
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
-        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        leaveImmersive();
         mainContent.setVisibility(View.VISIBLE);
+    }
+
+    private void enterWebFullscreen() {
+        // This requests the page's real video fullscreen, not a larger WebView
+        // containing menus, adverts and empty page margins.
+        videoWebView.evaluateJavascript("(function(){const v=Array.from(document.querySelectorAll('video')).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];if(!v||!v.requestFullscreen)return false;v.requestFullscreen().catch(()=>{});return true;})()", result -> {
+            // WebView may reject a scripted request for lack of a browser user
+            // gesture. Verify the actual callback instead of claiming success.
+            mainHandler.postDelayed(() -> {
+                if (!destroyed && sessionActive && fullscreenView == null && !nativeFullscreen) {
+                    Toast.makeText(this, "请点原网页播放器里的全屏按钮；网页未允许直接全屏", Toast.LENGTH_LONG).show();
+                }
+            }, 800);
+        });
+    }
+
+    private void enterNativeFullscreen() {
+        if (nativeFullscreen || !nativePlayer.isActive()) return;
+        hideFullscreenVideo();
+        nativeFullscreen = true;
+        ((ViewGroup) nativePlayerView.getParent()).removeView(nativePlayerView);
+        fullscreenContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
+        mainContent.setVisibility(View.GONE);
+        fullscreenContainer.setVisibility(View.VISIBLE);
+        nativePlayerView.setResizeMode(cropFullscreen ? AspectRatioFrameLayout.RESIZE_MODE_ZOOM : AspectRatioFrameLayout.RESIZE_MODE_FIT);
+        nativePlayerView.setFullscreenButtonState(true);
+        enterImmersive();
+        addFullscreenControls(true);
+        nativePlayerView.showController();
+    }
+
+    private void exitNativeFullscreen() {
+        if (!nativeFullscreen) return;
+        nativeFullscreen = false;
+        fullscreenContainer.removeView(nativePlayerView);
+        removeFullscreenControls();
+        videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
+        nativePlayerView.setResizeMode(AspectRatioFrameLayout.RESIZE_MODE_FIT);
+        nativePlayerView.setFullscreenButtonState(false);
+        fullscreenContainer.setVisibility(View.GONE);
+        mainContent.setVisibility(View.VISIBLE);
+        leaveImmersive();
+    }
+
+    private void addFullscreenControls(boolean nativeMode) {
+        removeFullscreenControls();
+        fullscreenControls = new LinearLayout(this);
+        fullscreenControls.setOrientation(LinearLayout.HORIZONTAL);
+        Button exit = new Button(this);
+        exit.setText("退出全屏");
+        exit.setOnClickListener(v -> { if (nativeFullscreen) exitNativeFullscreen(); else hideFullscreenVideo(); });
+        fullscreenControls.addView(exit);
+        if (nativeMode) {
+            Button crop = new Button(this);
+            crop.setText(cropFullscreen ? "显示完整画面" : "铺满屏幕（裁边）");
+            crop.setOnClickListener(v -> {
+                cropFullscreen = !cropFullscreen;
+                nativePlayerView.setResizeMode(cropFullscreen ? AspectRatioFrameLayout.RESIZE_MODE_ZOOM : AspectRatioFrameLayout.RESIZE_MODE_FIT);
+                crop.setText(cropFullscreen ? "显示完整画面" : "铺满屏幕（裁边）");
+            });
+            fullscreenControls.addView(crop);
+        }
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        params.setMargins(12, 8, 12, 0);
+        fullscreenContainer.addView(fullscreenControls, params);
+    }
+
+    private void removeFullscreenControls() {
+        if (fullscreenControls != null) fullscreenContainer.removeView(fullscreenControls);
+        fullscreenControls = null;
+    }
+
+    private void enterImmersive() {
+        hideKeyboard();
+        orientationBeforeFullscreen = getRequestedOrientation();
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE);
+        applyImmersive(true);
+    }
+
+    private void leaveImmersive() {
+        applyImmersive(false);
+        setRequestedOrientation(orientationBeforeFullscreen);
+    }
+
+    private void applyImmersive(boolean fullscreen) {
+        View root = findViewById(R.id.root);
+        root.setFitsSystemWindows(!fullscreen);
+        if (fullscreen) root.setPadding(0, 0, 0, 0);
+        WindowCompat.setDecorFitsSystemWindows(getWindow(), !fullscreen);
+        WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(getWindow(), root);
+        bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+        if (fullscreen) bars.hide(WindowInsetsCompat.Type.systemBars());
+        else bars.show(WindowInsetsCompat.Type.systemBars());
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams attributes = getWindow().getAttributes();
+            attributes.layoutInDisplayCutoutMode = fullscreen
+                ? WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+                : WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
+            getWindow().setAttributes(attributes);
+        }
+        root.requestApplyInsets();
+    }
+
+    @Override public void onWindowFocusChanged(boolean focused) {
+        super.onWindowFocusChanged(focused);
+        if (focused && (nativeFullscreen || fullscreenView != null)) applyImmersive(true);
     }
 
     private void openExternal(String url) {

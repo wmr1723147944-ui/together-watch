@@ -76,7 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); sendChat(); }
     });
     const sync = new window.TogetherWatchNativeSync({
-        emit: (name, data, ack) => { if (companion?.connected) companion.emit(name, { ...data, room }, ack); },
+        emit: (name, data, ack) => {
+            if (!companion?.connected) return;
+            // Socket.IO treats an explicit undefined callback as a second
+            // payload (serialized to null), not as an omitted argument.
+            if (typeof ack === 'function') companion.emit(name, { ...data, room }, ack);
+            else companion.emit(name, { ...data, room });
+        },
         command: queueCommand,
     });
     function stopNative() {

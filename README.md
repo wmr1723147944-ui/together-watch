@@ -18,6 +18,8 @@
 
 ## 三分钟开始使用
 
+想免去书签和扩展安装，可以使用 [Windows 桌面测试版](desktop-app/README.md) 或 [Android APP](android-app/NATIVE_PLAYER.md)。两者复用网站房间服务，仍需各自打开相同视频并拥有观看权限；不保证兼容所有视频网站。
+
 ### 1. 启动房间服务器
 
 建议使用 Python 3.11 或更高版本：

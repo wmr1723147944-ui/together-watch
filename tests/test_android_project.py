@@ -62,6 +62,17 @@ class AndroidProjectTests(unittest.TestCase):
         for section in ("cloud-backup", "device-transfer"):
             self.assertIsNotNone(backup.find(f"./{section}/exclude[@domain='root'][@path='.']"))
 
+    def test_native_fullscreen_uses_overlay_and_restores_player(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        self.assertIn("fullscreenContainer.addView(nativePlayerView", activity)
+        self.assertIn("fullscreenContainer.removeView(nativePlayerView)", activity)
+        self.assertIn("SCREEN_ORIENTATION_SENSOR_LANDSCAPE", activity)
+        self.assertIn("bars.hide(WindowInsetsCompat.Type.systemBars())", activity)
+        self.assertIn("bars.show(WindowInsetsCompat.Type.systemBars())", activity)
+        self.assertIn("AspectRatioFrameLayout.RESIZE_MODE_ZOOM", activity)
+        self.assertIn("AspectRatioFrameLayout.RESIZE_MODE_FIT", activity)
+        self.assertIn("setFullscreenButtonState(false)", activity)
+
 
 if __name__ == "__main__":
     unittest.main()
