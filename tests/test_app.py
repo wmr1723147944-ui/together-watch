@@ -73,6 +73,9 @@ class TogetherWatchTests(unittest.TestCase):
         self.assertIn("/static/js/bookmarklet.js", html)
         self.assertIn("20260826-crop", html)
         self.assertIn("20261008-sync", html)
+        self.assertIn("20261013-mobile-sync", html)
+        self.assertIn('id="resumePlaybackBtn"', html)
+        self.assertIn('id="playbackResumePrompt"', html)
         self.assertNotIn('id="strictSyncToggle" checked', html)
         self.assertIn('id="localMirrorBtn"', html)
         self.assertIn('id="mirrorPlaybackControls"', html)
@@ -587,6 +590,25 @@ class TogetherWatchTests(unittest.TestCase):
             room_page.disconnect()
             paired.disconnect()
             other.disconnect()
+
+    def test_desktop_controls_keep_phone_browser_in_direct_playback_mode(self):
+        phone, desktop = [application.socketio.test_client(application.app) for _ in range(2)]
+        self.addCleanup(phone.disconnect)
+        self.addCleanup(desktop.disconnect)
+        phone.emit("join", {"room": "mixed-clients", "username": "手机"})
+        desktop.emit("join", {
+            "room": "mixed-clients", "username": "电脑", "role": "companion",
+        })
+        phone.emit("video_event", {
+            "room": "mixed-clients", "type": "change_source", "source": direct_source(),
+        })
+        for event in ("play", "pause", "seek", "speed"):
+            desktop.emit("video_event", {
+                "room": "mixed-clients", "type": event, "time": 20, "speed": 1.5,
+            })
+            state = application.current_room_state("mixed-clients")
+            self.assertEqual(state["media_source"]["mode"], "direct_media")
+            self.assertFalse(state["external_playback"], event + " must not turn off the browser player")
 
     def test_companions_can_sync_without_public_media_source(self):
         first = application.socketio.test_client(

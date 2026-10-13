@@ -626,6 +626,26 @@ video.video-cover {
     object-fit: cover;
 }
 
+.playback-resume-prompt {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.65rem;
+    padding: 1rem;
+    background: rgba(5, 5, 9, 0.76);
+    color: #fff;
+    text-align: center;
+    font-size: 0.8rem;
+}
+
+.playback-resume-prompt button {
+    min-height: 44px;
+}
+
 .mirror-playback-controls {
     position: absolute;
     right: 0.75rem;

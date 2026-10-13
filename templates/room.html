@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Room {{ room_id }} - Together Watch</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260826-crop">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20260826-crop-20261013-mobile">
 </head>
 <body>
     <input type="hidden" id="roomData" value="{{ room_id }}">
@@ -46,6 +46,10 @@
                     <video id="mainVideo" controls playsinline preload="metadata">
                         您的浏览器不支持 HTML5 视频。
                     </video>
+                    <div id="playbackResumePrompt" class="playback-resume-prompt hidden" role="status" aria-live="polite">
+                        <button type="button" id="resumePlaybackBtn" class="btn btn-small">▶ 继续同步播放</button>
+                        <span>此设备需要你点一次播放，不会暂停其他成员</span>
+                    </div>
                     <div id="mirrorPlaybackControls" class="mirror-playback-controls hidden" aria-label="映射播放器控制">
                         <button type="button" id="mirrorPlayToggle" class="mirror-play-toggle" aria-label="播放映射视频">▶</button>
                         <span id="mirrorCurrentTime" class="mirror-time">00:00</span>
@@ -265,6 +269,6 @@
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20261008-sync') }}" defer></script>
     <script src="{{ url_for('static', filename='js/bookmarklet.js', v='20261008-sync') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/main.js', v='20261008-sync') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/main.js', v='20261013-mobile-sync') }}" defer></script>
 </body>
 </html>

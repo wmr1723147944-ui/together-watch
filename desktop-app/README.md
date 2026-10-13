@@ -54,6 +54,8 @@ npm run package:win
 
 输出 `dist/TogetherWatch-win32-x64/`。运行时不需要开发依赖。保留发行目录中的 Electron/Chromium 第三方许可文件。
 
-集成测试会创建两个隐藏 Electron 窗口，启动仅监听 `127.0.0.1` 的临时 Flask 服务，不操作公网房间。先安装根目录的 Python 依赖，并将一个可拖进度的测试 MP4 放在 `.review-artifacts/desktop-smoke/sintel.mp4`，或指定 `TW_SMOKE_MEDIA`；可用 `TW_SMOKE_PYTHON` 指定 Python 路径，再运行 `npm run smoke`。
+集成测试会创建隐藏 Electron 窗口，启动仅监听 `127.0.0.1` 的临时 Flask 服务，不操作公网房间。先安装根目录的 Python 依赖，并将一个可拖进度的测试 MP4 放在 `.review-artifacts/desktop-smoke/sintel.mp4`，或指定 `TW_SMOKE_MEDIA`；可用 `TW_SMOKE_PYTHON` 指定 Python 路径，再运行 `npm run smoke`。
 
 测试范围包括真实跨源 iframe 播放器、双向暂停/进度/倍速、音量隔离、聊天、全屏尺寸及退出清理。它不能代替真机声音、第三方站点兼容性和不同网络条件下的验收。
+
+随后还会验证“手机宽度的普通房间网页 + Windows 客户端”：双向控制、定期状态刷新、模拟浏览器拒绝自动播放，以及点击按钮后只恢复本机播放。设 `TW_SMOKE_MIXED_ONLY=1` 可单独运行这部分。手机窗口使用桌面 Chromium，不代表已经覆盖安卓或 iOS 真机；自动播放拒绝由测试注入，未关闭浏览器安全策略。测试媒体路由和房间初始化仅存在于开发测试服务中，不加入生产服务器。

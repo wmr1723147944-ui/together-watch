@@ -72,7 +72,21 @@ exports.run = async createDesktop => {
     await new Promise(resolve => reserve.close(resolve));
     const server = `http://127.0.0.1:${port}`;
     const python = process.env.TW_SMOKE_PYTHON || 'python';
-    const backend = spawn(python, ['-u', '-c', `from app import app,socketio; socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werkzeug=True)`],
+    // Local-only fixture route/state. Never relax production URL validation.
+    const backend = spawn(python, ['-u', '-c', `
+from app import app, socketio, ensure_room_state, LEGAL_NOTICE_VERSION
+from flask import send_file
+@app.get('/test-media.mp4')
+def test_media():
+    return send_file(${JSON.stringify(media)}, mimetype='video/mp4', conditional=True)
+@app.get('/test-seed')
+def test_seed():
+    url = '${server}/test-media.mp4'
+    source = dict(mode='direct_media', provider_key='direct', provider_name='Local fixture', media_id=None, title='Test video', page_url=url, media_url=url, requires_companion=False)
+    ensure_room_state('mixed-smoke').update(video_src=url, media_source=source)
+    return dict(legal_version=LEGAL_NOTICE_VERSION)
+socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werkzeug=True)
+`],
         { cwd: root, windowsHide: true, env: { ...process.env, APP_ENV: 'development', SECRET_KEY: 'desktop-local-smoke-only',
             SERVICE_OPERATOR_NAME: 'Local test', COPYRIGHT_CONTACT_EMAIL: 'test@example.invalid' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let backendLog = ''; backend.stdout.on('data', data => backendLog = (backendLog + data).slice(-12000));
@@ -81,6 +95,10 @@ exports.run = async createDesktop => {
     const clients = [];
     try {
         await until('local backend', async () => { try { return (await fetch(server + '/health')).ok; } catch { return false; } });
+        if (process.env.TW_SMOKE_MIXED_ONLY === '1') {
+            await require('./mixed-smoke.cjs').run({ createDesktop, server, source, output, until, inputKey });
+            return;
+        }
         for (const name of ['Alice', 'Bob']) {
             const client = await createDesktop({ server, testSource: 'http://127.0.0.1:', visible: false });
             clients.push(client);
@@ -175,6 +193,7 @@ exports.run = async createDesktop => {
         await until('old playback view destroyed', () => oldVideo.isDestroyed(), 5000);
         assert.equal(a.state().current, null);
         console.log('SMOKE PASS: solo playback and buffer recovery, late join, bidirectional seek/pause/play/speed, return to solo, isolated IPC, cross-origin detection, local volume, chat, fullscreen and cleanup.');
+        await require('./mixed-smoke.cjs').run({ createDesktop, server, source, output, until, inputKey });
     } catch (error) {
         console.error(backendLog);
         for (const client of clients) {

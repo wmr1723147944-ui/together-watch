@@ -2853,17 +2853,11 @@ def handle_video_event(data):
                 preserve_position=preserve_position,
             )
         elif event_type == "play":
-            if sid_roles.get(request.sid) == "companion":
-                state["external_playback"] = True
             state.update(time=event_time, playing=True, resume_at=None)
         elif event_type == "pause":
-            if sid_roles.get(request.sid) == "companion":
-                state["external_playback"] = True
             state.update(time=event_time, playing=False, resume_at=None)
             rooms_paused_for_buffering.discard(room_id)
         elif event_type == "seek":
-            if sid_roles.get(request.sid) == "companion":
-                state["external_playback"] = True
             state["time"] = event_time
         elif event_type == "speed":
             try:
@@ -2872,11 +2866,15 @@ def handle_video_event(data):
                 return
             if not math.isfinite(speed) or not 0.25 <= speed <= 4:
                 return
-            if sid_roles.get(request.sid) == "companion":
-                state["external_playback"] = True
             state.update(time=event_time, speed=speed)
             outgoing["speed"] = speed
 
+        if event_type != "change_source" and sid_roles.get(request.sid) == "companion":
+            # Windows/native players use the companion channel too. Their
+            # controls must not disable a phone's in-room direct-media player.
+            state["external_playback"] = (
+                (state.get("media_source") or {}).get("mode") != "direct_media"
+            )
         state["updated_at"] = now
         state["revision"] += 1
         state["control_revision"] = state["revision"]

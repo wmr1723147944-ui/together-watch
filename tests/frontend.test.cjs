@@ -302,6 +302,7 @@ test('room player: newer state cancels delayed resume; metadata state is applied
         updateSyncHealth() {}, correctPlaybackDriftWithoutRateChange() {},
         setInternalPlaybackRate() {}, setVideoTime: value => { video.currentTime = value; },
         requestPlayback: () => video.play(), updateOfficialPlaybackState() {},
+        rememberPlaybackState() {}, pausePlayback: () => video.pause(),
     });
     vm.runInContext(section(source, 'function applyPlaybackState(', 'function applyRoomState('), context);
     vm.runInContext(section(source, 'function scheduleSourceState(', 'function changeVideoSource('), context);
@@ -329,6 +330,7 @@ test('room player: a slow synchronized seek does not become a new room command',
         roomId: 'test-room', EVENT_COOLDOWN: 250, SEEK_THRESHOLD: 0.5,
         lastEventType: '', lastEventAt: 0, lastSeekTime: 0,
         cancelPendingPlayback() {},
+        invalidatePlaybackAttempt() {},
         socket: { connected: true, emit(name, payload) { outgoing.push({ name, payload }); } },
     });
     vm.runInContext(section(source, 'function guardRemoteUpdate(', 'const savedStrictSync'), context);
@@ -351,4 +353,115 @@ test('room player: a slow synchronized seek does not become a new room command',
     await video.fire('seeking');
     await video.fire('seeked');
     assert.equal(outgoing.length, 2, 'An expired remote seek must not swallow the next user seek');
+});
+
+function roomPlayback() {
+    const source = read('static/js/main.js');
+    const timer = clock();
+    const video = media();
+    const resume = new Element();
+    const outgoing = [];
+    const prompt = { hidden: true, classList: { toggle(_name, hidden) { prompt.hidden = hidden; } } };
+    const context = vm.createContext({
+        Date: timer.Date, window: timer, console: { debug() {} }, videoPlayer: video,
+        document: { visibilityState: 'visible' }, playbackResumePrompt: prompt, resumePlaybackBtn: resume,
+        autoplayBlocked: false, autoplayNoticeShown: false, playbackAttempt: 0,
+        latestPlaybackState: null, remotePlaybackEvents: new Map(), activeSource: '/movie.mp4',
+        localMirrorStream: null, remoteGuardUntil: 0, remoteSeekUntil: 0,
+        sourceChangeUntil: 0, localInteractionUntil: 0, lastEventType: '', lastEventAt: 0,
+        lastSeekTime: 0, EVENT_COOLDOWN: 250, SEEK_THRESHOLD: 0.5, roomId: 'mixed-room',
+        updateSyncHealth() {}, addSystemMessage() {}, cancelPendingPlayback() {},
+        expectedPosition: state => state.time + (timer.Date.now() / 1000 - state.server_time),
+        setVideoTime: time => { video.currentTime = time; },
+        socket: { connected: true, emit(name, payload) { outgoing.push({ name, payload }); } },
+    });
+    vm.runInContext(section(source, 'function guardRemoteUpdate(', 'const savedStrictSync'), context);
+    vm.runInContext(section(source, 'function setPlaybackPrompt(', 'function isHlsSource('), context);
+    vm.runInContext(section(source, 'function emitVideoEvent(', 'function sendSyncPing('), context);
+    vm.runInContext(section(source, "for (const name of ['pointerdown',", "videoPlayer.addEventListener('ratechange',"), context);
+    return { context, timer, video, resume, prompt, outgoing };
+}
+
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+test('room player: denied autoplay offers local-only resume at the current room position', async () => {
+    const r = roomPlayback();
+    r.context.rememberPlaybackState({ time: 20, server_time: 100, playing: true });
+    r.video.play = () => Promise.reject({ name: 'NotAllowedError' });
+    r.context.requestPlayback();
+    await settle();
+    assert.equal(r.prompt.hidden, false);
+    r.timer.tick(5000);
+    r.video.play = () => { r.video.paused = false; return Promise.resolve(); };
+    await r.resume.fire('click');
+    await r.video.fire('play');
+    await settle();
+    assert.equal(r.prompt.hidden, true);
+    assert.equal(r.video.currentTime, 25);
+    assert.equal(r.outgoing.filter(event => event.name === 'video_event').length, 0);
+    assert.equal(r.outgoing.at(-1).name, 'request_room_state');
+});
+
+test('room player: aborted or superseded play promises do not show an autoplay warning', async () => {
+    const r = roomPlayback();
+    r.context.rememberPlaybackState({ playing: true });
+    r.video.play = () => Promise.reject({ name: 'AbortError' });
+    r.context.requestPlayback();
+    await settle();
+    assert.equal(r.prompt.hidden, true);
+    let reject;
+    r.video.play = () => new Promise((_resolve, fail) => { reject = fail; });
+    r.context.requestPlayback();
+    r.context.rememberPlaybackState({ playing: false });
+    reject({ name: 'NotAllowedError' });
+    await settle();
+    assert.equal(r.prompt.hidden, true);
+});
+
+test('room player: delayed remote media events do not echo after the time guard expires', async () => {
+    const r = roomPlayback();
+    r.context.rememberPlaybackState({ playing: true });
+    r.context.requestPlayback();
+    r.timer.tick(2500);
+    await r.video.fire('play');
+    r.context.pausePlayback();
+    r.timer.tick(2500);
+    await r.video.fire('pause');
+    assert.equal(r.outgoing.length, 0);
+    // A subsequent genuine user action is still published.
+    r.context.guardRemoteUpdate();
+    await r.video.fire('pointerdown', { isTrusted: true });
+    r.video.paused = false;
+    await r.video.fire('play');
+    assert.equal(r.outgoing.at(-1).payload.type, 'play');
+});
+
+test('room player: background suspension and end-of-video do not pause other members', async () => {
+    const r = roomPlayback();
+    r.context.document.visibilityState = 'hidden';
+    await r.video.fire('pause');
+    r.context.document.visibilityState = 'visible';
+    r.video.ended = true;
+    await r.video.fire('pause');
+    assert.equal(r.outgoing.length, 0);
+    r.video.ended = false;
+    await r.video.fire('pause');
+    assert.equal(r.outgoing.at(-1).payload.type, 'pause');
+});
+
+test('room player: direct media wins over a stale external-playback flag and force sync catches up', () => {
+    const source = read('static/js/main.js');
+    const states = [];
+    const context = vm.createContext({
+        Date: { now: () => 100 }, lastRevision: 0, localInteractionUntil: 200,
+        activeMediaSource: { mode: 'direct_media' }, externalPlaybackState: { external_playback: true },
+        videoPlayer: { readyState: 4 }, sourceIdentity: value => value.mode,
+        applyPlaybackState: state => states.push(state),
+        updateOfficialPlaybackState: () => assert.fail('A room video must not be treated as an external player'),
+    });
+    vm.runInContext(section(source, 'function applyRoomState(', 'function cancelPendingPlayback('), context);
+    context.applyRoomState({ media_source: { mode: 'direct_media' }, external_playback: true,
+        playing: true, time: 30, revision: 5, force_sync: true });
+    assert.equal(states.length, 1);
+    assert.equal(context.externalPlaybackState, null);
 });

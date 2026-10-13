@@ -17,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     localStorage.setItem('tw_last_room', roomId);
 
     const videoPlayer = document.getElementById('mainVideo');
+    const playbackResumePrompt = document.getElementById('playbackResumePrompt');
+    const resumePlaybackBtn = document.getElementById('resumePlaybackBtn');
     const videoEmptyState = document.getElementById('videoEmptyState');
     const chatContainer = document.getElementById('chatContainer');
     const chatInput = document.getElementById('chatInput');
@@ -221,6 +223,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastEventType = '';
     let lastSeekTime = 0;
     let autoplayNoticeShown = false;
+    let autoplayBlocked = false;
+    let playbackAttempt = 0;
+    let latestPlaybackState = null;
+    const remotePlaybackEvents = new Map();
     let serverClockOffset = 0;
     let smoothedRtt = null;
     let hasClockSample = false;
@@ -482,15 +488,79 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function requestPlayback() {
-        videoPlayer.play().catch(error => {
-            console.debug('Autoplay blocked:', error);
-            if (!autoplayNoticeShown) {
-                autoplayNoticeShown = true;
-                addSystemMessage('👆 浏览器阻止了自动播放，请点一下视频上的播放按钮。');
+    function setPlaybackPrompt(blocked) {
+        autoplayBlocked = blocked;
+        playbackResumePrompt?.classList.toggle('hidden', !blocked);
+        if (blocked) updateSyncHealth(null, '此设备需要点击继续播放');
+    }
+
+    function invalidatePlaybackAttempt() {
+        playbackAttempt++;
+        remotePlaybackEvents.clear();
+        setPlaybackPrompt(false);
+    }
+
+    function rememberPlaybackState(state) {
+        latestPlaybackState = { ...state };
+        playbackAttempt++; // an older play() rejection cannot undo this state
+        if (!state.playing) setPlaybackPrompt(false);
+    }
+
+    function consumeRemotePlaybackEvent(type) {
+        const expected = remotePlaybackEvents.get(type);
+        remotePlaybackEvents.delete(type);
+        return Boolean(expected && Date.now() < expected.until);
+    }
+
+    function pausePlayback() {
+        const id = ++playbackAttempt;
+        setPlaybackPrompt(false);
+        if (videoPlayer.paused) return;
+        remotePlaybackEvents.set('pause', { id, until: Date.now() + 15000 });
+        videoPlayer.pause();
+    }
+
+    function requestPlayback(userGesture = false) {
+        if (autoplayBlocked && !userGesture) return;
+        const id = ++playbackAttempt;
+        const source = activeSource;
+        if (videoPlayer.paused) remotePlaybackEvents.set('play', { id, until: Date.now() + 15000 });
+        let result;
+        try { result = videoPlayer.play(); } catch (error) { result = Promise.reject(error); }
+        Promise.resolve(result).then(() => {
+            if (id === playbackAttempt && source === activeSource && !videoPlayer.paused) setPlaybackPrompt(false);
+        }).catch(error => {
+            if (remotePlaybackEvents.get('play')?.id === id) remotePlaybackEvents.delete('play');
+            if (id !== playbackAttempt || source !== activeSource || !videoPlayer.paused
+                || latestPlaybackState?.playing === false) return;
+            // Seeking, loading another source or a newer pause can abort play.
+            // That is not an autoplay permission denial.
+            if (error?.name === 'AbortError') return;
+            console.debug('Unable to start this device:', error);
+            if (error?.name === 'NotAllowedError') {
+                setPlaybackPrompt(true);
+                if (!autoplayNoticeShown) {
+                    autoplayNoticeShown = true;
+                    addSystemMessage('👆 此设备需要你点击视频上的「继续同步播放」，不会暂停其他成员。');
+                }
+            } else {
+                updateSyncHealth(null, '此设备播放失败，请检查视频来源');
             }
         });
     }
+
+    resumePlaybackBtn?.addEventListener('click', () => {
+        if (!latestPlaybackState?.playing || localMirrorStream || !activeSource) {
+            setPlaybackPrompt(false);
+            return;
+        }
+        // play() must run within this click, before awaiting a network reply.
+        // Unlock only this device; do not publish its stalled time to peers.
+        guardRemoteUpdate(1500);
+        setVideoTime(expectedPosition(latestPlaybackState), 0.65);
+        requestPlayback(true);
+        if (socket.connected) socket.emit('request_room_state', { room: roomId });
+    });
 
     function isHlsSource(source) {
         return source.startsWith('/hls_proxy?') || /\.m3u8(?:$|[?#])/i.test(source);
@@ -886,6 +956,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showOfficialPageSource(source, state = null) {
         if (localMirrorStream) clearLocalMirror();
+        invalidatePlaybackAttempt();
+        latestPlaybackState = null;
         if (!state?.external_playback) externalPlaybackState = null;
         activeMediaSource = source;
         activeSource = '';
@@ -896,7 +968,7 @@ document.addEventListener('DOMContentLoaded', () => {
         clearHlsInstance();
         resetQualityControl();
         qualityControl.classList.add('hidden');
-        videoPlayer.pause();
+        pausePlayback();
         videoPlayer.removeAttribute('src');
         videoPlayer.load();
         videoPlayer.classList.add('hidden');
@@ -975,6 +1047,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (localMirrorStream) clearLocalMirror();
+        invalidatePlaybackAttempt();
+        latestPlaybackState = null;
+        autoplayNoticeShown = false;
         externalPlaybackState = null;
         sourceChangeUntil = Date.now() + 3000;
         activeSource = source;
@@ -1072,6 +1147,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function applyPlaybackState(state, seekThreshold = 1.2) {
+        rememberPlaybackState(state);
         window.clearTimeout(playbackResumeTimer);
         guardRemoteUpdate();
         basePlaybackRate = Number(state.speed) || 1;
@@ -1085,7 +1161,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const resumeAt = Number(state.resume_at);
             if (Number.isFinite(resumeAt) && resumeAt > estimatedServerNow()) {
                 setVideoTime(expected, 0.12);
-                if (!videoPlayer.paused) videoPlayer.pause();
+                pausePlayback();
                 const delay = Math.max(0, (resumeAt - estimatedServerNow()) * 1000);
                 playbackResumeTimer = window.setTimeout(() => {
                     guardRemoteUpdate();
@@ -1098,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if (!videoPlayer.paused) {
             setVideoTime(expected, 0.12);
             setInternalPlaybackRate(basePlaybackRate);
-            videoPlayer.pause();
+            pausePlayback();
         } else {
             setVideoTime(expected, 0.12);
             setInternalPlaybackRate(basePlaybackRate);
@@ -1111,7 +1187,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (revision < lastRevision) return;
         lastRevision = Math.max(lastRevision, revision);
 
-        if (state.external_playback) {
+        const directPlayback = state.media_source?.mode === 'direct_media';
+        if (directPlayback) externalPlaybackState = null;
+        if (state.external_playback && !directPlayback) {
             externalPlaybackState = { ...state };
             updateOfficialPlaybackState({
                 ...state,
@@ -1128,14 +1206,14 @@ document.addEventListener('DOMContentLoaded', () => {
             scheduleSourceState(state);
             return;
         }
-        if (state.external_playback || roomSource?.mode === 'official_page') {
+        if ((state.external_playback && !directPlayback) || roomSource?.mode === 'official_page') {
             updateOfficialPlaybackState({
                 ...state,
                 time: expectedPosition(state),
             });
             return;
         }
-        if (Date.now() < localInteractionUntil) return;
+        if (Date.now() < localInteractionUntil && !state.force_sync) return;
         if (videoPlayer.readyState < 1) {
             scheduleSourceState(state);
             return;
@@ -1175,6 +1253,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         lastEventAt = now;
         lastEventType = type;
+        invalidatePlaybackAttempt();
         socket.emit('video_event', {
             room: roomId,
             type,
@@ -1370,9 +1449,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        rememberPlaybackState({ ...data, playing: !data?.active && Boolean(data?.playing) });
         if (data?.active) {
             setVideoTime(Number(data.time) || videoPlayer.currentTime);
-            if (!videoPlayer.paused) videoPlayer.pause();
+            pausePlayback();
             updateSyncHealth(
                 null,
                 bufferingUsers.length
@@ -1413,9 +1493,14 @@ document.addEventListener('DOMContentLoaded', () => {
         guardRemoteUpdate();
         const usesOfficialPage = (
             activeMediaSource?.mode === 'official_page'
-            || Boolean(externalPlaybackState?.external_playback)
+            || (activeMediaSource?.mode !== 'direct_media' && Boolean(externalPlaybackState?.external_playback))
             || Boolean(localMirrorStream)
         );
+        if (!usesOfficialPage && data.type !== 'change_source') {
+            rememberPlaybackState({ ...data, playing: typeof data.playing === 'boolean'
+                ? data.playing : data.type === 'play' ? true : data.type === 'pause' ? false : !videoPlayer.paused,
+                speed: Number(data.speed) || basePlaybackRate });
+        }
         const updateExternalEventState = (playing, speed = data.speed) => {
             externalPlaybackState = {
                 ...(externalPlaybackState || {}),
@@ -1463,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 }
                 setVideoTime(Number(data.time) || 0);
-                videoPlayer.pause();
+                pausePlayback();
                 break;
             case 'seek':
                 addSystemMessage(`⏩ ${data.username} 调整了进度`, true);
@@ -1482,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 setVideoTime(Number(data.time) || 0);
                 if (typeof data.playing === 'boolean') {
                     if (data.playing) requestPlayback();
-                    else if (!videoPlayer.paused) videoPlayer.pause();
+                    else pausePlayback();
                 }
                 break;
             case 'change_source':
@@ -1539,6 +1624,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function scheduleBufferingReport() {
         if (
             !strictSyncToggle.checked
+            || document.visibilityState === 'hidden'
             || !activeSource
             || videoPlayer.paused
             || videoPlayer.seeking
@@ -1559,6 +1645,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (
                 strictSyncToggle.checked
+                && document.visibilityState !== 'hidden'
                 && !videoPlayer.paused
                 && !videoPlayer.seeking
                 && Date.now() >= sourceChangeUntil
@@ -1692,8 +1779,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    videoPlayer.addEventListener('play', () => emitVideoEvent('play'));
+    // Native browser controls are trusted input. A new click/drag must not be
+    // swallowed by the time guard from an earlier room update.
+    for (const name of ['pointerdown', 'pointerup', 'touchend', 'keydown']) {
+        videoPlayer.addEventListener(name, event => {
+            if (!event.isTrusted) return;
+            remoteGuardUntil = 0;
+            remoteSeekUntil = 0;
+        }, { passive: true });
+    }
+    videoPlayer.addEventListener('play', () => {
+        const wasBlocked = autoplayBlocked;
+        setPlaybackPrompt(false);
+        if (consumeRemotePlaybackEvent('play') || videoPlayer.paused) return;
+        if (wasBlocked && latestPlaybackState?.playing) {
+            guardRemoteUpdate();
+            if (socket.connected) socket.emit('request_room_state', { room: roomId });
+            return;
+        }
+        emitVideoEvent('play');
+    });
     videoPlayer.addEventListener('pause', () => {
+        if (consumeRemotePlaybackEvent('pause') || !videoPlayer.paused || videoPlayer.ended
+            || document.visibilityState === 'hidden') return;
         if (!videoPlayer.seeking) emitVideoEvent('pause');
     });
     videoPlayer.addEventListener('seeking', () => {
@@ -2023,6 +2131,10 @@ document.addEventListener('DOMContentLoaded', () => {
     updatePlaybackHealth();
 
     document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+            clearBufferingReport(true);
+            return;
+        }
         if (document.visibilityState === 'visible' && socket.connected) {
             socket.emit('request_room_state', { room: roomId });
             sendSyncPing();
