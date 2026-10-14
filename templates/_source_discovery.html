@@ -1,0 +1,64 @@
+<details class="source-discovery" id="sourceDiscovery" {% if discovery_standalone %}open{% endif %}>
+    <summary>找片 <span>官方平台搜索 · 开放影片资料</span></summary>
+    <div class="discovery-body">
+        <p class="discovery-intro">输入片名，在本页筛选开放影片，或去官方平台继续搜索。</p>
+        <form class="discovery-form" id="discoveryForm" action="{{ url_for('discover') }}" method="get" {% if not discovery_standalone %}target="_blank" rel="noopener noreferrer"{% endif %}>
+            <label for="discoveryQuery">片名或关键词</label>
+            <div class="discovery-input-row">
+                <input id="discoveryQuery" name="q" type="search" maxlength="80" value="{{ discovery_query }}" placeholder="例如：Sintel、春天、动画" autocomplete="off">
+                <button type="submit">查找</button>
+                <button type="button" id="discoveryClear" hidden>清空</button>
+            </div>
+        </form>
+        <section aria-labelledby="discoveryPlatformsTitle">
+            <h3 id="discoveryPlatformsTitle">去官方平台搜索</h3>
+            <p class="discovery-note">这是搜索入口，不是影片结果；是否有片、是否需要会员，以平台实际显示为准。平台可能要求登录或验证码。</p>
+            <div class="discovery-platforms">
+                {% for provider in discovery_providers %}
+                <div class="discovery-platform">
+                    <a class="discovery-primary" data-platform-name="{{ provider.name }}" data-search-base="{{ provider.base }}" data-search-param="{{ provider.param }}" data-search-home="{{ provider.home }}" href="{{ provider.url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">{{ '去' ~ provider.name ~ '搜索' if discovery_query else '打开' ~ provider.name }}</a>
+                    <button type="button" class="discovery-copy" hidden>复制地址</button>
+                </div>
+                {% else %}
+                <p class="discovery-note">平台搜索入口暂未开放。</p>
+                {% endfor %}
+            </div>
+            <p class="discovery-note">没有自动查询这些平台。只有点击时才向所选平台发送片名，外链不携带房间号或昵称。打不开时可复制地址到浏览器，或到平台官网手动搜索。</p>
+        </section>
+        <section aria-labelledby="discoveryFilmsTitle">
+            <h3 id="discoveryFilmsTitle">开放影片资料</h3>
+            <p id="discoveryResultCount" role="status" aria-live="polite">本地目录匹配 {{ discovery_count }} / {{ discovery_films|length }} 部</p>
+            <p class="discovery-note">有官方许可依据，但具体影片文件、字幕和兼容性尚未核验；不是已上线的站内片库。资料整理：{{ discovery_review_date }}。</p>
+            <div class="discovery-films">
+                {% for film in discovery_films %}
+                <article class="discovery-film" data-search-text="{{ film.searchable }}" {% if not film.matches %}hidden{% endif %}>
+                    <div class="discovery-film-heading"><h4>{{ film.title }}</h4><span class="discovery-license">{{ film.license }}</span></div>
+                    <p>{{ film.description }}</p>
+                    <p class="discovery-credit">{{ film.credit }}</p>
+                    <p class="discovery-condition">{{ film.condition }}</p>
+                    <nav aria-label="{{ film.title }} 资料与许可">
+                        <a href="{{ film.page_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">作品官网 ↗</a>
+                        <a href="{{ film.evidence_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">授权依据 ↗</a>
+                        <a href="{{ film.license_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">许可协议 ↗</a>
+                    </nav>
+                </article>
+                {% endfor %}
+            </div>
+            <p id="discoveryEmpty" {% if discovery_count %}hidden{% endif %}>当前开放影片目录没有匹配项。这不代表官方平台没有该片，可使用上方搜索入口。</p>
+        </section>
+        <aside class="discovery-next">
+            <strong>找到后，怎样一起看？</strong>
+            {% if discovery_standalone %}
+            <p>客户端内：点击平台入口在当前视频区域搜索，再打开具体播放页；两人选择同一集、同一版本。浏览器内：复制具体播放页地址，回到房间的“视频链接”栏使用。</p>
+            {% else %}
+            <p>复制找到的具体播放页地址，粘贴到房间的“视频链接”栏。每个人使用自己的账号和观看权限；普通网页可能仍需助手，不能保证所有平台兼容。</p>
+            <p>安卓 / Windows 客户端：在设置的“视频网址”中填入本站 /discover 地址，即可在视频区域找片。<a href="{{ url_for('discover') }}" target="_blank" rel="noopener noreferrer">打开独立找片页 ↗</a></p>
+            {% endif %}
+            <p>搜索页和作品资料页不能当视频直链。搜索不会自动切换房间影片，也不会放行新域名或提取会员视频。开放许可不等于已取得所有运营资质。</p>
+            <a href="/copyright" target="_blank" rel="noopener noreferrer">失效来源或版权问题：联系管理员</a>
+        </aside>
+        <p id="discoveryFeedback" role="status" aria-live="polite"></p>
+        <label id="discoveryCopyFallback" hidden>复制未成功，请手动选中以下地址：<input id="discoveryCopyValue" type="text" readonly aria-label="可手动复制的搜索地址"></label>
+        <noscript><p>浏览器未启用 JavaScript，点击“查找”可提交搜索；房间里的表单会在新页面打开，保留当前房间。</p></noscript>
+    </div>
+</details>

@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>找片 - 一起看</title>
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261014') }}">
+</head>
+<body>
+    <main class="discovery-page">
+        <header><a href="/">← 一起看首页</a><h1>想看什么？从这里找。</h1><p>官方平台搜索入口与开放授权作品资料。不解析、不转发影片。</p></header>
+        {% include "_source_discovery.html" %}
+        {% include "_site_footer.html" %}
+    </main>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261014') }}" defer></script>
+</body>
+</html>

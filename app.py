@@ -30,6 +30,8 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
+from source_discovery import discovery_context, is_search_page
+
 
 BASE_DIR = Path(__file__).resolve().parent
 COMPANION_EXTENSION_ARCHIVE = BASE_DIR / "together-watch-companion.zip"
@@ -818,6 +820,13 @@ def resolve_media_source(raw_url):
     parsed = urlparse(target_url)
     hostname = (parsed.hostname or "").rstrip(".").lower()
 
+    if is_search_page(target_url):
+        raise UnsafeURLError(
+            "这是平台搜索页，不是视频播放页。请先打开具体影片，再复制播放页地址。",
+            code="search_page_not_playable",
+            status_code=400,
+        )
+
     if is_direct_media_url(target_url):
         official_provider, _ = identify_video_provider(target_url)
         if official_provider:
@@ -1366,7 +1375,28 @@ def index():
         show_deployment_warning=(
             APP_ENV == "production" and not PUBLIC_LAUNCH_READY
         ),
+        **source_discovery_context(),
     )
+
+
+def source_discovery_context(query=""):
+    # Disabled IDs are deployment settings, not user-supplied URLs. Removing a
+    # search entry never changes the playback allowlist or room state.
+    return discovery_context(
+        query,
+        disabled_providers=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_PROVIDERS", "")),
+        disabled_films=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_FILMS", "")),
+    )
+
+
+@app.route("/discover")
+def discover():
+    response = app.make_response(render_template(
+        "discover.html", discovery_standalone=True,
+        **source_discovery_context(request.args.get("q", "")),
+    ))
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @app.route("/terms")
@@ -1423,6 +1453,7 @@ def room(room_id):
         show_deployment_warning=(
             APP_ENV == "production" and not PUBLIC_LAUNCH_READY
         ),
+        **source_discovery_context(),
     )
 
 
