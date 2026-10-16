@@ -30,7 +30,8 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
-from source_discovery import discovery_context, is_search_page
+from source_discovery import discovery_context, is_search_page, normalize_query
+from source_search import SEARCH_VERSION, provider_choices, search_provider
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1379,21 +1380,66 @@ def index():
     )
 
 
-def source_discovery_context(query=""):
+def source_discovery_context(query="", source_type="all", quality="all"):
     # Disabled IDs are deployment settings, not user-supplied URLs. Removing a
     # search entry never changes the playback allowlist or room state.
-    return discovery_context(
+    return {**discovery_context(
         query,
         disabled_providers=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_PROVIDERS", "")),
         disabled_films=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_FILMS", "")),
-    )
+        disabled_sources=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_SOURCES", "")),
+        source_type=source_type, quality=quality,
+    ), "discovery_search_sources": enabled_search_sources()}
+
+
+def enabled_search_sources():
+    if os.environ.get("DISCOVERY_SEARCH_ENABLED", "1").strip().lower() in {"0", "false", "off"}:
+        return []
+    return provider_choices(parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_SEARCH_SOURCES", "")))
+
+
+@app.route("/api/discover/sources")
+def discover_sources():
+    response = jsonify({"version": SEARCH_VERSION, "sources": enabled_search_sources()})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/discover/search", methods=["POST"])
+@rate_limit("discover-search", limit=60, window_seconds=60)
+def discover_search():
+    # A JSON POST avoids putting film titles in normal URL/access logs. Browsers
+    # may only use our own origin; user cookies and headers never go upstream.
+    origin = request.headers.get("Origin")
+    if ((origin and origin.rstrip("/") != request.host_url.rstrip("/"))
+            or request.headers.get("Sec-Fetch-Site") == "cross-site"):
+        return jsonify({"error": "请从本站找片页面发起搜索"}), 403
+    if not request.is_json or request.content_length is None or request.content_length > 2048:
+        return jsonify({"error": "搜索请求格式无效"}), 400
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict) or set(payload) - {"source", "q"}:
+        return jsonify({"error": "搜索请求格式无效"}), 400
+    source_id, query = payload.get("source"), payload.get("q")
+    if not isinstance(source_id, str) or source_id not in {p["id"] for p in enabled_search_sources()}:
+        return jsonify({"error": "该搜索来源未启用"}), 400
+    if not isinstance(query, str) or len(query) > 300 or not query.strip():
+        return jsonify({"error": "请输入片名，最多 80 个字"}), 400
+    query = normalize_query(query)
+    if not query:
+        return jsonify({"error": "请输入有效片名"}), 400
+    result = search_provider(source_id, query)
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 @app.route("/discover")
 def discover():
     response = app.make_response(render_template(
         "discover.html", discovery_standalone=True,
-        **source_discovery_context(request.args.get("q", "")),
+        **source_discovery_context(request.args.get("q", ""), request.args.get("type", "all"),
+                                   request.args.get("quality", "all")),
     ))
     response.headers["Referrer-Policy"] = "no-referrer"
     return response

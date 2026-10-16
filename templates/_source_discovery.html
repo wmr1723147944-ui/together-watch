@@ -1,22 +1,73 @@
 <details class="source-discovery" id="sourceDiscovery" {% if discovery_standalone %}open{% endif %}>
-    <summary>找片 <span>官方平台搜索 · 开放影片资料</span></summary>
+    <summary>找片 <span>自动搜片 · 免费影视导航</span></summary>
     <div class="discovery-body">
-        <p class="discovery-intro">输入片名，在本页筛选开放影片，或去官方平台继续搜索。</p>
+        <p class="discovery-intro">输入片名，一次查询多个来源，再选择想查看的版本。搜索不会打断当前房间播放。</p>
         <form class="discovery-form" id="discoveryForm" action="{{ url_for('discover') }}" method="get" {% if not discovery_standalone %}target="_blank" rel="noopener noreferrer"{% endif %}>
             <label for="discoveryQuery">片名或关键词</label>
             <div class="discovery-input-row">
                 <input id="discoveryQuery" name="q" type="search" maxlength="80" value="{{ discovery_query }}" placeholder="例如：Sintel、春天、动画" autocomplete="off">
-                <button type="submit">查找</button>
+                <button type="submit">搜索</button>
                 <button type="button" id="discoveryClear" hidden>清空</button>
             </div>
+            <div class="discovery-filters">
+                <label for="discoverySourceType">导航类型（不筛选下方短片资料）
+                    <select id="discoverySourceType" name="type">
+                        {% for value, label in discovery_source_types.items() %}<option value="{{ value }}" {% if discovery_source_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label for="discoveryQuality">画质依据（导航与短片资料）
+                    <select id="discoveryQuality" name="quality">
+                        <option value="all" {% if discovery_quality == 'all' %}selected{% endif %}>全部画质</option>
+                        <option value="4k" {% if discovery_quality == '4k' %}selected{% endif %}>只看有官方 4K 依据的条目</option>
+                    </select>
+                </label>
+            </div>
+            <fieldset class="discovery-search-options">
+                <legend>自动查询的来源（可取消勾选）</legend>
+                {% for source in discovery_search_sources %}
+                <label><input type="checkbox" data-live-source="{{ source.id }}" data-source-name="{{ source.name }}" data-source-note="{{ source.note }}" checked> {{ source.name }}</label>
+                {% else %}<p>自动查询暂未开放，可使用下方原站入口。</p>{% endfor %}
+            </fieldset>
+            <p class="discovery-note">仅在点击“搜索”后发送片名至所选来源，不发送房间号、昵称或账号凭据。第三方目录不保证免费、授权、4K 或房间内可播；画质与类型筛选只影响导航和本地资料。</p>
         </form>
+        <section id="discoveryLive" aria-labelledby="discoveryLiveTitle" hidden>
+            <h3 id="discoveryLiveTitle">片名搜索结果</h3>
+            <p id="discoveryLiveStatus" role="status" aria-live="polite"></p>
+            <div id="discoveryLiveResults" class="discovery-live-results" data-link-target="{{ '_self' if discovery_standalone else '_blank' }}"></div>
+        </section>
+        <section aria-labelledby="discoverySourcesTitle">
+            <h3 id="discoverySourcesTitle">免费 / 部分免费影视导航</h3>
+            <p class="discovery-note">下面是栏目入口，不是当前片名的搜索结果。付费范围、广告、地区与清晰度分别标注；免费观看不代表本站可以转载或嵌入。</p>
+            <p id="discoverySourceCount" role="status" aria-live="polite">导航显示 {{ discovery_source_count }} / {{ discovery_sources|length }} 个入口</p>
+            <div class="discovery-films">
+                {% for source in discovery_sources %}
+                <article class="discovery-film discovery-source" data-source-id="{{ source.id }}" data-source-genres="{{ source.genres|join(' ') }}" data-has-4k="{{ 'true' if source.has_4k_evidence else 'false' }}" {% if not source.matches %}hidden{% endif %}>
+                    <h4>{{ source.name }}</h4>
+                    <p class="discovery-license">{{ source.genre_label }}{% if source.has_4k_evidence %} · 有官方 4K 专区依据{% endif %}</p>
+                    <p>{{ source.description }}</p>
+                    <dl class="discovery-source-facts">
+                        <dt>免费范围</dt><dd>{{ source.access }}</dd>
+                        <dt>地区 / 设备</dt><dd>{{ source.region }}</dd>
+                        <dt>画质</dt><dd>{{ source.quality_note }}</dd>
+                    </dl>
+                    <nav aria-label="{{ source.name }} 导航">
+                        <a class="discovery-primary" data-copy-link href="{{ source.url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">前往原站 ↗</a>
+                        <button type="button" class="discovery-copy" hidden>复制地址</button>
+                        <a href="{{ source.evidence_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">官方依据 ↗</a>
+                    </nav>
+                </article>
+                {% endfor %}
+            </div>
+            <p id="discoverySourceEmpty" {% if discovery_source_count %}hidden{% endif %}>没有符合筛选条件的导航。可改回“全部类型 / 全部画质”；不会用未核实的 4K 标记补足数量。</p>
+            <p class="discovery-note">有 4K 依据 ≠ 正在播放 4K。需要在原站确认具体影片的画质选项；网络、设备和账号权限也会影响实际画质。超分辨率不等于原生 4K。</p>
+        </section>
         <section aria-labelledby="discoveryPlatformsTitle">
             <h3 id="discoveryPlatformsTitle">去官方平台搜索</h3>
             <p class="discovery-note">这是搜索入口，不是影片结果；是否有片、是否需要会员，以平台实际显示为准。平台可能要求登录或验证码。</p>
             <div class="discovery-platforms">
                 {% for provider in discovery_providers %}
                 <div class="discovery-platform">
-                    <a class="discovery-primary" data-platform-name="{{ provider.name }}" data-search-base="{{ provider.base }}" data-search-param="{{ provider.param }}" data-search-home="{{ provider.home }}" href="{{ provider.url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">{{ '去' ~ provider.name ~ '搜索' if discovery_query else '打开' ~ provider.name }}</a>
+                    <a class="discovery-primary" data-copy-link data-platform-name="{{ provider.name }}" data-search-base="{{ provider.base }}" data-search-param="{{ provider.param }}" data-search-home="{{ provider.home }}" href="{{ provider.url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">{{ '去' ~ provider.name ~ '搜索' if discovery_query else '打开' ~ provider.name }}</a>
                     <button type="button" class="discovery-copy" hidden>复制地址</button>
                 </div>
                 {% else %}
@@ -31,20 +82,22 @@
             <p class="discovery-note">有官方许可依据，但具体影片文件、字幕和兼容性尚未核验；不是已上线的站内片库。资料整理：{{ discovery_review_date }}。</p>
             <div class="discovery-films">
                 {% for film in discovery_films %}
-                <article class="discovery-film" data-search-text="{{ film.searchable }}" {% if not film.matches %}hidden{% endif %}>
+                <article class="discovery-film" data-search-text="{{ film.searchable }}" data-has-4k="{{ 'true' if film.has_4k_evidence else 'false' }}" {% if not film.matches %}hidden{% endif %}>
                     <div class="discovery-film-heading"><h4>{{ film.title }}</h4><span class="discovery-license">{{ film.license }}</span></div>
                     <p>{{ film.description }}</p>
                     <p class="discovery-credit">{{ film.credit }}</p>
                     <p class="discovery-condition">{{ film.condition }}</p>
+                    <p class="discovery-quality">{% if film.has_4k_evidence %}有官方 4K 版本依据：{{ film.quality_note }}{% else %}4K 状态未核验，不代表没有高清版本。{% endif %}</p>
                     <nav aria-label="{{ film.title }} 资料与许可">
                         <a href="{{ film.page_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">作品官网 ↗</a>
                         <a href="{{ film.evidence_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">授权依据 ↗</a>
                         <a href="{{ film.license_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">许可协议 ↗</a>
+                        {% if film.has_4k_evidence %}<a href="{{ film.quality_evidence_url }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">4K 依据 ↗</a>{% endif %}
                     </nav>
                 </article>
                 {% endfor %}
             </div>
-            <p id="discoveryEmpty" {% if discovery_count %}hidden{% endif %}>当前开放影片目录没有匹配项。这不代表官方平台没有该片，可使用上方搜索入口。</p>
+            <p id="discoveryEmpty" {% if discovery_count %}hidden{% endif %}>当前片名或画质条件没有匹配的开放影片资料。这不代表官方平台没有该片，可放宽条件或使用上方搜索入口。</p>
         </section>
         <aside class="discovery-next">
             <strong>找到后，怎样一起看？</strong>
@@ -55,10 +108,11 @@
             <p>安卓 / Windows 客户端：在设置的“视频网址”中填入本站 /discover 地址，即可在视频区域找片。<a href="{{ url_for('discover') }}" target="_blank" rel="noopener noreferrer">打开独立找片页 ↗</a></p>
             {% endif %}
             <p>搜索页和作品资料页不能当视频直链。搜索不会自动切换房间影片，也不会放行新域名或提取会员视频。开放许可不等于已取得所有运营资质。</p>
+            <p>部分免费片库含广告，两人的广告时长可能不同；等双方进入正片再同步。平台强制 APP、DRM 或禁止嵌入时，不保证客户端和房间内播放兼容。</p>
             <a href="/copyright" target="_blank" rel="noopener noreferrer">失效来源或版权问题：联系管理员</a>
         </aside>
         <p id="discoveryFeedback" role="status" aria-live="polite"></p>
-        <label id="discoveryCopyFallback" hidden>复制未成功，请手动选中以下地址：<input id="discoveryCopyValue" type="text" readonly aria-label="可手动复制的搜索地址"></label>
-        <noscript><p>浏览器未启用 JavaScript，点击“查找”可提交搜索；房间里的表单会在新页面打开，保留当前房间。</p></noscript>
+        <label id="discoveryCopyFallback" hidden>复制未成功，请手动选中以下地址：<input id="discoveryCopyValue" type="text" readonly aria-label="可手动复制的入口地址"></label>
+        <noscript><p>浏览器未启用 JavaScript，自动查询不可用；点击“搜索”仅筛选本地资料。可使用原站搜索入口，房间里的表单会在新页面打开。</p></noscript>
     </div>
 </details>

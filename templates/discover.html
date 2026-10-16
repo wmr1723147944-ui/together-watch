@@ -6,14 +6,14 @@
     <title>找片 - 一起看</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261014') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261016-search') }}">
 </head>
 <body>
     <main class="discovery-page">
-        <header><a href="/">← 一起看首页</a><h1>想看什么？从这里找。</h1><p>官方平台搜索入口与开放授权作品资料。不解析、不转发影片。</p></header>
+        <header><a href="/">← 一起看首页</a><h1>想看什么？搜一次，再选来源。</h1><p>自动查询影片目录，也保留官方平台搜索与免费影视入口。不解析、不转发影片。</p></header>
         {% include "_source_discovery.html" %}
         {% include "_site_footer.html" %}
     </main>
-    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261014') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261016-search') }}" defer></script>
 </body>
 </html>
