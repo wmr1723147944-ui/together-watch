@@ -1,13 +1,13 @@
-<details class="source-discovery" id="sourceDiscovery" {% if discovery_standalone %}open{% endif %}>
+<details class="source-discovery" id="sourceDiscovery" {% if discovery_standalone or discovery_expanded %}open{% endif %}>
     <summary>找片 <span>搜索 · 选集 · 一起看</span></summary>
     <div class="discovery-body">
-        <p class="discovery-intro">想看的片，和一起看的人，都留在这里。搜索后点卡片选集；搜索不会切换房间影片。</p>
+        <div class="discovery-section-heading"><h2>发现想看的</h2><span>搜索 / 详情 / 选集</span></div>
         <form class="discovery-form" id="discoveryForm" action="{{ url_for('discover') }}" method="get" {% if not discovery_standalone %}target="_blank" rel="noopener noreferrer"{% endif %}>
-            <label for="discoveryQuery">片名或关键词</label>
+            <label class="sr-only" for="discoveryQuery">片名或关键词</label>
             <div class="discovery-input-row">
-                <input id="discoveryQuery" name="q" type="search" maxlength="80" value="{{ discovery_query }}" placeholder="例如：Sintel、春天、动画" autocomplete="off">
-                <button type="submit">搜索</button>
-                <button type="button" id="discoveryClear" hidden>清空</button>
+                <input id="discoveryQuery" name="q" type="search" maxlength="80" value="{{ discovery_query }}" placeholder="搜索电影、剧集、动漫的名字…" autocomplete="off">
+                <button type="submit" class="discovery-search-submit">搜索</button>
+                <button type="button" class="discovery-clear" id="discoveryClear" hidden>清空</button>
             </div>
             <details class="discovery-advanced"><summary>导航筛选</summary><div class="discovery-filters">
                 <label for="discoverySourceType">导航类型（不筛选下方短片资料）
@@ -28,8 +28,17 @@
                 <label><input type="checkbox" data-live-source="{{ source.id }}" data-source-name="{{ source.name }}" data-source-note="{{ source.note }}" checked> {{ source.name }}</label>
                 {% else %}<p>自动查询暂未开放，可使用下方原站入口。</p>{% endfor %}
             </fieldset>
-            <p class="discovery-note">仅在点击“搜索”后发送片名至所选来源，不发送房间号、昵称或账号凭据。第三方目录不保证免费、授权、4K 或房间内可播；画质与类型筛选只影响导航和本地资料。</p>
+            <p class="discovery-note search-privacy">主动搜索时只向勾选来源发送片名，不发送房间号或账号。片目、画质与观看权限以原站为准。</p>
         </form>
+        <section id="discoveryWelcome" class="discovery-welcome" aria-labelledby="discoveryWelcomeTitle">
+            <div class="discovery-section-heading"><h3 id="discoveryWelcomeTitle">从一个片名开始</h3><span>试搜示例 · 不是播放推荐</span></div>
+            <div class="discovery-starters">
+                <button type="button" data-discovery-query="星际穿越" class="discovery-starter starter-space"><span class="starter-category">电影 / 科幻</span><strong>星际穿越</strong><span>搜索不同来源 <b aria-hidden="true">↗</b></span></button>
+                <button type="button" data-discovery-query="开端" class="discovery-starter starter-drama"><span class="starter-category">剧集 / 悬疑</span><strong>开端</strong><span>查看片名结果 <b aria-hidden="true">↗</b></span></button>
+                <button type="button" data-discovery-query="Sintel" class="discovery-starter starter-animation"><span class="starter-category">开放动画 / 短片</span><strong>Sintel</strong><span>查找官方目录 <b aria-hidden="true">↗</b></span></button>
+            </div>
+            <p class="discovery-note">点击卡片会发起搜索。示例不保证所有来源收录，也不代表已验证可播。</p>
+        </section>
         <section id="discoveryLive" aria-labelledby="discoveryLiveTitle" hidden>
             <h3 id="discoveryLiveTitle">片名搜索结果</h3>
             <p id="discoveryLiveStatus" role="status" aria-live="polite"></p>
@@ -43,7 +52,7 @@
             <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数或线路，例如 1180、线路 2" aria-label="筛选全部已读取的集数或线路" maxlength="80" hidden>
             <div id="discoveryEpisodes" class="discovery-episodes"></div>
             <button id="discoveryEpisodeMore" type="button" hidden>显示更多集数</button>
-            <p class="discovery-note">Windows 0.2 客户端会在软件内打开原站播放器，保留聊天室。安卓、旧版客户端与普通浏览器目前请用原站选集；是否免费、清晰度和观看权限仍由原站决定。</p>
+            <p class="discovery-note">Windows 0.2.1 客户端支持全部当前入口，在软件内打开原站并保留聊天室。安卓、旧客户端与浏览器可用下方原站入口；清晰度和观看权限由原站决定。</p>
             <a id="discoveryDetailOriginal" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">改用原站选集 ↗</a>
         </dialog>
         <details class="discovery-advanced discovery-directory"><summary>更多来源与开放影片资料 <span>没有搜到？展开看看</span></summary>
@@ -112,8 +121,8 @@
             <p id="discoveryEmpty" {% if discovery_count %}hidden{% endif %}>当前片名或画质条件没有匹配的开放影片资料。这不代表官方平台没有该片，可放宽条件或使用上方搜索入口。</p>
         </section>
         </details>
-        <aside class="discovery-next">
-            <strong>找到后，怎样一起看？</strong>
+        <details class="discovery-next">
+            <summary>使用帮助与来源说明 <span>找到后，怎样一起看？</span></summary>
             {% if discovery_standalone %}
             <p>新版客户端内：点“找片”，搜索片名 → 详情 / 选集 → 点击集数。Windows 可用“影院 / 网页”切换纯视频画面和原站页面。两人需选择同一集、同一版本。</p>
             {% else %}
@@ -123,7 +132,7 @@
             <p>搜索页和作品资料页不能当视频直链。搜索不会自动切换房间影片，也不会放行新域名或提取会员视频。开放许可不等于已取得所有运营资质。</p>
             <p>部分免费片库含广告，两人的广告时长可能不同；等双方进入正片再同步。平台强制 APP、DRM 或禁止嵌入时，不保证客户端和房间内播放兼容。</p>
             <a href="/copyright" target="_blank" rel="noopener noreferrer">失效来源或版权问题：联系管理员</a>
-        </aside>
+        </details>
         <p id="discoveryFeedback" role="status" aria-live="polite"></p>
         <label id="discoveryCopyFallback" hidden>复制未成功，请手动选中以下地址：<input id="discoveryCopyValue" type="text" readonly aria-label="可手动复制的入口地址"></label>
         <noscript><p>浏览器未启用 JavaScript，自动查询不可用；点击“搜索”仅筛选本地资料。可使用原站搜索入口，房间里的表单会在新页面打开。</p></noscript>

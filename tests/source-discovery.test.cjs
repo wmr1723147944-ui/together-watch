@@ -134,7 +134,7 @@ function liveFixture(fetcher) {
         addEventListener(type, fn) { this.listeners[type] = fn; }, setAttribute(name, value) { this[name] = value; }, focus() {}, select() { this.selected = true; } });
     const elements = new Map();
     for (const id of ['sourceDiscovery', 'discoveryLive', 'discoveryLiveResults', 'discoveryLiveStatus', 'discoveryQuery',
-        'discoveryFeedback', 'discoveryCopyFallback', 'discoveryCopyValue']) elements.set(id, make());
+        'discoveryFeedback', 'discoveryCopyFallback', 'discoveryCopyValue', 'discoveryWelcome']) elements.set(id, make());
     const choices = ['cupfox', 'huarw'].map(id => Object.assign(make('input'), { dataset: { liveSource: id, sourceName: id, sourceNote: '未验证播放' } }));
     elements.get('sourceDiscovery').querySelectorAll = () => choices;
     elements.get('discoveryLiveResults').dataset.linkTarget = '_self';
@@ -145,6 +145,24 @@ function liveFixture(fetcher) {
 const foundResponse = (source, title = '开端') => ({ ok: true, json: async () => ({ source_id: source, status: 'ok', results: [{ title,
     page_url: source === 'cupfox' ? 'https://www.cupfox.in/vod-detail/202236115.html' : 'https://huarw.com/movie/85334' }] }) });
 const flatten = node => [node, ...node.children.flatMap(flatten)];
+
+test('source selection preserves empty-query suggestions and clearing restores them', async () => {
+    let calls = 0;
+    const f = liveFixture(async () => { calls++; return foundResponse('cupfox'); });
+    f.choices[1].checked = false;
+    f.choices[1].listeners.change();
+    assert.equal(calls, 0);
+    assert.equal(f.elements.get('discoveryWelcome').hidden, false);
+    assert.equal(f.elements.get('discoveryLive').hidden, true);
+    f.elements.get('discoveryQuery').value = '开端';
+    await f.live.run();
+    assert.equal(calls, 1);
+    assert.equal(f.elements.get('discoveryWelcome').hidden, true);
+    f.elements.get('discoveryQuery').value = '';
+    f.live.cancel(true);
+    assert.equal(f.elements.get('discoveryWelcome').hidden, false);
+    assert.equal(f.elements.get('discoveryLive').hidden, true);
+});
 
 test('result URLs reject media, credentials, redirects, lookalike hosts and script schemes', () => {
     for (const value of ['javascript:alert(1)', 'https://evil.test/vod-detail/1.html', 'https://www.cupfox.in.evil.test/vod-detail/1.html',
@@ -285,4 +303,27 @@ test('detail panel loads on demand, rejects foreign episodes and ignores closed 
     details.close(); finish(result); await stale;
     assert.equal(nodes.get('discoveryDetail').open, false);
     assert.equal(nodes.get('discoveryEpisodes').children.length, 0);
+});
+
+test('DDYS original-page entry is validated and never advertised as a full episode list', async () => {
+    const page = 'https://ddys.io/movie/interstellar';
+    assert.equal(safeResultUrl('ddys', page), page);
+    for (const bad of [page+'?url=x',page+'#x',page.replace('ddys.io','user@ddys.io'),page.replace('ddys.io','ddys.io.evil.test')])
+        assert.equal(safeResultUrl('ddys',bad),null);
+    const launch = '/discover/play/ddys/interstellar/page';
+    assert.equal(safeLaunchPath('ddys','interstellar','page',launch),launch);
+    assert.equal(safeLaunchPath('ddys','interstellar','ep1',launch),null);
+    const nodes = new Map();
+    const make = () => ({ textContent:'', children:[], listeners:{}, open:false,
+        append(n) { this.children.push(n); }, replaceChildren() { this.children=[]; },
+        showModal() { this.open=true; }, addEventListener(n,fn) { this.listeners[n]=fn; } });
+    for (const name of ['discoveryDetail','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription','discoveryEpisodes','discoveryDetailOriginal','discoveryDetailClose']) nodes.set(name,make());
+    const details = createDetails({getElementById:id=>nodes.get(id),createElement:make},async()=>({ok:true,json:async()=>({
+        source_id:'ddys',item_id:'interstellar',page_url:page,status:'ok',selection_mode:'original_page',
+        episodes:[{id:'page',title:'进入原站选集',launch_path:launch}]
+    })}));
+    await details.open('ddys',{title:'星际穿越',page_url:page});
+    assert.match(nodes.get('discoveryDetailStatus').textContent,/原站动态选集/);
+    assert.doesNotMatch(nodes.get('discoveryDetailStatus').textContent,/1 个选集/);
+    assert.equal(nodes.get('discoveryEpisodes').children[0].href,launch);
 });

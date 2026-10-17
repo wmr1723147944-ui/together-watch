@@ -176,7 +176,7 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/discover/search', json={'source':'cupfox', 'q':'x'}, headers={'Origin': 'https://evil.test'}).status_code, 403)
 
     def test_admin_disable_also_blocks_cached_results_and_rate_limit(self):
-        with patch.dict(os.environ, {'DISCOVERY_DISABLED_SEARCH_SOURCES': 'cupfox,huarw,yhdmoe,fcma'}):
+        with patch.dict(os.environ, {'DISCOVERY_DISABLED_SEARCH_SOURCES': 'cupfox,huarw,yhdmoe,fcma,ddys'}):
             self.assertEqual([s['id'] for s in self.client.get('/api/discover/sources').json['sources']], ['blender'])
             self.assertEqual(self.client.post('/api/discover/search', json={'source':'cupfox', 'q':'x'}).status_code, 400)
             self.assertNotIn('data-live-source="cupfox"', self.client.get('/discover').text)

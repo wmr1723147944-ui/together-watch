@@ -220,10 +220,10 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         const fixtureSession = catalogClient.state().video.webContents.session;
         await fixtureSession.protocol.handle('https', request => {
             const url = new URL(request.url);
-            if (!['www.cupfox.in','yhdmoe.com','www.fcma.cc'].includes(url.hostname)) return new Response('', { status:404 });
+            if (!['www.cupfox.in','yhdmoe.com','www.fcma.cc','ddys.io'].includes(url.hostname)) return new Response('', { status:404 });
             if (url.pathname === '/sample.mp4') return new Response(fs.readFileSync(media), { headers:{'Content-Type':'video/mp4'} });
             if (url.hostname === 'yhdmoe.com') return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video><a href="#play_ep_EP1" class="my-episode" play_ep="EP1">第1集</a><a href="#play_ep_EP10.5" class="my-episode" play_ep="EP10.5">第10.5集</a><script>document.querySelectorAll(".my-episode").forEach(el=>el.onclick=()=>{el.classList.add("disabled");document.body.dataset.episode=el.getAttribute("play_ep")})</script>', {headers:{'Content-Type':'text/html'}});
-            if (url.hostname === 'www.fcma.cc') return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video>', {headers:{'Content-Type':'text/html'}});
+            if (['www.fcma.cc','ddys.io'].includes(url.hostname)) return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video>', {headers:{'Content-Type':'text/html'}});
             return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video><span class="play-btn" ep_slug="ep1">第1集</span><span class="play-btn" ep_slug="ep2">第2集</span><script>document.querySelectorAll(".play-btn").forEach(el=>el.onclick=()=>{el.classList.add("on");document.body.dataset.episode=el.getAttribute("ep_slug")})</script>', { headers:{'Content-Type':'text/html'} });
         });
         const catalogWc = catalogClient.state().discoveryView.webContents;
@@ -244,6 +244,11 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         await catalogClient.action('discover');
         await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/fcma/9102-229/1048459')}`);
         await until('fengche opaque episode page stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://www.fcma.cc/p/9102/229/1048459' && !!catalogClient.state().selected);
+        assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
+        assert.equal(catalogClient.state().cinema, true);
+        await catalogClient.action('discover');
+        await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/ddys/interstellar/page')}`);
+        await until('ddys original-page entry stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://ddys.io/movie/interstellar' && !!catalogClient.state().selected);
         assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
         assert.equal(catalogClient.state().cinema, true);
         await fixtureSession.protocol.unhandle('https');

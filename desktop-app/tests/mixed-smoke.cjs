@@ -95,7 +95,9 @@ exports.run = async ({ createDesktop, server, source, output, until, inputKey })
             const d = await desktopJs('({time:document.querySelector("video").currentTime,paused:document.querySelector("video").paused})');
             return !v.paused && !d.paused && Math.abs(v.time - d.time) < 2;
         });
-        assert.equal(await js('playbackResumePrompt.classList.contains("hidden")'), true);
+        // paused flips synchronously, while the play event and play() promise
+        // settle asynchronously; check recovery UI after that event turn.
+        await until('resume prompt clears after playback recovers', () => js('playbackResumePrompt.classList.contains("hidden")'), 3000);
         console.log('MIXED PASS: phone-width room browser + Windows client, periodic state, bidirectional pause/play/seek, autoplay denial and local-only recovery.');
     } catch (error) {
         console.error('PHONE', await js('({text:document.body.innerText,events:window.testEvents})').catch(() => 'unavailable'));

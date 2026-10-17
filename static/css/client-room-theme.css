@@ -1,0 +1,17 @@
+/* Shared Android / Windows room rail; no player or microphone behavior changes. */
+:root { background: #191e28; color: #eef3fa; }
+body { padding: 16px; gap: 12px; }
+header { padding-bottom: 12px; border-bottom: 1px solid #303b4b; }
+header strong { font-size: 14px; }
+#onlineCount, #mobilePlayerStatus { color: #a9b6ca; font-size: 12px; }
+button { font: inherit; font-size: 12px; background: #148cbd; min-height: 40px; border-radius: 7px; padding: 9px 12px; }
+button:hover { background: #1179a5; }
+button:focus-visible, input:focus-visible { outline: 2px solid #6ccdf5; outline-offset: 3px; }
+input { background: #232c3b; border-color: #3b4960; border-radius: 7px; }
+input::placeholder { color: #98a6bd; }
+input[type="range"] { accent-color: #41b6e5; }
+#videoVolumeControl { color: #b7c3d7; font-size: 12px; }
+#chatContainer p { background: #242e3e; font-size: 13px; line-height: 1.7; padding: 10px 12px; }
+#callDock { background: #202e3c; padding: 12px; line-height: 1.8; }
+#chatForm { border-top: 1px solid #303b4b; padding-top: 12px; }
+#chatForm input { font-size: 14px; }

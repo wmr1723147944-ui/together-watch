@@ -68,7 +68,7 @@ function playSelection(value, server = SERVER) {
     try {
         const url = new URL(value);
         if (url.origin !== server || url.username || url.password || url.search || url.hash) return null;
-        const match = /^\/discover\/play\/(cupfox|huarw|blender|yhdmoe|fcma)\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+        const match = /^\/discover\/play\/(cupfox|huarw|blender|yhdmoe|fcma|ddys)\/([^/]+)\/([^/]+)$/.exec(url.pathname);
         if (!match) return null;
         const [, source, item, episode] = match;
         if (source === 'cupfox' && /^\d{1,20}$/.test(item) && /^ep\d{1,5}$/.test(episode))
@@ -81,6 +81,8 @@ function playSelection(value, server = SERVER) {
             return { source, episode, page: `https://yhdmoe.com/watch/${item}#play_ep_${episode}` };
         if (source === 'fcma' && /^\d{1,20}-\d{1,5}$/.test(item) && /^\d{1,20}$/.test(episode))
             return { source, episode, page: `https://www.fcma.cc/p/${item.replace('-', '/')}/${episode}` };
+        if (source === 'ddys' && /^[a-z0-9][a-z0-9-]{0,119}$/.test(item) && episode === 'page')
+            return { source, episode, page: `https://ddys.io/movie/${item}` };
     } catch { /* Not a first-party handoff. */ }
     return null;
 }

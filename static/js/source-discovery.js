@@ -27,6 +27,7 @@
             cupfox: ['www.cupfox.in', /^\/vod-detail\/[0-9]+\.html$/],
             yhdmoe: ['yhdmoe.com', /^\/watch\/[0-9]{1,20}$/],
             fcma: ['www.fcma.cc', /^\/v\/[0-9]{1,20}\/[0-9]{1,5}$/],
+            ddys: ['ddys.io', /^\/movie\/[a-z0-9][a-z0-9-]{0,119}$/],
         };
         try {
             if (typeof value !== 'string' || value.includes('\\')) return null;
@@ -42,6 +43,7 @@
             : source === 'huarw' ? /^\d{1,20}$/.test(item) && new RegExp('^' + item + '(?:-\\d{1,5}){1,3}$').test(episode)
             : source === 'yhdmoe' ? /^\d{1,20}$/.test(item) && /^EP\d{1,5}(?:\.\d{1,2})?$/.test(episode)
             : source === 'fcma' ? /^\d{1,20}-\d{1,5}$/.test(item) && /^\d{1,20}$/.test(episode)
+            : source === 'ddys' ? /^[a-z0-9][a-z0-9-]{0,119}$/.test(item) && episode === 'page'
             : source === 'blender' && /^[0-9a-f-]{36}$/.test(item) && episode === 'video';
         const path = `/discover/play/${source}/${item}/${episode}`;
         return valid && value === path ? path : null;
@@ -111,6 +113,9 @@
                 status.textContent = found ? `${found} 个选集 · 点击后在新版客户端播放区打开。各成员仍需选择同一集。`
                     : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
                     : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';
+                if (found && data.selection_mode === 'original_page') {
+                    status.textContent = '此来源由原站动态选集。Windows 0.2.1 起可在软件内打开，再选择线路和集数；这里不表示已验证播放。';
+                }
                 if (data.truncated === true) status.textContent += ' 已达选集数量上限，其余请用原站选集。';
             } catch (_) {
                 if (generation === current) status.textContent = '集数读取失败或超时，可关闭后重试；没有切换当前影片。';
@@ -126,6 +131,7 @@
         const choices = Array.from(doc.getElementById('sourceDiscovery').querySelectorAll('[data-live-source]'));
         const query = doc.getElementById('discoveryQuery');
         const details = createDetails(doc, fetcher);
+        const welcome = doc.getElementById('discoveryWelcome');
         let generation = 0;
         const controllers = new Set();
         function element(tag, text, className) {
@@ -140,10 +146,11 @@
             controllers.clear();
             results.replaceChildren();
             section.hidden = hide;
+            if (welcome) welcome.hidden = !hide;
             section.setAttribute('aria-busy', 'false');
             status.textContent = hide ? '' : '条件已更改，点击“搜索”查看新结果。';
         }
-        for (const choice of choices) choice.addEventListener('change', () => cancel());
+        for (const choice of choices) choice.addEventListener('change', () => cancel(!normalizeQuery(query.value)));
         async function run() {
             cancel();
             const current = generation;
@@ -191,11 +198,12 @@
                         found++;
                         const card = element('article', null, 'discovery-film discovery-title-card');
                         const cover = element('button', row.title.slice(0, 24), 'discovery-title-art');
+                        cover.dataset.source = sourceId;
                         cover.type = 'button'; cover.setAttribute('aria-label', `查看${row.title.slice(0, 160)}的详情和集数`);
                         cover.addEventListener('click', () => details.open(sourceId, row, cover));
                         card.append(cover);
                         card.append(element('h5', row.title.slice(0, 160)));
-                        const facts = [row.year || '年份未标注', row.episode_label || '', '画质 / 免费范围待确认'].filter(Boolean);
+                        const facts = [row.year || '年份未标注', row.episode_label || '', '画质以原站为准'].filter(Boolean);
                         card.append(element('p', facts.join(' · '), 'discovery-note'));
                         const nav = element('nav');
                         const select = element('button', '详情 / 选集', 'discovery-primary');
@@ -287,6 +295,12 @@
             await live.run();
         });
         query.addEventListener('input', () => { render(); live.cancel(!normalizeQuery(query.value)); });
+        for (const suggestion of root.querySelectorAll('[data-discovery-query]')) {
+            suggestion.addEventListener('click', () => {
+                query.value = normalizeQuery(suggestion.dataset.discoveryQuery);
+                render(); live.run();
+            });
+        }
         if (sourceType) sourceType.addEventListener('change', render);
         if (quality) quality.addEventListener('change', render);
         clear.hidden = false;

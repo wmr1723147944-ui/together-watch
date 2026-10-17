@@ -22,6 +22,14 @@ test('HTTPS entry rejects local addresses, credentials, ports and executable sch
     for (const url of ['http://example.com', 'javascript:alert(1)', 'file:///C:/test', 'https://user:pw@example.com', 'https://example.com:8443', 'https://127.0.0.1', 'https://2130706433', 'https://[::1]', 'https://host.local', 'https://localhost', 'tw-app://desktop/index.html']) assert.equal(p.publicHttps(url), '', url);
     assert.equal(p.publicHttps('https://www.example.com/play?id=1'), 'https://www.example.com/play?id=1');
 });
+
+test('DDYS only opens a fixed original-page selection, not arbitrary media or episode URLs', () => {
+    const route = p.SERVER + '/discover/play/ddys/interstellar/page';
+    assert.deepEqual(p.playSelection(route), { source:'ddys', episode:'page', page:'https://ddys.io/movie/interstellar' });
+    for (const bad of [route + '?url=evil', route + '#x', route.replace('/page','/ep1'),
+        route.replace('interstellar','%69nterstellar'), route.replace('interstellar','a'.repeat(121)),
+        route.replace(p.SERVER,'https://evil.test')]) assert.equal(p.playSelection(bad), null, bad);
+});
 test('room links must belong to this service', () => {
     assert.equal(p.roomFrom('abcd_123'), 'abcd_123');
     assert.equal(p.roomFrom(p.SERVER + '/room/abcd_123'), 'abcd_123');

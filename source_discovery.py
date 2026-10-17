@@ -162,7 +162,7 @@ def search_url(provider, query):
 
 def is_search_page(target_url):
     parsed = urlparse(target_url)
-    if parsed.hostname in {"huarw.com", "www.cupfox.in", "yhdmoe.com"} and parsed.path.rstrip("/") == "/search":
+    if parsed.hostname in {"huarw.com", "www.cupfox.in", "yhdmoe.com", "ddys.io"} and parsed.path.rstrip("/") == "/search":
         return True
     if parsed.hostname == "www.fcma.cc" and parsed.path in {"/search/index.html", "/public/auto/search1.html"}:
         return True

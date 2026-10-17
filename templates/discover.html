@@ -6,14 +6,16 @@
     <title>找片 - 一起看</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261017-cinema') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261017-ddys-ui') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
 </head>
-<body>
-    <main class="discovery-page">
-        <header><a href="/">一起看 / 放映室</a><span class="discovery-eyebrow">YOUR NEXT WATCH</span><h1>今晚，想看什么？</h1><p>找片、选集，再回到你们的放映室。每个来源的版本分开呈现。</p></header>
+<body class="media-app">
+    {% include "_site_nav.html" %}
+    <main id="mainContent" class="discovery-page">
+        <header class="discovery-page-heading"><div><span class="section-kicker">FIND YOUR NEXT WATCH</span><h1>今晚，想看什么？</h1><p>按来源找片，按集数相聚。搜索不会打断正在播放的影片。</p></div><span class="catalog-label">{{ discovery_search_sources|length }} 个可选查询来源</span></header>
         {% include "_source_discovery.html" %}
         {% include "_site_footer.html" %}
     </main>
-    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261017-cinema') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261017-ddys-ui') }}" defer></script>
 </body>
 </html>
