@@ -1,13 +1,13 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'none'; frame-src 'none'">
 <title>一起看 · Windows</title><link rel="stylesheet" href="shell.css"></head><body>
-<header><div class="brand"><span class="mark">W</span><div>一起看<small>WINDOWS · 0.1</small></div></div><span id="status" role="status">视频和朋友，在同一个窗口里。</span><button id="settings">重新设置</button></header>
+<header><div class="brand"><span class="mark">W</span><div>一起看<small>WINDOWS · 0.2</small></div></div><span id="status" role="status">视频和朋友，在同一个窗口里。</span><button id="settings">重新设置</button></header>
 <section id="setup"><p class="eyebrow">WATCH TOGETHER</p><h1>把今晚的片刻，<br>留给一起看的人。</h1><p class="intro">不用插件，不用书签。打开视频，邀请朋友，边看边聊。</p>
 <form id="startForm"><div class="fields"><label>你的昵称<input id="nickname" maxlength="32" value="观影成员" required></label><label>房间号或邀请链接<input id="room" maxlength="256" placeholder="留空就创建新房间"></label></div>
-<label>视频播放页 / HTTPS 视频直链<input id="source" type="url" maxlength="4096" placeholder="https://…" required></label>
+<label>已有视频链接？也可以先留空<input id="source" type="url" maxlength="4096" placeholder="留空进入软件内找片，也可粘贴 HTTPS 播放页"></label>
 <div class="samples"><span>先试一段公开短片</span><button type="button" data-sample="sintel">Sintel</button><button type="button" data-sample="bunny">Big Buck Bunny</button></div>
 <label class="consent"><input id="consent" type="checkbox" required>我同意<a href="https://watchtogethernow.cloud/terms" id="terms">用户协议</a>与<a href="https://watchtogethernow.cloud/privacy" id="privacy">隐私政策</a>，只同步本人有权观看的内容。</label>
 <button class="primary" type="submit" id="start">开始同屏观看 →</button><p id="error" role="alert"></p></form>
 <p class="hint">每个人需打开同一集、同一版本，会员内容需各自登录。不会共享视频、账号或会员权限。</p></section>
-<section id="tools" hidden><form id="sourceForm"><input id="currentSource" aria-label="视频网页地址" type="url" required><button type="submit">打开链接</button><button id="back" type="button">后退</button><button id="reload" type="button">刷新</button></form><nav><span id="roomLabel"></span><button id="invite">复制邀请</button><button id="detect">重新识别播放器</button><button id="fullscreen">全屏 · F11</button></nav></section>
+<section id="tools" hidden><form id="sourceForm"><button id="discover" type="button">找片 / 选集</button><button id="return-video" type="button">回到播放</button><input id="currentSource" aria-label="视频网页地址" type="url" required><button type="submit">打开链接</button><button id="back" type="button">后退</button><button id="reload" type="button">刷新</button></form><nav><span id="roomLabel"></span><button id="cinema">影院 / 网页</button><button id="invite">复制邀请</button><button id="detect">重新识别播放器</button><button id="fullscreen">全屏 · F11</button></nav></section>
 <div id="placeholder" hidden>正在加载播放页和房间…</div><script src="shell.js"></script></body></html>

@@ -50,3 +50,34 @@
 .discovery-page > header p { color: #cbc5dd; }
 .discovery-page > header a { color: #94e4ff; }
 @media (max-width: 460px) { .discovery-page { padding: 18px 12px; } .discovery-body { padding: 0 12px 12px; } .discovery-platform { width: 100%; } .discovery-primary { flex: 1; } }
+
+/* A browsing surface, not a wall of external links. No unverified poster art. */
+.discovery-page { max-width: 1200px; }
+.discovery-eyebrow { display: block; color: #b8e8d4; font-size: 11px; letter-spacing: .12em; margin-top: 18px; }
+.discovery-page > header h1 { font-weight: 600; letter-spacing: -.02em; }
+.discovery-page .source-discovery { border-color: #49415d; background: #1b182bd9; }
+.discovery-page .source-discovery > summary { display: none; }
+.discovery-page .discovery-body { padding-top: 16px; }
+.discovery-advanced { margin: 12px 0; border: 1px solid #49415d; border-radius: 12px; }
+.discovery-advanced > summary { font-size: 13px; padding: 12px; color: #c8c3d4; }
+.discovery-advanced .discovery-filters, .discovery-directory > section { margin: 12px; }
+.discovery-live-source { padding: 16px; background: #171423; border-color: #49415d; }
+.discovery-live-source .discovery-films { grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr)); }
+.discovery-title-card { padding: 10px; background: #262135; border-color: #443c56; }
+.discovery-body .discovery-title-art { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 125px; padding: 24px; margin-bottom: 14px; background: linear-gradient(135deg, #36473f, #27233f); color: #d3f6e5; border: 0; font-size: 23px; font-weight: 600; line-height: 1.4; }
+.discovery-title-card h5 { padding: 0 4px; }
+.discovery-title-card nav { gap: 6px; }
+.discovery-title-card nav .discovery-primary { width: 100%; justify-content: center; background: #b8e8d4; color: #142c23; border: 0; font-weight: 600; }
+.discovery-detail { width: min(780px, calc(100vw - 24px)); max-height: 88dvh; margin: auto; padding: 24px; color: #eeeaf5; background: #211c30; border: 1px solid #746984; border-radius: 20px; overflow: auto; box-shadow: 0 24px 80px #0008; }
+.discovery-detail::backdrop { background: #090713bf; }
+.discovery-detail header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.discovery-detail .discovery-eyebrow { margin: 0; }
+.discovery-detail h2 { margin: 24px 0 16px; font-size: 26px; line-height: 1.4; }
+.discovery-detail a { color: #b8e8d4; }
+.discovery-detail #discoveryDetailDescription { line-height: 1.8; color: #c9c1d4; }
+#discoveryEpisodeFilter { width: 100%; min-height: 44px; padding: 10px 12px; border: 1px solid #746984; border-radius: 9px; color: #eeeaf5; background: #171423; font: inherit; }
+.discovery-episodes { display: grid; grid-template-columns: repeat(auto-fill, minmax(95px, 1fr)); gap: 10px; margin: 22px 0; }
+.discovery-episode { display: flex; min-height: 48px; justify-content: center; align-items: center; border: 1px solid #63576f; border-radius: 9px; padding: 10px; background: #332b43; text-decoration: none; }
+.discovery-episode:hover { background: #46574e; border-color: #b8e8d4; }
+.discovery-detail :focus-visible { outline: 3px solid #b8e8d4; outline-offset: 3px; }
+@media (max-width: 460px) { .discovery-detail { padding: 16px; } .discovery-detail h2 { font-size: 22px; } .discovery-episodes { grid-template-columns: repeat(3, minmax(0, 1fr)); } }

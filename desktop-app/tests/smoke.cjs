@@ -185,6 +185,24 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         await a.toggleFullscreen(false); await delay(400);
         assert.equal(a.state().video.getBounds().y, 156);
         assert.equal(await a.state().selected.frame.executeJavaScript('document.querySelector("video").style.position'), '');
+        await a.action('cinema');
+        assert.equal(await a.state().selected.frame.executeJavaScript('document.querySelector("video").style.position'), 'fixed');
+        const originalRoom = a.state().roomView.webContents;
+        const originalVideo = a.state().video.webContents;
+        await a.action('discover');
+        await until('discovery ready inside client', () => a.state().discoveryView.webContents.executeJavaScript('!!document.getElementById("discoveryQuery")'));
+        const finder = a.state().discoveryView.webContents;
+        await finder.executeJavaScript('document.getElementById("discoveryQuery").value="Sintel"');
+        assert.equal(await finder.executeJavaScript('typeof window.desktop'), 'undefined');
+        assert.equal(a.state().roomView.webContents, originalRoom);
+        await a.action('return-video');
+        assert.equal(a.state().browsing, false);
+        assert.equal(a.state().video.webContents, originalVideo);
+        await a.action('discover');
+        assert.equal(a.state().discoveryView.webContents, finder);
+        assert.equal(await finder.executeJavaScript('document.getElementById("discoveryQuery").value'), 'Sintel');
+        await a.action('return-video');
+        await a.action('cinema');
         b.close();
         await until('back to one member', async () => (await a.state().roomView.webContents.executeJavaScript("document.getElementById('onlineCount').textContent")).includes('1'));
         await continuousPlayback(a, 11000);
@@ -192,6 +210,45 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         await a.action('settings');
         await until('old playback view destroyed', () => oldVideo.isDestroyed(), 5000);
         assert.equal(a.state().current, null);
+        // A deterministic origin-bound provider fixture, never a production
+        // network override. Proves that the episode handoff stays in-app.
+        const catalogClient = await createDesktop({ server, testSource: 'http://127.0.0.1:', visible: false });
+        clients.push(catalogClient);
+        assert.equal((await catalogClient.start({ nickname:'Catalog', room:'catalog-smoke', source:'', consent:true })).ok, true);
+        await until('blank source opens catalog', () => catalogClient.state().discoveryView?.webContents.executeJavaScript('!!document.getElementById("discoveryQuery")'));
+        const catalogRoom = catalogClient.state().roomView.webContents;
+        const fixtureSession = catalogClient.state().video.webContents.session;
+        await fixtureSession.protocol.handle('https', request => {
+            const url = new URL(request.url);
+            if (!['www.cupfox.in','yhdmoe.com','www.fcma.cc'].includes(url.hostname)) return new Response('', { status:404 });
+            if (url.pathname === '/sample.mp4') return new Response(fs.readFileSync(media), { headers:{'Content-Type':'video/mp4'} });
+            if (url.hostname === 'yhdmoe.com') return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video><a href="#play_ep_EP1" class="my-episode" play_ep="EP1">第1集</a><a href="#play_ep_EP10.5" class="my-episode" play_ep="EP10.5">第10.5集</a><script>document.querySelectorAll(".my-episode").forEach(el=>el.onclick=()=>{el.classList.add("disabled");document.body.dataset.episode=el.getAttribute("play_ep")})</script>', {headers:{'Content-Type':'text/html'}});
+            if (url.hostname === 'www.fcma.cc') return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video>', {headers:{'Content-Type':'text/html'}});
+            return new Response('<video controls muted preload="auto" src="/sample.mp4" style="width:640px;height:360px"></video><span class="play-btn" ep_slug="ep1">第1集</span><span class="play-btn" ep_slug="ep2">第2集</span><script>document.querySelectorAll(".play-btn").forEach(el=>el.onclick=()=>{el.classList.add("on");document.body.dataset.episode=el.getAttribute("ep_slug")})</script>', { headers:{'Content-Type':'text/html'} });
+        });
+        const catalogWc = catalogClient.state().discoveryView.webContents;
+        await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/cupfox/123/ep2')}`);
+        await until('selected second episode in embedded view', async () => catalogClient.state().video.webContents.getURL() === 'https://www.cupfox.in/vod-detail/123.html'
+            && await catalogClient.state().video.webContents.executeJavaScript('document.body.dataset.episode === "ep2"'));
+        await until('selected episode player connected', () => !!catalogClient.state().selected);
+        assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
+        assert.equal(catalogClient.state().browsing, false);
+        assert.equal(catalogClient.state().cinema, true);
+        assert.equal(await catalogClient.state().video.webContents.executeJavaScript('document.querySelector("video").style.position'), 'fixed');
+        await catalogClient.action('discover');
+        assert.equal(catalogClient.state().discoveryView.webContents, catalogWc);
+        await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/yhdmoe/123/EP10.5')}`);
+        await until('sakura selects exact fractional episode', async () => catalogClient.state().video.webContents.getURL() === 'https://yhdmoe.com/watch/123#play_ep_EP10.5'
+            && await catalogClient.state().video.webContents.executeJavaScript('document.body.dataset.episode === "EP10.5"'));
+        await until('sakura player connected', () => !!catalogClient.state().selected);
+        await catalogClient.action('discover');
+        await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/fcma/9102-229/1048459')}`);
+        await until('fengche opaque episode page stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://www.fcma.cc/p/9102/229/1048459' && !!catalogClient.state().selected);
+        assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
+        assert.equal(catalogClient.state().cinema, true);
+        await fixtureSession.protocol.unhandle('https');
+        catalogClient.close();
+        console.log('CATALOG PASS: blank-source entry, retained finder, exact episode handoff, embedded cinema and unchanged room.');
         console.log('SMOKE PASS: solo playback and buffer recovery, late join, bidirectional seek/pause/play/speed, return to solo, isolated IPC, cross-origin detection, local volume, chat, fullscreen and cleanup.');
         await require('./mixed-smoke.cjs').run({ createDesktop, server, source, output, until, inputKey });
     } catch (error) {

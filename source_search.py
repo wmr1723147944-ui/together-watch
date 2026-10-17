@@ -1,4 +1,4 @@
-"""Bounded, fixed-provider metadata search. Never fetch player pages or media."""
+"""Bounded, fixed-provider title/episode metadata. Never fetch media or execute scripts."""
 
 from collections import OrderedDict
 from copy import deepcopy
@@ -17,7 +17,7 @@ import urllib3
 from source_discovery import OPEN_FILMS, normalize_query
 
 
-SEARCH_VERSION = "20261016-auto-search"
+SEARCH_VERSION = "20261017-cinema"
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",
@@ -28,9 +28,16 @@ PROVIDERS = {
     "cupfox": {"id": "cupfox", "name": "茶杯狐 · cupfox.in", "host": "www.cupfox.in",
                "path": "/search", "param": "q", "kind": "third_party_index",
                "note": "同名站点主体关系未确认；免费范围、授权与播放兼容性未核实。"},
+    "yhdmoe": {"id": "yhdmoe", "name": "樱花动漫 · yhdmoe.com", "host": "yhdmoe.com",
+               "path": "/search", "param": "q", "kind": "third_party_index",
+               "note": "已核对公开目录与集数；同名主体关系、授权、画质及实际播放未核实。"},
+    "fcma": {"id": "fcma", "name": "风车动漫 · fcma.cc", "host": "www.fcma.cc",
+             "path": "/public/auto/search1.html", "param": "keyword", "kind": "third_party_index",
+             "note": "已核对公开目录与选集链接；同名主体关系、授权、画质及实际播放未核实。"},
 }
 MAX_BYTES = 1024 * 1024
 MAX_RESULTS = 12
+MAX_EPISODES = 6000
 CACHE_TTL = 300
 FAILURE_TTL = 15
 MAX_CACHE_KEYS = 128
@@ -66,6 +73,7 @@ def detail_url(provider, value):
                 or parsed.query or parsed.fragment):
             return None
         patterns = {"huarw": r"/movie/[0-9]+", "cupfox": r"/vod-detail/[0-9]+\.html",
+                    "yhdmoe": r"/watch/[0-9]{1,20}", "fcma": r"/v/[0-9]{1,20}/[0-9]{1,5}",
                     "blender": r"/videos/watch/[0-9a-f-]{36}"}
         return parsed.geturl() if re.fullmatch(patterns[provider["id"]], parsed.path) else None
     except ValueError:
@@ -73,11 +81,15 @@ def detail_url(provider, value):
 
 
 def _fetch(provider, query):
-    """Pin a public DNS answer, preserving SNI/cert validation; refuse redirects."""
     params = {provider["param"]: query}
     if provider["id"] == "blender":
         params.update(count=30, start=0)
     path = provider["path"] + "?" + urlencode(params)
+    return _fetch_path(provider, path)
+
+
+def _fetch_path(provider, path):
+    """Only callers with code-owned hosts and validated paths may use this transport."""
     host = provider["host"]  # Code-owned constant, never a request parameter.
     addresses = list(dict.fromkeys(row[4][0] for row in
                     socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)))
@@ -138,8 +150,13 @@ class _Cards(HTMLParser):
         classes = attrs.get("class", "").split()
         if "movie-list-body" in classes or "search-box" in classes:
             self.saw_results = True
-        is_card = ("movie-list-item" in classes if self.provider["id"] == "cupfox"
-                   else "public-list-box" in classes and "search-box" in classes)
+        if attrs.get("id") == "search_list" or "module-card-items" in classes:
+            self.saw_results = True
+        source = self.provider["id"]
+        is_card = {"cupfox": "movie-list-item" in classes,
+                   "huarw": "public-list-box" in classes and "search-box" in classes,
+                   "yhdmoe": "card" in classes and any(a.get("id") == "search_list" for _, a in self.stack),
+                   "fcma": "module-card-item" in classes}.get(source, False)
         if self.card is None and is_card:
             self.card = {"depth": len(self.stack), "title": [], "year": [], "episode": [], "links": []}
         if self.card is not None and tag == "a":
@@ -159,11 +176,11 @@ class _Cards(HTMLParser):
         entries = self.stack[self.card["depth"]:]
         if any(tag in {"script", "style"} for tag, _ in entries):
             return
-        if any(tag == "h3" or "movie-title" in attrs.get("class", "").split() for tag, attrs in entries):
+        if any(tag == "h3" or set(attrs.get("class", "").split()) & {"movie-title", "age-anime-title", "module-card-item-title"} for tag, attrs in entries):
             self.card["title"].append(data)
         if any(attrs.get("href", "").startswith("/search/year/") for _, attrs in entries):
             self.card["year"].append(data)
-        if any("public-list-prb" in attrs.get("class", "").split() for _, attrs in entries):
+        if any(set(attrs.get("class", "").split()) & {"public-list-prb", "module-item-note"} for _, attrs in entries):
             self.card["episode"].append(data)
 
     def handle_endtag(self, tag):
@@ -268,3 +285,150 @@ def search_provider(source_id, query):
                 _cache.popitem(last=False)
         _slots.release()
     return result
+
+
+def selection_path(source, item, episode):
+    """Local handoff, not a media URL; the installed client opens its own video view."""
+    if not isinstance(item, str) or not isinstance(episode, str):
+        return None
+    if source == "cupfox" and re.fullmatch(r"[0-9]{1,20}", item) and re.fullmatch(r"ep[0-9]{1,5}", episode):
+        return f"/discover/play/{source}/{item}/{episode}"
+    if source == "huarw" and re.fullmatch(r"[0-9]{1,20}", item) and re.fullmatch(re.escape(item) + r"(?:-[0-9]{1,5}){1,3}", episode):
+        return f"/discover/play/{source}/{item}/{episode}"
+    if source == "blender" and re.fullmatch(r"[0-9a-f-]{36}", item) and episode == "video":
+        return f"/discover/play/{source}/{item}/{episode}"
+    if source == "yhdmoe" and re.fullmatch(r"[0-9]{1,20}", item) and re.fullmatch(r"EP[0-9]{1,5}(?:\.[0-9]{1,2})?", episode):
+        return f"/discover/play/{source}/{item}/{episode}"
+    if source == "fcma" and re.fullmatch(r"[0-9]{1,20}-[0-9]{1,5}", item) and re.fullmatch(r"[0-9]{1,20}", episode):
+        return f"/discover/play/{source}/{item}/{episode}"
+    return None
+
+
+def selection_page(source, item, episode):
+    if not selection_path(source, item, episode):
+        return None
+    return {"cupfox": f"https://www.cupfox.in/vod-detail/{item}.html",
+            "huarw": f"https://huarw.com/play/{episode}",
+            "yhdmoe": f"https://yhdmoe.com/watch/{item}#play_ep_{episode}",
+            "fcma": f"https://www.fcma.cc/p/{item.replace('-', '/')}/{episode}",
+            "blender": f"https://video.blender.org/videos/watch/{item}"}[source]
+
+
+class _EpisodeMetadata(HTMLParser):
+    """Keep only description/title and public episode controls; discard all scripts."""
+    def __init__(self, source, item):
+        super().__init__(convert_charrefs=True)
+        self.source, self.item = source, item
+        self.title, self.description, self.episodes = [], "", []
+        self.in_title, self.active, self.ignored = False, None, 0
+        self.seen, self.line, self.truncated = set(), "", False
+        self.line_index, self.line_names = 0, []
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+        if tag in {"script", "style"}:
+            self.ignored += 1
+        if self.ignored:
+            return
+        if tag == "title":
+            self.in_title = True
+        if tag == "meta" and attrs.get("name") == "description":
+            self.description = _text(attrs.get("content"), 500)
+        token = None
+        if self.source == "fcma" and "module-tab-item" in attrs.get("class", "").split():
+            self.line_names.append(_text(attrs.get("data-dropdown-value"), 20))
+        if self.source == "fcma" and "module-list" in attrs.get("class", "").split() and re.fullmatch(r"panel[0-9]+", attrs.get("id", "")):
+            # Upstream repeats id="panel1" on every line; use document order.
+            self.line_index += 1
+            name = self.line_names[self.line_index - 1] if self.line_index <= len(self.line_names) else ""
+            self.line = "线路 " + str(self.line_index) + (" · " + name if name else "")
+        if self.source == "yhdmoe" and tag == "a" and "my-episode" in attrs.get("class", "").split():
+            candidate = attrs.get("play_ep", "")
+            if attrs.get("href") == "#play_ep_" + candidate:
+                token = candidate
+        if self.source == "fcma" and tag == "a" and "module-play-list-link" in attrs.get("class", "").split():
+            url = urlsplit(urljoin("https://www.fcma.cc", attrs.get("href", "")))
+            prefix = "/p/" + self.item.replace("-", "/") + "/"
+            if url.scheme == "https" and url.netloc == "www.fcma.cc" and not url.query and not url.fragment and url.path.startswith(prefix):
+                token = url.path.removeprefix(prefix)
+        if self.source == "cupfox" and tag == "span" and "play-btn" in attrs.get("class", "").split():
+            token = attrs.get("ep_slug", "")
+        if self.source == "huarw" and tag == "a":
+            url = urlsplit(urljoin("https://huarw.com", attrs.get("href", "")))
+            if url.scheme == "https" and url.netloc == "huarw.com" and not url.query and not url.fragment and url.path.startswith("/play/"):
+                token = url.path.removeprefix("/play/")
+        if token and selection_path(self.source, self.item, token):
+            self.active = {"tag": tag, "id": token, "text": [], "line": self.line}
+
+    def handle_data(self, value):
+        if self.ignored:
+            return
+        if self.in_title:
+            self.title.append(value)
+        if self.active:
+            self.active["text"].append(value)
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style"}:
+            self.ignored = max(0, self.ignored - 1)
+        if tag == "title":
+            self.in_title = False
+        if self.active and tag == self.active["tag"]:
+            token = self.active["id"]
+            title = _text("".join(self.active["text"]), 60)
+            if title and token not in self.seen:
+                self.seen.add(token)
+                if len(self.episodes) < MAX_EPISODES:
+                    self.episodes.append({"id": token, "title": title, "line": self.active["line"],
+                                          "launch_path": selection_path(self.source, self.item, token)})
+                else:
+                    self.truncated = True
+            self.active = None
+
+
+def load_detail(source, page):
+    provider = PROVIDERS[source]
+    page = detail_url(provider, page)
+    if not page:
+        raise ValueError("invalid detail")
+    item = "-".join(urlsplit(page).path.split("/")[2:]) if source == "fcma" else page.rsplit("/", 1)[-1].removesuffix(".html")
+    key = ("detail", source, item)
+    now = time.monotonic()
+    base = {"source_id": source, "item_id": item, "page_url": page, "status": "ok", "title": "",
+            "description": "", "episodes": [], "truncated": False, "cached": False, "playback_verified": False}
+    with _lock:
+        for old in [k for k, (expiry, _) in _cache.items() if expiry <= now]:
+            del _cache[old]
+        if key in _cache:
+            return {**deepcopy(_cache[key][1]), "cached": True}
+        if key in _inflight or not _slots.acquire(blocking=False):
+            return {**base, "status": "busy"}
+        _inflight.add(key)
+    try:
+        if source == "blender":
+            data = json.loads(_fetch_path(provider, "/api/v1/videos/" + item))
+            channel = data.get("channel") or {}
+            if channel.get("name") != "blender_open_movies" or channel.get("host") != provider["host"]:
+                raise SearchFailure("unexpected_channel")
+            base.update(title=_text(data.get("name")), description=_text(data.get("description"), 500),
+                        episodes=[{"id": "video", "title": "打开视频", "launch_path": selection_path(source, item, "video")}])
+        else:
+            parser = _EpisodeMetadata(source, item)
+            parser.feed(_fetch_path(provider, urlsplit(page).path))
+            base.update(title=_text("".join(parser.title)), description=parser.description, episodes=parser.episodes, truncated=parser.truncated)
+            if source == "cupfox":
+                base["episodes"].sort(key=lambda e: int(e["id"][2:]))
+            if source == "yhdmoe":
+                base["episodes"].sort(key=lambda e: float(e["id"][2:]))
+            if not base["episodes"]:
+                base["status"] = "no_episodes"
+    except (SearchFailure, urllib3.exceptions.HTTPError, OSError, ValueError, TypeError, AttributeError, RecursionError):
+        base["status"] = "unavailable"
+    finally:
+        with _lock:
+            _inflight.discard(key)
+            _cache[key] = (time.monotonic() + (CACHE_TTL if base["status"] == "ok" else FAILURE_TTL), deepcopy(base))
+            while len(_cache) > MAX_CACHE_KEYS:
+                _cache.popitem(last=False)
+        _slots.release()
+    return base

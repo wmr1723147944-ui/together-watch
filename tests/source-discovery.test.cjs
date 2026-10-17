@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, createLiveSearch, init } = require('../static/js/source-discovery.js');
+const { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, init } = require('../static/js/source-discovery.js');
 
 test('local title search normalizes Chinese aliases, width, case, whitespace and bounds', () => {
     assert.equal(normalizeQuery('  ＳＩＮＴＥＬ\n\t 春天\0 '), 'SINTEL 春天');
@@ -179,7 +179,7 @@ test('live search fans out only on submit, with no credentials, and isolates fai
     const link = nodes.find(n => n.tag === 'a');
     assert.equal(link.target, '_self');
     assert.equal(link.rel, 'noopener noreferrer');
-    await nodes.find(n => n.tag === 'button').listeners.click();
+    await nodes.find(n => n.tag === 'button' && n.className === 'discovery-copy').listeners.click();
     assert.equal(f.elements.get('discoveryCopyValue').value, link.href);
     assert.equal(f.elements.get('discoveryCopyValue').selected, true);
     assert.equal(f.elements.get('discoveryLive')['aria-busy'], 'false');
@@ -223,4 +223,66 @@ test('empty query and deselected sources never send requests; rate limits get re
     await f.live.run();
     assert.equal(calls, 1);
     assert.ok(flatten(f.elements.get('discoveryLiveResults')).some(n => /搜索较频繁/.test(n.textContent)));
+});
+
+test('launch paths are relative, source-scoped and cannot inject arbitrary destinations', () => {
+    assert.equal(safeResultUrl('yhdmoe', 'https://yhdmoe.com/watch/123'), 'https://yhdmoe.com/watch/123');
+    assert.equal(safeResultUrl('fcma', 'https://www.fcma.cc/v/9102/229'), 'https://www.fcma.cc/v/9102/229');
+    assert.equal(safeLaunchPath('yhdmoe','123','EP10.5','/discover/play/yhdmoe/123/EP10.5'), '/discover/play/yhdmoe/123/EP10.5');
+    assert.equal(safeLaunchPath('fcma','9102-229','1048459','/discover/play/fcma/9102-229/1048459'), '/discover/play/fcma/9102-229/1048459');
+    assert.equal(safeLaunchPath('cupfox','123','ep1','/discover/play/cupfox/123/ep1'), '/discover/play/cupfox/123/ep1');
+    for (const value of ['https://evil.test', '//evil.test', '/discover/play/cupfox/123/ep1?url=evil'])
+        assert.equal(safeLaunchPath('cupfox', '123', 'ep1', value), null);
+    assert.equal(safeLaunchPath('huarw', '123', '456-1', '/discover/play/huarw/123/456-1'), null);
+});
+
+test('long anime episode lists render in batches and filter all fetched lines', async () => {
+    const nodes = new Map();
+    const make = () => ({ textContent:'', value:'', children:[], listeners:{}, open:false,
+        append(n) { this.children.push(n); }, replaceChildren() { this.children = []; },
+        showModal() { this.open = true; }, close() { this.open = false; this.listeners.close(); },
+        addEventListener(name, fn) { this.listeners[name] = fn; } });
+    for (const name of ['discoveryDetail','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription','discoveryEpisodes','discoveryDetailOriginal','discoveryDetailClose','discoveryEpisodeFilter','discoveryEpisodeMore']) nodes.set(name, make());
+    const page = 'https://www.fcma.cc/v/9102/229';
+    const details = createDetails({ getElementById:id=>nodes.get(id), createElement:make }, async () => ({ ok:true, json:async()=>({source_id:'fcma',item_id:'9102-229',page_url:page,status:'ok',episodes:
+        Array.from({length:1200},(_,i)=>({id:String(i+1),title:`第${i+1}集`,line:'线路 1',launch_path:`/discover/play/fcma/9102-229/${i+1}`}))}) }));
+    await details.open('fcma',{title:'测试长篇',page_url:page});
+    assert.equal(nodes.get('discoveryEpisodes').children.length, 100);
+    assert.equal(nodes.get('discoveryEpisodeMore').hidden, false);
+    nodes.get('discoveryEpisodeMore').listeners.click();
+    assert.equal(nodes.get('discoveryEpisodes').children.length, 200);
+    nodes.get('discoveryEpisodeFilter').value = '1180';
+    nodes.get('discoveryEpisodeFilter').listeners.input();
+    assert.equal(nodes.get('discoveryEpisodes').children.length, 1);
+    assert.equal(nodes.get('discoveryEpisodes').children[0].textContent, '线路 1 · 第1180集');
+    assert.equal(nodes.get('discoveryEpisodeMore').hidden, true);
+});
+
+test('detail panel loads on demand, rejects foreign episodes and ignores closed stale responses', async () => {
+    const nodes = new Map();
+    const make = () => ({ textContent: '', children: [], listeners: {}, open: false,
+        append(n) { this.children.push(n); }, replaceChildren() { this.children = []; },
+        showModal() { this.open = true; }, close() { this.open = false; this.listeners.close(); },
+        addEventListener(name, fn) { this.listeners[name] = fn; } });
+    for (const name of ['discoveryDetail','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription','discoveryEpisodes','discoveryDetailOriginal','discoveryDetailClose']) nodes.set(name, make());
+    const doc = { getElementById: id => nodes.get(id), createElement: make };
+    let finish;
+    const calls = [];
+    const details = createDetails(doc, async (url, options) => { calls.push([url,options]); return new Promise(resolve => { finish = resolve; }); });
+    const row = { title: '<img onerror=alert(1)>', page_url: 'https://www.cupfox.in/vod-detail/123.html' };
+    assert.equal(calls.length, 0);
+    const loading = details.open('cupfox', row);
+    const result = { ok: true, json: async () => ({ source_id:'cupfox', page_url:row.page_url, item_id:'123', status:'ok', episodes:[
+        { id:'ep1', title:'第1集', launch_path:'/discover/play/cupfox/123/ep1' },
+        { id:'ep2', title:'bad', launch_path:'https://evil.test' }] }) };
+    finish(result); await loading;
+    assert.equal(nodes.get('discoveryEpisodes').children.length, 1);
+    assert.equal(nodes.get('discoveryEpisodes').children[0].target, '_self');
+    assert.equal(nodes.get('discoveryDetailTitle').textContent, row.title);
+    assert.equal(calls[0][0], '/api/discover/detail');
+    assert.equal(calls[0][1].credentials, 'omit');
+    const stale = details.open('cupfox', row);
+    details.close(); finish(result); await stale;
+    assert.equal(nodes.get('discoveryDetail').open, false);
+    assert.equal(nodes.get('discoveryEpisodes').children.length, 0);
 });

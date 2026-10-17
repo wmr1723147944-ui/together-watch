@@ -64,4 +64,28 @@ function panelBounds(width, height, full) {
     return { video: { x: 0, y: top, width: width - roomWidth, height: Math.max(1, height - top) },
         room: { x: width - roomWidth, y: top, width: roomWidth, height: Math.max(1, height - top) } };
 }
-module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, panelBounds };
+function playSelection(value, server = SERVER) {
+    try {
+        const url = new URL(value);
+        if (url.origin !== server || url.username || url.password || url.search || url.hash) return null;
+        const match = /^\/discover\/play\/(cupfox|huarw|blender|yhdmoe|fcma)\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+        if (!match) return null;
+        const [, source, item, episode] = match;
+        if (source === 'cupfox' && /^\d{1,20}$/.test(item) && /^ep\d{1,5}$/.test(episode))
+            return { source, episode, page: `https://www.cupfox.in/vod-detail/${item}.html` };
+        if (source === 'huarw' && /^\d{1,20}$/.test(item) && new RegExp('^' + item + '(?:-\\d{1,5}){1,3}$').test(episode))
+            return { source, episode, page: `https://huarw.com/play/${episode}` };
+        if (source === 'blender' && /^[0-9a-f-]{36}$/.test(item) && episode === 'video')
+            return { source, episode, page: `https://video.blender.org/videos/watch/${item}` };
+        if (source === 'yhdmoe' && /^\d{1,20}$/.test(item) && /^EP\d{1,5}(?:\.\d{1,2})?$/.test(episode))
+            return { source, episode, page: `https://yhdmoe.com/watch/${item}#play_ep_${episode}` };
+        if (source === 'fcma' && /^\d{1,20}-\d{1,5}$/.test(item) && /^\d{1,20}$/.test(episode))
+            return { source, episode, page: `https://www.fcma.cc/p/${item.replace('-', '/')}/${episode}` };
+    } catch { /* Not a first-party handoff. */ }
+    return null;
+}
+function isDiscoveryUrl(value, server = SERVER) {
+    try { const url = new URL(value); return !url.username && !url.password && url.origin === server && url.pathname === '/discover'; }
+    catch { return false; }
+}
+module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, panelBounds, playSelection, isDiscoveryUrl };

@@ -25,6 +25,8 @@
             blender: ['video.blender.org', /^\/videos\/watch\/[0-9a-f-]{36}$/],
             huarw: ['huarw.com', /^\/movie\/[0-9]+$/],
             cupfox: ['www.cupfox.in', /^\/vod-detail\/[0-9]+\.html$/],
+            yhdmoe: ['yhdmoe.com', /^\/watch\/[0-9]{1,20}$/],
+            fcma: ['www.fcma.cc', /^\/v\/[0-9]{1,20}\/[0-9]{1,5}$/],
         };
         try {
             if (typeof value !== 'string' || value.includes('\\')) return null;
@@ -34,6 +36,88 @@
                 && !url.username && !url.password && !url.search && !url.hash && rule[1].test(url.pathname) ? url.href : null;
         } catch (_) { return null; }
     }
+    function safeLaunchPath(source, item, episode, value) {
+        if (typeof item !== 'string' || typeof episode !== 'string') return null;
+        const valid = source === 'cupfox' ? /^\d{1,20}$/.test(item) && /^ep\d{1,5}$/.test(episode)
+            : source === 'huarw' ? /^\d{1,20}$/.test(item) && new RegExp('^' + item + '(?:-\\d{1,5}){1,3}$').test(episode)
+            : source === 'yhdmoe' ? /^\d{1,20}$/.test(item) && /^EP\d{1,5}(?:\.\d{1,2})?$/.test(episode)
+            : source === 'fcma' ? /^\d{1,20}-\d{1,5}$/.test(item) && /^\d{1,20}$/.test(episode)
+            : source === 'blender' && /^[0-9a-f-]{36}$/.test(item) && episode === 'video';
+        const path = `/discover/play/${source}/${item}/${episode}`;
+        return valid && value === path ? path : null;
+    }
+    function createDetails(doc, fetcher) {
+        const panel = doc.getElementById('discoveryDetail');
+        if (!panel) return { open() {}, close() {} };
+        const title = doc.getElementById('discoveryDetailTitle');
+        const status = doc.getElementById('discoveryDetailStatus');
+        const description = doc.getElementById('discoveryDetailDescription');
+        const list = doc.getElementById('discoveryEpisodes');
+        const original = doc.getElementById('discoveryDetailOriginal');
+        const filter = doc.getElementById('discoveryEpisodeFilter');
+        const more = doc.getElementById('discoveryEpisodeMore');
+        let episodes = [], visible = 100;
+        function renderEpisodes() {
+            const query = normalizeQuery(filter?.value || '').toLowerCase();
+            const matching = episodes.filter(e => e.label.toLowerCase().includes(query));
+            list.replaceChildren();
+            for (const episode of matching.slice(0, visible)) {
+                const link = doc.createElement('a'); link.className = 'discovery-episode';
+                link.textContent = episode.label; link.href = episode.path;
+                link.referrerPolicy = 'no-referrer'; link.target = '_self'; list.append(link);
+            }
+            if (more) { more.hidden = matching.length <= visible; more.textContent = `再显示 100 个（共 ${matching.length} 个）`; }
+        }
+        filter?.addEventListener('input', () => { visible = 100; renderEpisodes(); });
+        more?.addEventListener('click', () => { visible += 100; renderEpisodes(); });
+        let generation = 0, controller = null, opener = null;
+        function cancel() { generation++; controller?.abort(); controller = null; }
+        function close() { cancel(); if (panel.open) panel.close(); opener?.focus(); }
+        doc.getElementById('discoveryDetailClose').addEventListener('click', close);
+        panel.addEventListener('close', cancel);
+        async function open(source, row, trigger) {
+            const url = safeResultUrl(source, row.page_url);
+            if (!url) return;
+            cancel(); const current = generation;
+            opener = trigger; title.textContent = row.title.slice(0, 160);
+            description.textContent = ''; list.replaceChildren();
+            episodes = []; visible = 100;
+            if (filter) { filter.value = ''; filter.hidden = true; }
+            if (more) more.hidden = true;
+            original.href = url; status.textContent = '正在读取集数…';
+            if (!panel.open) panel.showModal();
+            const active = new AbortController(); controller = active;
+            const timer = setTimeout(() => active.abort(), 12000);
+            try {
+                const response = await fetcher('/api/discover/detail', { method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source, page_url: url }),
+                    credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: active.signal });
+                if (!response.ok) throw new Error('unavailable');
+                const data = await response.json();
+                if (generation !== current) return;
+                const parts = new URL(url).pathname.split('/');
+                const item = source === 'fcma' ? parts.slice(2).join('-') : parts.pop().replace(/\.html$/, '');
+                if (data.source_id !== source || data.page_url !== url || data.item_id !== item || !Array.isArray(data.episodes)) throw new Error('invalid');
+                if (typeof data.description === 'string') description.textContent = data.description.slice(0, 500);
+                for (const episode of data.episodes.slice(0, 6000)) {
+                    if (!episode || typeof episode.title !== 'string') continue;
+                    const path = safeLaunchPath(source, item, episode.id, episode.launch_path);
+                    if (!path) continue;
+                    const line = typeof episode.line === 'string' ? episode.line.slice(0, 30) : '';
+                    episodes.push({ path, label: (line ? line + ' · ' : '') + episode.title.slice(0, 60) });
+                }
+                const found = episodes.length;
+                renderEpisodes(); if (filter) filter.hidden = found <= 100;
+                status.textContent = found ? `${found} 个选集 · 点击后在新版客户端播放区打开。各成员仍需选择同一集。`
+                    : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
+                    : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';
+                if (data.truncated === true) status.textContent += ' 已达选集数量上限，其余请用原站选集。';
+            } catch (_) {
+                if (generation === current) status.textContent = '集数读取失败或超时，可关闭后重试；没有切换当前影片。';
+            } finally { clearTimeout(timer); }
+        }
+        return { open, close };
+    }
     function createLiveSearch(doc, fetcher = globalThis.fetch) {
         const section = doc.getElementById('discoveryLive');
         if (!section) return { run: async () => {}, cancel: () => {} };
@@ -41,6 +125,7 @@
         const status = doc.getElementById('discoveryLiveStatus');
         const choices = Array.from(doc.getElementById('sourceDiscovery').querySelectorAll('[data-live-source]'));
         const query = doc.getElementById('discoveryQuery');
+        const details = createDetails(doc, fetcher);
         let generation = 0;
         const controllers = new Set();
         function element(tag, text, className) {
@@ -104,12 +189,18 @@
                         const url = safeResultUrl(sourceId, row.page_url);
                         if (!url) continue;
                         found++;
-                        const card = element('article', null, 'discovery-film');
+                        const card = element('article', null, 'discovery-film discovery-title-card');
+                        const cover = element('button', row.title.slice(0, 24), 'discovery-title-art');
+                        cover.type = 'button'; cover.setAttribute('aria-label', `查看${row.title.slice(0, 160)}的详情和集数`);
+                        cover.addEventListener('click', () => details.open(sourceId, row, cover));
+                        card.append(cover);
                         card.append(element('h5', row.title.slice(0, 160)));
                         const facts = [row.year || '年份未标注', row.episode_label || '', '画质 / 免费范围待确认'].filter(Boolean);
                         card.append(element('p', facts.join(' · '), 'discovery-note'));
                         const nav = element('nav');
-                        const link = element('a', '打开原站详情 ↗', 'discovery-primary');
+                        const select = element('button', '详情 / 选集', 'discovery-primary');
+                        select.type = 'button'; select.addEventListener('click', () => details.open(sourceId, row, select));
+                        const link = element('a', '原站详情 ↗');
                         link.href = url;
                         link.target = results.dataset.linkTarget === '_self' ? '_self' : '_blank';
                         link.rel = 'noopener noreferrer'; link.referrerPolicy = 'no-referrer';
@@ -126,7 +217,7 @@
                                 field.value = url; field.focus(); field.select();
                             }
                         });
-                        nav.append(link, copy); card.append(nav); list.append(card);
+                        nav.append(select, link, copy); card.append(nav); list.append(card);
                     }
                     count += found;
                     state.textContent = found ? `找到 ${found} 个条目${data.cached ? '（5 分钟内缓存）' : ''}，尚未验证播放。`
@@ -225,6 +316,6 @@
         }
         render();
     }
-    if (typeof module !== 'undefined' && module.exports) module.exports = { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, createLiveSearch, init };
+    if (typeof module !== 'undefined' && module.exports) module.exports = { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, init };
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));
 })();

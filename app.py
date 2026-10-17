@@ -19,6 +19,7 @@ from urllib.parse import urljoin, urlparse
 import requests
 from flask import (
     Flask,
+    abort,
     jsonify,
     render_template,
     request,
@@ -31,7 +32,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from source_discovery import discovery_context, is_search_page, normalize_query
-from source_search import SEARCH_VERSION, provider_choices, search_provider
+from source_search import SEARCH_VERSION, provider_choices, search_provider, load_detail, selection_page
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -1441,6 +1442,43 @@ def discover():
         **source_discovery_context(request.args.get("q", ""), request.args.get("type", "all"),
                                    request.args.get("quality", "all")),
     ))
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.route("/api/discover/detail", methods=["POST"])
+@rate_limit("discover-detail", limit=40, window_seconds=60)
+def discover_detail():
+    origin = request.headers.get("Origin")
+    if ((origin and origin.rstrip("/") != request.host_url.rstrip("/"))
+            or request.headers.get("Sec-Fetch-Site") == "cross-site"):
+        return jsonify({"error": "请从本站选片"}), 403
+    if not request.is_json or request.content_length is None or request.content_length > 2048:
+        return jsonify({"error": "请求格式无效"}), 400
+    data = request.get_json(silent=True)
+    if (not isinstance(data, dict) or set(data) != {"source", "page_url"}
+            or not isinstance(data.get("source"), str)
+            or data["source"] not in {p["id"] for p in enabled_search_sources()}
+            or not isinstance(data.get("page_url"), str)):
+        return jsonify({"error": "来源无效或未启用"}), 400
+    try:
+        result = load_detail(data["source"], data["page_url"])
+    except ValueError:
+        return jsonify({"error": "详情地址无效"}), 400
+    response = jsonify(result)
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.route("/discover/play/<source>/<item>/<episode>")
+def discover_play(source, item, episode):
+    page = selection_page(source, item, episode)
+    if not page or source not in {p["id"] for p in enabled_search_sources()}:
+        abort(404)
+    # Native clients intercept this narrow, first-party navigation. A browser
+    # must not be promised that an arbitrary third-party page can be iframed.
+    response = app.make_response(render_template("discovery_launch.html", page_url=page))
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 

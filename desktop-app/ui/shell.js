@@ -15,7 +15,7 @@ $('startForm').onsubmit = async event => {
     } catch { $('error').textContent = '暂时无法打开，请检查网络后再试'; }
     finally { $('start').disabled = false; }
 };
-for (const action of ['back','reload','invite','detect','fullscreen','settings']) $(action).onclick = () => window.desktop.action(action);
+for (const action of ['back','reload','invite','detect','fullscreen','settings','discover','return-video','cinema']) $(action).onclick = () => window.desktop.action(action);
 for (const action of ['terms','privacy']) $(action).onclick = event => { event.preventDefault(); window.desktop.action(action); };
 $('sourceForm').onsubmit = async event => { event.preventDefault(); const result = await window.desktop.action({ type: 'source', source: $('currentSource').value }); if (result?.error) $('status').textContent = result.error; };
 window.desktop.onStatus(data => {

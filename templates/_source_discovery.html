@@ -1,7 +1,7 @@
 <details class="source-discovery" id="sourceDiscovery" {% if discovery_standalone %}open{% endif %}>
-    <summary>找片 <span>自动搜片 · 免费影视导航</span></summary>
+    <summary>找片 <span>搜索 · 选集 · 一起看</span></summary>
     <div class="discovery-body">
-        <p class="discovery-intro">输入片名，一次查询多个来源，再选择想查看的版本。搜索不会打断当前房间播放。</p>
+        <p class="discovery-intro">想看的片，和一起看的人，都留在这里。搜索后点卡片选集；搜索不会切换房间影片。</p>
         <form class="discovery-form" id="discoveryForm" action="{{ url_for('discover') }}" method="get" {% if not discovery_standalone %}target="_blank" rel="noopener noreferrer"{% endif %}>
             <label for="discoveryQuery">片名或关键词</label>
             <div class="discovery-input-row">
@@ -9,7 +9,7 @@
                 <button type="submit">搜索</button>
                 <button type="button" id="discoveryClear" hidden>清空</button>
             </div>
-            <div class="discovery-filters">
+            <details class="discovery-advanced"><summary>导航筛选</summary><div class="discovery-filters">
                 <label for="discoverySourceType">导航类型（不筛选下方短片资料）
                     <select id="discoverySourceType" name="type">
                         {% for value, label in discovery_source_types.items() %}<option value="{{ value }}" {% if discovery_source_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -21,7 +21,7 @@
                         <option value="4k" {% if discovery_quality == '4k' %}selected{% endif %}>只看有官方 4K 依据的条目</option>
                     </select>
                 </label>
-            </div>
+            </div></details>
             <fieldset class="discovery-search-options">
                 <legend>自动查询的来源（可取消勾选）</legend>
                 {% for source in discovery_search_sources %}
@@ -35,6 +35,18 @@
             <p id="discoveryLiveStatus" role="status" aria-live="polite"></p>
             <div id="discoveryLiveResults" class="discovery-live-results" data-link-target="{{ '_self' if discovery_standalone else '_blank' }}"></div>
         </section>
+        <dialog id="discoveryDetail" class="discovery-detail" aria-labelledby="discoveryDetailTitle">
+            <header><span class="discovery-eyebrow">影片详情 / 选择集数</span><button id="discoveryDetailClose" type="button" autofocus aria-label="关闭详情">返回结果 ×</button></header>
+            <h2 id="discoveryDetailTitle"></h2>
+            <p id="discoveryDetailDescription"></p>
+            <p id="discoveryDetailStatus" role="status" aria-live="polite"></p>
+            <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数或线路，例如 1180、线路 2" aria-label="筛选全部已读取的集数或线路" maxlength="80" hidden>
+            <div id="discoveryEpisodes" class="discovery-episodes"></div>
+            <button id="discoveryEpisodeMore" type="button" hidden>显示更多集数</button>
+            <p class="discovery-note">Windows 0.2 客户端会在软件内打开原站播放器，保留聊天室。安卓、旧版客户端与普通浏览器目前请用原站选集；是否免费、清晰度和观看权限仍由原站决定。</p>
+            <a id="discoveryDetailOriginal" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">改用原站选集 ↗</a>
+        </dialog>
+        <details class="discovery-advanced discovery-directory"><summary>更多来源与开放影片资料 <span>没有搜到？展开看看</span></summary>
         <section aria-labelledby="discoverySourcesTitle">
             <h3 id="discoverySourcesTitle">免费 / 部分免费影视导航</h3>
             <p class="discovery-note">下面是栏目入口，不是当前片名的搜索结果。付费范围、广告、地区与清晰度分别标注；免费观看不代表本站可以转载或嵌入。</p>
@@ -99,10 +111,11 @@
             </div>
             <p id="discoveryEmpty" {% if discovery_count %}hidden{% endif %}>当前片名或画质条件没有匹配的开放影片资料。这不代表官方平台没有该片，可放宽条件或使用上方搜索入口。</p>
         </section>
+        </details>
         <aside class="discovery-next">
             <strong>找到后，怎样一起看？</strong>
             {% if discovery_standalone %}
-            <p>客户端内：点击平台入口在当前视频区域搜索，再打开具体播放页；两人选择同一集、同一版本。浏览器内：复制具体播放页地址，回到房间的“视频链接”栏使用。</p>
+            <p>新版客户端内：点“找片”，搜索片名 → 详情 / 选集 → 点击集数。Windows 可用“影院 / 网页”切换纯视频画面和原站页面。两人需选择同一集、同一版本。</p>
             {% else %}
             <p>复制找到的具体播放页地址，粘贴到房间的“视频链接”栏。每个人使用自己的账号和观看权限；普通网页可能仍需助手，不能保证所有平台兼容。</p>
             <p>安卓 / Windows 客户端：在设置的“视频网址”中填入本站 /discover 地址，即可在视频区域找片。<a href="{{ url_for('discover') }}" target="_blank" rel="noopener noreferrer">打开独立找片页 ↗</a></p>
