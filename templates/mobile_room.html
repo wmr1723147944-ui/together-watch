@@ -22,7 +22,7 @@
         <label>通话音量 <input id="callVolumeSlider" type="range" min="0" max="100" value="100"><output id="callVolumeValue">100%</output></label>
         <div id="remoteAudioContainer" class="hidden"></div>
     </section>
-    <main id="chatContainer" aria-live="polite"><p>双方打开同一集、同一版本，即可同步观看。</p></main>
+    <main id="chatContainer" aria-live="polite"><p>新版 Windows 邀请可自动带出片源；旧版或动态选集来源请核对同一集、同一版本。</p></main>
     <form id="chatForm">
         <input id="chatInput" aria-label="聊天消息" placeholder="说点什么…" maxlength="500" autocomplete="off">
         <button id="sendBtn" type="button" disabled>发送</button>
@@ -31,6 +31,6 @@
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20261008-sync') }}" defer></script>
     <script src="{{ url_for('static', filename='js/native-sync.js', v='20261013-solo') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261013-solo') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261018-watch-rooms') }}" defer></script>
 </body>
 </html>

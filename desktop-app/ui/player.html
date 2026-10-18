@@ -1,0 +1,8 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; media-src https: blob:; connect-src https:; worker-src blob:; img-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer"><title>一起看 · 内置播放</title><link rel="stylesheet" href="player.css"></head>
+<body><main><video id="video" controls playsinline preload="auto"></video>
+<div id="notice" role="status">正在准备内置播放…</div></main>
+<footer><span id="quality">内置播放 · 每位成员仍需选择同一集、同一版本</span><label>画质 <select id="levels"><option value="-1">自动</option></select></label><button id="fit">铺满 / 完整</button></footer>
+<script src="hls.min.js"></script><script src="player.js"></script></body></html>

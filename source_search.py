@@ -17,7 +17,7 @@ import urllib3
 from source_discovery import OPEN_FILMS, normalize_query
 
 
-SEARCH_VERSION = "20261017-ddys-ui"
+SEARCH_VERSION = "20261018-watch-rooms"
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",

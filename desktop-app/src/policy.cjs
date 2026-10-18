@@ -59,7 +59,7 @@ function playbackCommand(raw, session) {
         issuedAt: Number.isFinite(raw.issuedAt) ? raw.issuedAt : Date.now() };
 }
 function panelBounds(width, height, full) {
-    const top = full ? 0 : 156;
+    const top = full ? 0 : 200;
     const roomWidth = full ? 0 : Math.min(400, Math.max(300, Math.round(width * .29)));
     return { video: { x: 0, y: top, width: width - roomWidth, height: Math.max(1, height - top) },
         room: { x: width - roomWidth, y: top, width: roomWidth, height: Math.max(1, height - top) } };
@@ -90,4 +90,35 @@ function isDiscoveryUrl(value, server = SERVER) {
     try { const url = new URL(value); return !url.username && !url.password && url.origin === server && url.pathname === '/discover'; }
     catch { return false; }
 }
-module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, panelBounds, playSelection, isDiscoveryUrl };
+function programSelection(value, server = SERVER) {
+    const selection = playSelection(value, server);
+    if (selection) {
+        const parts = new URL(value).pathname.split('/');
+        return {source: parts[3], item: parts[4], episode: parts[5]};
+    }
+    const samples = {sintel:'https://media.w3.org/2010/05/sintel/trailer.mp4', bunny:'https://media.w3.org/2010/05/bunny/trailer.mp4'};
+    for (const [item, page] of Object.entries(samples)) if (value === page) return {source:'sample',item,episode:'video'};
+    try {
+        const url = new URL(value);
+        if (url.protocol === 'https:' && ['www.kanju.ai','kanju.ai'].includes(url.host) && !url.username && !url.password) {
+            const match = /^\/player\/([A-Za-z0-9_-]{1,240})$/.exec(url.pathname);
+            // Only a public page identity. Drop tracking / session query fields.
+            if (match) return {source:'kanju',item:match[1],episode:'page'};
+        }
+    } catch {}
+    return null;
+}
+function programTarget(value, server = SERVER) {
+    if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1) return null;
+    const p = value.program;
+    if (!p || ![p.source,p.item,p.episode].every(v => typeof v === 'string')) return null;
+    const selection = playSelection(`${server}/discover/play/${p.source}/${p.item}/${p.episode}`, server);
+    let page = selection?.page;
+    if (p.source === 'sample' && ['sintel','bunny'].includes(p.item) && p.episode === 'video') page = `https://media.w3.org/2010/05/${p.item}/trailer.mp4`;
+    if (p.source === 'kanju' && /^[A-Za-z0-9_-]{1,240}$/.test(p.item) && p.episode === 'page') page = `https://www.kanju.ai/player/${p.item}`;
+    return page && page === p.page ? {...selection, page, revision:value.revision, exact:p.exact_episode === true} : null;
+}
+function isKanju(value) {
+    try { const u = new URL(value); return u.protocol === 'https:' && ['www.kanju.ai','kanju.ai'].includes(u.host) && !u.username && !u.password; } catch { return false; }
+}
+module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, panelBounds, playSelection, isDiscoveryUrl, programSelection, programTarget, isKanju };

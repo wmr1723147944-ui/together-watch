@@ -76,6 +76,15 @@ exports.run = async createDesktop => {
     const backend = spawn(python, ['-u', '-c', `
 from app import app, socketio, ensure_room_state, LEGAL_NOTICE_VERSION
 from flask import send_file
+import os
+if os.environ.get('TW_SMOKE_INVITE_ONLY') == '1':
+    import app as module
+    def title_search(source, query):
+        return dict(source_id=source,query=query,status='ok',results=[dict(title='Sintel fixture',page_url='https://video.blender.org/videos/watch/12345678-1234-1234-1234-123456789abc')] if source == 'blender' else [])
+    def title_detail(source, page):
+        return dict(source_id=source,page_url=page,item_id='12345678-1234-1234-1234-123456789abc',status='ok',episodes=[dict(id='video',title='Test episode',launch_path='/discover/play/blender/12345678-1234-1234-1234-123456789abc/video')])
+    module.search_provider = title_search
+    module.load_detail = title_detail
 @app.get('/test-media.mp4')
 def test_media():
     return send_file(${JSON.stringify(media)}, mimetype='video/mp4', conditional=True)
@@ -95,6 +104,14 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
     const clients = [];
     try {
         await until('local backend', async () => { try { return (await fetch(server + '/health')).ok; } catch { return false; } });
+        if (process.env.TW_SMOKE_INVITE_ONLY === '1') {
+            await require('./invite-smoke.cjs').run({createDesktop,server,output,until});
+            return;
+        }
+        if (process.env.TW_SMOKE_BUILTIN_ONLY === '1') {
+            await require('./builtin-smoke.cjs').run({createDesktop,server,output,until});
+            return;
+        }
         if (process.env.TW_SMOKE_MIXED_ONLY === '1') {
             await require('./mixed-smoke.cjs').run({ createDesktop, server, source, output, until, inputKey });
             return;
@@ -183,7 +200,7 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         // Hidden WebContentsViews may not expose a capturable compositor surface.
         // Geometry and restored styles above/below are the fullscreen assertions.
         await a.toggleFullscreen(false); await delay(400);
-        assert.equal(a.state().video.getBounds().y, 156);
+        assert.equal(a.state().video.getBounds().y, 200);
         assert.equal(await a.state().selected.frame.executeJavaScript('document.querySelector("video").style.position'), '');
         await a.action('cinema');
         assert.equal(await a.state().selected.frame.executeJavaScript('document.querySelector("video").style.position'), 'fixed');

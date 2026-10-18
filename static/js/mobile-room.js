@@ -24,6 +24,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let commands = [];
     let lastProbe = 0;
     let receivedAt = 0;
+    let roomProgram = null;
+    let appliedProgramRevision = 0;
+    function acceptProgram(value) {
+        if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1 || !value.program) return;
+        if (roomProgram && value.revision <= roomProgram.revision) return;
+        roomProgram = value;
+        stopNative();
+        playerStatus.textContent = '房间已选片，正在打开房主的播放页…';
+    }
     function queueCommand(command) {
         commands = commands.filter(item => item.type !== command.type);
         commands.push(command);
@@ -48,6 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
         addSystemMessage: text => addMessage(text) });
     socket.on('connect', () => {
         socket.emit('join', { room, username, client_key: clientKey });
+        socket.emit('request_room_program', { room }, reply => acceptProgram(reply?.selection));
         status.textContent = '房间已连接';
         send.disabled = false;
         call.handleSocketReconnect();
@@ -62,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     socket.on('chat_message', data => addMessage(data.message, data.username));
     socket.on('status', data => addMessage(data.msg));
     socket.on('app_error', data => addMessage(data.message));
+    socket.on('room_program', acceptProgram);
     function sendChat() {
         const message = input.value.trim();
         if (!message || !socket.connected) return;
@@ -81,8 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!companion?.connected) return;
             // Socket.IO treats an explicit undefined callback as a second
             // payload (serialized to null), not as an omitted argument.
-            if (typeof ack === 'function') companion.emit(name, { ...data, room }, ack);
-            else companion.emit(name, { ...data, room });
+            if (typeof ack === 'function') companion.emit(name, { ...data, room, program_revision: appliedProgramRevision }, ack);
+            else companion.emit(name, { ...data, room, program_revision: appliedProgramRevision });
         },
         command: queueCommand,
         cancelCommand: () => { commands = commands.filter(item => item.type !== 'state'); },
@@ -107,7 +118,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         companion.on('disconnect', () => { commands = []; sync.reset(); playerStatus.textContent = '播放器正在重连…'; });
         for (const name of ['room_state', 'sync_video', 'playback_ack', 'buffering_state']) {
-            companion.on(name, data => sync.state(data, name));
+            companion.on(name, data => {
+                if (data?.program_revision && data.program_revision !== appliedProgramRevision) return;
+                sync.state(data, name);
+            });
         }
         companion.on('sync_pong', data => {
             const sample = Number(data.server_time) - (Number(data.client_time) + Date.now()) / 2000;
@@ -121,8 +135,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // Android polls this object only while the top-level page is our HTTPS
     // mobile room. No Java interface is exposed to a third-party video page.
     window.TogetherWatchMobile = {
+        program() { return roomProgram; },
+        applyProgram(revision) {
+            if (!Number.isSafeInteger(revision) || revision < 1) return false;
+            stopNative();
+            appliedProgramRevision = revision;
+            return true;
+        },
         receive(data) {
             receivedAt = Date.now();
+            if (roomProgram && roomProgram.revision !== appliedProgramRevision) return;
             if (!data?.active) {
                 if (companion) stopNative();
                 playerStatus.textContent = '网页播放 · 在上方页面操作';

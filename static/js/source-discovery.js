@@ -110,7 +110,7 @@
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
-                status.textContent = found ? `${found} 个选集 · 点击后在新版客户端播放区打开。各成员仍需选择同一集。`
+                status.textContent = found ? `${found} 个选集 · Windows 0.4.0 可选好再建房，朋友粘贴邀请自动跟随。`
                     : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
                     : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';
                 if (found && data.selection_mode === 'original_page') {

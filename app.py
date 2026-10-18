@@ -33,6 +33,7 @@ from werkzeug.utils import secure_filename
 
 from source_discovery import discovery_context, is_search_page, normalize_query
 from source_search import SEARCH_VERSION, provider_choices, search_provider, load_detail, selection_page
+from room_program import normalize_program
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -2214,6 +2215,7 @@ def hls_proxy():
 
 
 room_states = {}
+room_programs = {}
 room_members = defaultdict(dict)
 sid_membership = {}
 sid_roles = {}
@@ -2243,6 +2245,83 @@ def cleanup_stale_rooms():
             room_buffering.pop(room_id, None)
             rooms_paused_for_buffering.discard(room_id)
             room_playback_leaders.pop(room_id, None)
+            room_programs.pop(room_id, None)
+
+
+def public_room_program(room_id):
+    entry = room_programs.get(room_id)
+    return {"program": dict(entry["program"]), "revision": entry["revision"]} if entry else None
+
+
+def program_request():
+    origin = request.headers.get("Origin")
+    if ((origin and origin.rstrip("/") != request.host_url.rstrip("/"))
+            or request.headers.get("Sec-Fetch-Site") == "cross-site"):
+        abort(403)
+    if not request.is_json or request.content_length is None or request.content_length > 2048:
+        abort(400)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict) or set(data) != {"selection"}:
+        abort(400)
+    program = normalize_program(data["selection"], {p["id"] for p in enabled_search_sources()})
+    if not program:
+        abort(400)
+    return program
+
+
+def program_response(data, status=200):
+    response = jsonify(data)
+    response.status_code = status
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.post("/api/watch-rooms")
+@rate_limit("watch-room-create", limit=20, window_seconds=60)
+def create_watch_room():
+    program = program_request()
+    cleanup_stale_rooms()
+    with room_lock:
+        if len(room_programs) >= 1000:
+            return program_response({"error": "房间繁忙，请稍后再试"}, 503)
+        room_id, owner = secrets.token_hex(12), secrets.token_urlsafe(32)
+        room_programs[room_id] = {"owner": owner, "program": program, "revision": 1}
+        room_activity[room_id] = time.time()
+        return program_response({"room": room_id, "owner": owner, **public_room_program(room_id)}, 201)
+
+
+@app.route("/api/watch-rooms/<room_id>/program", methods=["GET", "PUT"])
+@rate_limit("watch-room-program", limit=120, window_seconds=60)
+def watch_room_program(room_id):
+    # The unguessable invitation ID grants read/join access, never host rights.
+    if not re.fullmatch(r"[a-f0-9]{24}", room_id):
+        abort(404)
+    cleanup_stale_rooms()
+    program = program_request() if request.method == "PUT" else None
+    with room_lock:
+        entry = room_programs.get(room_id)
+        if not entry:
+            return program_response({"error": "房间不存在或已过期"}, 404)
+        if request.method == "PUT":
+            supplied = request.headers.get("Authorization", "")
+            if not secrets.compare_digest(supplied.encode("utf-8"), ("Bearer " + entry["owner"]).encode("utf-8")):
+                abort(403)
+            if program != entry["program"]:
+                entry.update(program=program, revision=entry["revision"] + 1)
+                room_states.pop(room_id, None)
+                room_playback_leaders.pop(room_id, None)
+                room_buffering.pop(room_id, None)
+                rooms_paused_for_buffering.discard(room_id)
+            room_activity[room_id] = time.time()
+            socketio.emit("room_program", public_room_program(room_id), to=room_id)
+        return program_response(public_room_program(room_id))
+
+
+def program_matches(data, room_id):
+    entry = room_programs.get(room_id)
+    return not entry or (type(data.get("program_revision")) is int
+                         and data["program_revision"] == entry["revision"])
 
 
 def ensure_room_state(room_id, now=None):
@@ -2275,6 +2354,8 @@ def current_room_state(room_id):
         ):
             return None
         snapshot = dict(state)
+        if room_id in room_programs:
+            snapshot["program_revision"] = room_programs[room_id]["revision"]
         # A periodic reply is an acknowledgement of the controller's own
         # sample, not a new instruction to that same player. Use the socket
         # identity (never a client-supplied flag), and do not exempt a server
@@ -2574,6 +2655,10 @@ def on_join(data):
     if state:
         emit("room_state", state)
 
+    program = public_room_program(room_id)
+    if program:
+        emit("room_program", program)
+
 
 @socketio.on("leave")
 def on_leave(_data=None):
@@ -2600,6 +2685,12 @@ def request_room_state(data):
     # A native player must distinguish a confirmed empty room from a delayed
     # response before its first sample is allowed to establish the timeline.
     return {"ok": True, "state": state}
+
+
+@socketio.on("request_room_program")
+def request_room_program(data):
+    identity = socket_identity(data)
+    return {"ok": bool(identity), "selection": public_room_program(identity[0]) if identity else None}
 
 
 @socketio.on("companion_command")
@@ -2658,6 +2749,8 @@ def handle_buffering_event(data):
     if not identity:
         return
     room_id, username = identity
+    if not program_matches(data, room_id):
+        return
     # External-page companions cannot reliably distinguish a short decoder stall
     # from actual network buffering. Never let that heuristic pause the room.
     if sid_roles.get(request.sid) == "companion":
@@ -2874,6 +2967,8 @@ def handle_video_event(data):
         emit("app_error", {"message": "请重新加入房间"})
         return
     room_id, username = identity
+    if not program_matches(data, room_id) or (room_id in room_programs and data.get("type") == "change_source"):
+        return
 
     event_type = data.get("type")
     if event_type not in CONTROL_EVENTS:
@@ -2901,6 +2996,8 @@ def handle_video_event(data):
 
     now = time.time()
     with room_lock:
+        if not program_matches(data, room_id):
+            return
         state = ensure_room_state(room_id, now)
         if sid_roles.get(request.sid) == "companion":
             room_playback_leaders[room_id] = {
@@ -3014,6 +3111,8 @@ def handle_playback_snapshot(data):
     if not identity or sid_roles.get(request.sid) != "companion":
         return
     room_id, _username = identity
+    if not program_matches(data, room_id):
+        return
 
     try:
         event_time = float(data.get("time", 0))
@@ -3035,6 +3134,8 @@ def handle_playback_snapshot(data):
     if data.get("seeking") or (playing and ready_state < 3):
         return
     with room_lock:
+        if not program_matches(data, room_id):
+            return
         state = ensure_room_state(room_id, now)
         media_source = state.get("media_source") or {}
         if media_source.get("mode") == "direct_media":

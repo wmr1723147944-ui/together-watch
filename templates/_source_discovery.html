@@ -30,6 +30,7 @@
             </fieldset>
             <p class="discovery-note search-privacy">主动搜索时只向勾选来源发送片名，不发送房间号或账号。片目、画质与观看权限以原站为准。</p>
         </form>
+        <p class="discovery-note"><a href="https://www.kanju.ai/" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">看剧 AI · 原站内搜索 ↗</a> · 未接入批量搜索接口。新版 Windows 可在软件内搜索并打开播放页，再用当前页建房；动态选集需核对集数。</p>
         <section id="discoveryWelcome" class="discovery-welcome" aria-labelledby="discoveryWelcomeTitle">
             <div class="discovery-section-heading"><h3 id="discoveryWelcomeTitle">从一个片名开始</h3><span>试搜示例 · 不是播放推荐</span></div>
             <div class="discovery-starters">
@@ -124,7 +125,7 @@
         <details class="discovery-next">
             <summary>使用帮助与来源说明 <span>找到后，怎样一起看？</span></summary>
             {% if discovery_standalone %}
-            <p>新版客户端内：点“找片”，搜索片名 → 详情 / 选集 → 点击集数。Windows 可用“影院 / 网页”切换纯视频画面和原站页面。两人需选择同一集、同一版本。</p>
+            <p>Windows 0.4.0：先搜索 → 详情 / 选集 → 点击集数建房 → 复制邀请。朋友在客户端首页粘贴邀请即可跟随，不用再输入视频链接。旧版客户端仍需手动打开同一集；动态选集站点仍需核对版本。</p>
             {% else %}
             <p>复制找到的具体播放页地址，粘贴到房间的“视频链接”栏。每个人使用自己的账号和观看权限；普通网页可能仍需助手，不能保证所有平台兼容。</p>
             <p>安卓 / Windows 客户端：在设置的“视频网址”中填入本站 /discover 地址，即可在视频区域找片。<a href="{{ url_for('discover') }}" target="_blank" rel="noopener noreferrer">打开独立找片页 ↗</a></p>

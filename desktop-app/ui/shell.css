@@ -1,7 +1,7 @@
 :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #263347; background: #f5f7fa; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-/* Keep header + tools exactly 156px: policy.panelBounds uses this inset. */
+/* Keep header + tools exactly 200px: policy.panelBounds uses this inset. */
 header { height: 72px; display: flex; align-items: center; gap: 24px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e1e6ee; }
 .brand { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 750; white-space: nowrap; }
 .mark { display: grid; place-items: center; width: 42px; height: 42px; background: #e7f7ff; color: #0785b3; border-radius: 11px; font-size: 21px; }
@@ -28,7 +28,7 @@ a { color: #0785b3; }
 .primary:hover { background: #0785b3; }
 #error { color: #ba3657; min-height: 18px; font-size: 13px; }
 .hint { font-size: 12px; border-top: 1px solid #e5e9f0; padding-top: 18px; }
-#tools { height: 84px; padding: 6px 14px; background: #f7f9fc; }
+#tools { height: 128px; padding: 6px 14px; background: #f7f9fc; }
 #sourceForm, nav { display: flex; gap: 8px; align-items: center; }
 #sourceForm input { margin: 0; padding: 6px 10px; flex: 1; min-width: 0; }
 #sourceForm button, nav button { font-size: 12px; padding: 6px 10px; white-space: nowrap; }
@@ -36,5 +36,13 @@ a { color: #0785b3; }
 nav { margin-top: 6px; }
 #roomLabel { flex: 1; font-size: 12px; color: #728095; }
 #placeholder { text-align: center; margin-top: 100px; color: #728095; }
+.media-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e1e6ee; }
+.media-tools button, .media-tools select { font: inherit; font-size: 12px; padding: 6px 10px; }
+.media-tools select { flex: 1; min-width: 0; background: #fff; color: #425269; border: 1px solid #dce3ed; border-radius: 7px; }
+#play-media { background: #0998cc; color: white; border-color: #0998cc; }
+#modeLabel { color: #0785b3; font-size: 12px; min-width: 50px; }
 [hidden] { display: none !important; }
+#finderTools { height:128px; padding:12px 24px; background:#fff; border-bottom:1px solid #dce3ed; }
+#finderTools span { margin-left:20px; color:#728095; font-size:13px; }
+#finderTools p { color:#728095; font-size:12px; margin:8px 0; }
 @media (max-height: 800px) { #setup { margin: 16px auto; padding: 20px 32px; } h1 { font-size: 28px; } }
