@@ -85,6 +85,18 @@ if os.environ.get('TW_SMOKE_INVITE_ONLY') == '1':
         return dict(source_id=source,page_url=page,item_id='12345678-1234-1234-1234-123456789abc',status='ok',episodes=[dict(id='video',title='Test episode',launch_path='/discover/play/blender/12345678-1234-1234-1234-123456789abc/video')])
     module.search_provider = title_search
     module.load_detail = title_detail
+if os.environ.get('TW_SMOKE_CATALOG_ONLY') == '1':
+    import app as module
+    original_search, original_detail = module.search_provider, module.load_detail
+    def visual_search(source, query):
+        if source == 'pkavi' and query == '视觉测试':
+            return dict(source_id=source,query=query,status='ok',results=[dict(title='视觉测试动画',page_url='https://www.pkavi.com/mv/514960.html')])
+        return original_search(source,query)
+    def visual_detail(source, page):
+        if source == 'pkavi' and page == 'https://www.pkavi.com/mv/514960.html':
+            return dict(source_id=source,page_url=page,item_id='514960',status='ok',description='本地选集与邀请流程测试',episodes=[dict(id='3-'+str(n),title='第'+str(n)+'集',line='线路 3',launch_path='/discover/play/pkavi/514960/3-'+str(n)) for n in (1,2)])
+        return original_detail(source,page)
+    module.search_provider, module.load_detail = visual_search, visual_detail
 @app.get('/test-media.mp4')
 def test_media():
     return send_file(${JSON.stringify(media)}, mimetype='video/mp4', conditional=True)
@@ -104,6 +116,10 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
     const clients = [];
     try {
         await until('local backend', async () => { try { return (await fetch(server + '/health')).ok; } catch { return false; } });
+        if (process.env.TW_SMOKE_CATALOG_ONLY === '1') {
+            await require('./catalog-smoke.cjs').run({createDesktop,server,output,until});
+            return;
+        }
         if (process.env.TW_SMOKE_DIRECTORY_ONLY === '1') {
             await require('./directory-smoke.cjs').run({createDesktop,server,output,until});
             return;

@@ -82,10 +82,12 @@ class WatchRoomTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/watch-rooms/'+created['room']+'/program').status_code,404)
         self.assertNotIn(created['room'], application.room_programs)
 
-    def test_kanju_entry_is_not_claimed_as_search_results(self):
+    def test_kanju_search_is_labeled_windows_only_not_server_scraping(self):
         html = self.client.get('/discover').text
         self.assertIn('https://www.kanju.ai/',html)
-        self.assertNotIn('data-live-source="kanju"',html)
+        self.assertIn('data-live-source="kanju"',html)
+        self.assertIn('Windows 0.6.0',html)
+        self.assertIn('不代签原站接口',html)
 
 
 if __name__ == '__main__':

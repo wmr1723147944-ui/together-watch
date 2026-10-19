@@ -10,7 +10,7 @@ function setup() {
     }
     const cards = [
         {dataset:{directoryText:'风铃动漫 www.aafun.cc',directoryCategory:'动漫',directoryStatus:'verification'}},
-        {dataset:{directoryText:'Plex watch.plex.tv',directoryCategory:'海外',directoryStatus:'entry'}},
+        {dataset:{directoryText:'Yidio www.yidio.com',directoryCategory:'聚合',directoryStatus:'entry'}},
     ];
     const copy = {dataset:{siteCopy:'https://www.aafun.cc/'},listeners:{},addEventListener(n,f){this.listeners[n]=f;}};
     elements.get('recommendedSites').querySelectorAll = s => s === '[data-directory-site]' ? cards : [copy];
@@ -21,7 +21,7 @@ test('site filters are separate from film search, combine name/category/status a
     const {elements,cards} = setup();
     const query = elements.get('siteDirectoryQuery'), category = elements.get('siteDirectoryCategory'), status = elements.get('siteDirectoryStatus');
     assert.ok(cards.every(c=>!c.hidden));
-    query.value='ｐｌｅｘ'; query.listeners.input();
+    query.value='ｙｉｄｉｏ'; query.listeners.input();
     assert.deepEqual(cards.map(c=>c.hidden),[true,false]);
     category.value='动漫'; category.listeners.change();
     assert.ok(cards.every(c=>c.hidden));

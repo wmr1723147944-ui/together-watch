@@ -6,6 +6,8 @@ const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const policy = require('./policy.cjs');
 const siteDirectory = require('./site-directory.cjs');
+const {createMetadataBrowser}=require('./metadata-browser.cjs');
+const {script:CATALOG_SCRIPT}=require('./catalog-adapters.cjs');
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
 const AGENT = fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
 const MEDIA_SCAN = fs.readFileSync(path.join(__dirname, 'media-scan.js'), 'utf8');
@@ -13,6 +15,7 @@ const PLAYER_URL = policy.APP_ORIGIN + '/player.html';
 const SMOKE = !app.isPackaged && process.argv.includes('--smoke-test');
 const PACKAGE_CHECK = process.argv.includes('--verify-package');
 const shells = new Map();
+const metadataControls = new Map();
 protocol.registerSchemesAsPrivileged([{ scheme: 'tw-app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.enableSandbox();
 if (SMOKE || PACKAGE_CHECK) app.setPath('userData', path.join(app.getPath('temp'), `tw-desktop-check-${process.pid}`));
@@ -56,6 +59,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     let micApproved = false, switching = false;
     let builtin = null, scanning = null, lastScan = 0, lastOriginalPause = 0, sourcePage = '';
     let draft = null, managed = null, finderMode = 'catalog', selecting = false;
+    // Keep search context and the most recent original-site page, not a growing
+    // collection of background tabs. Login state stays in videoPartition.
+    const finderViews = new Map();
+    const parkedFinders = new WeakSet();
+    let finderGeneration = 0;
     const catalog = new MediaCatalog(), requests = new Map();
     const activeVideo = () => builtin || video;
     const status = data => { if (!win.isDestroyed()) win.webContents.send('desktop:status', typeof data === 'string' ? { message: data } : data); };
@@ -63,6 +71,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     const sourceAllowed = url => !!policy.publicHttps(url) || (SMOKE && testSource && typeof url === 'string' && url.startsWith(testSource));
     const roomPartition = session.fromPartition(SMOKE ? `room-test-${win.id}` : 'persist:tw-room');
     const videoPartition = session.fromPartition(SMOKE ? `video-test-${win.id}` : 'persist:tw-video');
+    const metadataBrowser=createMetadataBrowser(win,videoPartition,{hidden:SMOKE});
+    win.on('close',()=>metadataBrowser.cancelAll());
     // No source-site cookies, login state, preload or IPC in the independent player.
     const playerPartition = session.fromPartition(`player-${win.id}-${crypto.randomBytes(6).toString('hex')}`);
     installAssets(playerPartition);
@@ -202,15 +212,24 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (win.isDestroyed()) return;
         const [width, height] = win.getContentSize();
         if (!video || !roomView) {
-            if (discoveryView) { discoveryView.setBounds({x:0,y:200,width,height:Math.max(1,height-200)}); discoveryView.setVisible(browsing); }
+            layoutFinder({x:0,y:200,width,height:Math.max(1,height-200)}, browsing);
             return;
         }
         const bounds = policy.panelBounds(width, height, full);
         video.setBounds(bounds.video); roomView.setBounds(bounds.room);
         if (builtin) { builtin.setBounds(bounds.video); builtin.setVisible(!browsing || full); }
-        if (discoveryView) { discoveryView.setBounds(bounds.video); discoveryView.setVisible(browsing && !full); }
+        layoutFinder(bounds.video, browsing && !full);
         video.setVisible(!builtin && (!browsing || full));
         roomView.setVisible(!full);
+    }
+    function layoutFinder(bounds, visible) {
+        if (!discoveryView || discoveryView.webContents.isDestroyed()) return;
+        discoveryView.setBounds(bounds);
+        if (visible) {
+            parkedFinders.delete(discoveryView);
+            discoveryView.setVisible(true);
+            discoveryView.webContents.setAudioMuted(false);
+        } else parkFinder(discoveryView).catch(() => {});
     }
     function keyHandler(_event, input) {
         if (input.type !== 'keyDown') return;
@@ -255,14 +274,16 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (full) status('全屏：Esc / F11 返回，Ctrl+Z 切换完整画面和铺满裁边');
     }
     function closeViews() {
+        ++finderGeneration; metadataBrowser.cancelAll();
         closeBuiltin(); sourcePage = ''; resetMedia();
         ++generation; clearTimeout(timer); timer = null; selected = null; current = null; micApproved = false;
         full = false;
         if (!win.isDestroyed()) win.setFullScreen(false);
-        for (const view of [video, roomView, discoveryView]) if (view) {
+        for (const view of new Set([video, roomView, ...finderViews.values()])) if (view) {
             if (!win.isDestroyed()) win.contentView.removeChildView(view);
             if (!view.webContents.isDestroyed()) view.webContents.close();
         }
+        finderViews.clear();
         video = roomView = discoveryView = null;
         browsing = false; pendingEpisode = null; selectionFailed = false;
         draft = managed = null;
@@ -315,7 +336,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         selected = null; searchingSince = Date.now();
         browsing = false; selectionFailed = false;
         if (selection) cinema = true;
-        pendingEpisode = ['cupfox', 'yhdmoe'].includes(selection?.source) ? { ...selection, at: Date.now() } : null;
+        pendingEpisode = ['cupfox', 'yhdmoe', 'kanju'].includes(selection?.source) ? { ...selection, at: Date.now() } : null;
         layout();
         video.webContents.loadURL(url).catch(() => {});
         return { ok: true };
@@ -377,17 +398,62 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         await roomView.webContents.executeJavaScript(`window.TogetherWatchMobile.applyProgram(${target.revision})`);
         status(target.exact ? '已打开房主所选集数，加载后自动接上房间进度。' : '已打开同一页面：请核对集数，再点“重连同步”。此来源未提供稳定集数标识。');
     }
+    async function parkFinder(view) {
+        if (!view || view.webContents.isDestroyed() || parkedFinders.has(view)) return;
+        parkedFinders.add(view);
+        view.setVisible(false);
+        view.webContents.setAudioMuted(true);
+        if (view === finderViews.get('catalog')) metadataBrowser.cancelAll();
+        // Do not let hidden source pages keep playing while the user searches.
+        await Promise.all(view.webContents.mainFrame.framesInSubtree.slice(0,32).map(frame =>
+            timeout(frame.executeJavaScript('document.querySelectorAll("video,audio").forEach(media=>media.pause())')).catch(() => {})));
+    }
     async function showDiscovery(mode = 'catalog') {
+        const epoch = ++finderGeneration;
         await toggleFullscreen(false);
+        if (epoch !== finderGeneration || win.isDestroyed()) return;
         const entry = mode.startsWith('site:') ? siteDirectory.siteById(mode.slice(5)) : null;
         if (mode.startsWith('site:') && !entry) { status('这个站点不在已核对的目录中'); return; }
         if (discoveryView && finderMode !== mode) {
-            win.contentView.removeChildView(discoveryView); discoveryView.webContents.close(); discoveryView = null;
+            browsing = false;
+            metadataBrowser.cancelAll();
+            await parkFinder(discoveryView);
+            if (epoch !== finderGeneration || win.isDestroyed()) return;
+        }
+        discoveryView = finderViews.get(mode) || null;
+        if (discoveryView?.webContents.isDestroyed()) { finderViews.delete(mode); discoveryView = null; }
+        // Evict the previous original site when opening a different one.
+        if (mode !== 'catalog') for (const [key, view] of finderViews) if (key !== 'catalog' && key !== mode) {
+            finderViews.delete(key);
+            win.contentView.removeChildView(view);
+            if (!view.webContents.isDestroyed()) view.webContents.close();
         }
         finderMode = mode;
         if (!discoveryView) {
-            discoveryView = new WebContentsView({ webPreferences: securePreferences({ session: videoPartition }) });
+            discoveryView = new WebContentsView({ webPreferences: securePreferences({ session: videoPartition,
+                ...(mode==='catalog'?{preload:path.join(__dirname,'discovery-preload.cjs')}:{}) }) });
+            finderViews.set(mode, discoveryView);
             const wc = discoveryView.webContents;
+            if(mode==='catalog') {
+                let metadataNavigation=0;
+                const control={
+                    trusted:event=>browsing && discoveryView?.webContents===wc && !wc.isDestroyed() && !!event.senderFrame && event.sender===wc && event.senderFrame===wc.mainFrame && policy.isDiscoveryUrl(event.senderFrame.url,server),
+                    request:async data=>{
+                        if(!data || typeof data!=='object') return {status:'unavailable'};
+                        const epoch=metadataNavigation, finderEpoch=finderGeneration;
+                        let enabled;
+                        try { enabled=await wc.executeJavaScript('Array.from(document.querySelectorAll("[data-live-source]")).map(n=>n.dataset.liveSource)'); }
+                        catch { return {status:'unavailable'}; }
+                        if(epoch!==metadataNavigation || finderEpoch!==finderGeneration || !browsing || !enabled.includes(data.payload?.source) || wc.isDestroyed() || discoveryView?.webContents!==wc || !policy.isDiscoveryUrl(wc.getURL(),server)) return {status:'unavailable'};
+                        return metadataBrowser.run(data.id,data.kind,data.payload,data.interactive);
+                    },
+                    cancel:id=>{if(typeof id==='string')metadataBrowser.cancel(id);return true;},
+                };
+                metadataControls.set(wc.id,control);
+                const id=wc.id;
+                wc.on('destroyed',()=>{metadataControls.delete(id);metadataBrowser.cancelAll();});
+                wc.on('did-start-navigation',(_e,_url,inPlace,isMainFrame)=>{if(isMainFrame && !inPlace){metadataNavigation++;metadataBrowser.cancelAll();}});
+            }
             discoveryView.setBackgroundColor('#171423');
             win.contentView.addChildView(discoveryView);
             const view = discoveryView, approved = new Set();
@@ -395,7 +461,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             const allowed = url => entry ? siteDirectory.siteNavigation(entry, url, approved)
                 : mode === 'kanju' ? policy.isKanju(url) : policy.isDiscoveryUrl(url, server);
             const requestNavigation = async url => {
-                if (asking || !sourceAllowed(url)) return;
+                if (asking || !browsing || discoveryView !== view || !sourceAllowed(url)) return;
                 asking = true;
                 try {
                     const answer = await dialog.showMessageBox(win, {type:'question', title:'原站请求打开页面',
@@ -410,6 +476,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             const navigate = (event, url) => {
                 if (allowed(url)) return;
                 event.preventDefault();
+                if (!browsing || discoveryView !== view) return;
                 if (entry) { requestNavigation(url); return; }
                 const selection = policy.playSelection(url, server);
                 if (mode === 'catalog' && (selection || siteDirectory.siteHandoff(url, server) || sourceAllowed(url))) chooseSource(url, selection);
@@ -418,15 +485,17 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             wc.on('will-redirect', (event, url) => {
                 if (allowed(url)) return;
                 event.preventDefault();
-                if (entry) status('原站自动跳到了未核对的域名，已暂停。可用“浏览器打开”自行查看；不会自动添加镜像站。');
+                if (entry && browsing && discoveryView === view) status('原站自动跳到了未核对的域名，已暂停。可用“浏览器打开”自行查看；不会自动添加镜像站。');
             });
             wc.on('before-input-event', keyHandler);
             wc.on('will-attach-webview', event => event.preventDefault());
             wc.setWindowOpenHandler(({url}) => { if (entry) requestNavigation(url); return { action: 'deny' }; });
-            wc.on('did-fail-load', (_e, code, _d, _u, main) => { if (main && code !== -3) status(entry ? '原站加载失败。可重试、在浏览器打开，或返回目录换来源；没有修改房间影片。' : '找片页加载失败，请检查服务器更新或网络'); });
+            wc.on('did-fail-load', (_e, code, _d, _u, main) => { if (browsing && discoveryView === view && main && code !== -3) status(entry ? '原站加载失败。可重试、在浏览器打开，或返回目录换来源；没有修改房间影片。' : '找片页加载失败，请检查服务器更新或网络'); });
             wc.loadURL(entry ? entry.url : mode === 'kanju' ? 'https://www.kanju.ai/' : server + '/discover').catch(() => {});
         }
-        browsing = true; layout(); status({finderMode:mode, message:entry ? `${entry.name}：在原站搜索、登录或完成验证；尚未支持此站邀请自动选集。` : mode === 'kanju' ? '看剧 AI 原站：搜索并打开播放页后，用当前页建房 / 换片。登录、验证码在原站完成。' : current ? '房主选集后，朋友自动跟随；原站动态选集请核对版本。' : '先搜索 → 详情 / 选集 → 点击集数再创建房间，现在还没有建房。'});
+        browsing = true; layout(); status({finderMode:mode, message:entry ? (['233dm','pkavi'].includes(entry.id)
+            ? `${entry.name}：可返回找片页统一搜索、选集；也可在原站打开具体集数后点“用当前页建房”。`
+            : `${entry.name}：在原站搜索；若实际出现登录或验证，请自行完成。尚未支持此站邀请自动选集。`) : mode === 'kanju' ? '看剧 AI 原站：搜索并打开播放页后，用当前页建房 / 换片。登录、验证码在原站完成。' : current ? '房主选集后，朋友自动跟随；原站动态选集请核对版本。' : '先搜索 → 详情 / 选集 → 点击集数再创建房间，现在还没有建房。'});
     }
 
     async function pickDirectoryPage() {
@@ -500,7 +569,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         else video.webContents.loadURL(initialSource).catch(() => {});
         const target = roomProgram && policy.programTarget(roomProgram, server);
         if (target && !target.exact) selectionFailed = true;
-        if (['cupfox','yhdmoe'].includes(target?.source)) pendingEpisode = {...target, at:Date.now()};
+        if (['cupfox','yhdmoe','kanju'].includes(target?.source)) pendingEpisode = {...target, at:Date.now()};
         try {
             await roomView.webContents.loadURL(server + '/');
             if (epoch !== generation || new URL(roomView.webContents.getURL()).origin !== server) throw new Error('navigation changed');
@@ -538,14 +607,21 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             if (!stillCurrent()) return;
             if (pendingEpisode) {
                 const request = pendingEpisode;
-                const clicked = wc.getURL() === request.page && !wc.isLoadingMainFrame() && await timeout(wc.executeJavaScript(`(${function(source, episode) {
+                const actual = request.source==='kanju' ? policy.programSelection(wc.getURL(),server) : null;
+                const wanted = request.source==='kanju' ? policy.programSelection(request.page,server) : null;
+                const loaded = !wc.isLoadingMainFrame() && (request.source==='kanju'
+                    ? actual?.source==='kanju' && actual.item===wanted?.item && actual.episode===wanted?.episode
+                    : wc.getURL() === request.page);
+                const clicked = loaded && (request.source==='kanju'
+                    ? await timeout(wc.executeJavaScriptInIsolatedWorld(991,[{code:CATALOG_SCRIPT+';TogetherWatchCatalogAdapters.episodeReady(document,'+JSON.stringify(request.episode)+')'}]))
+                    : await timeout(wc.executeJavaScript(`(${function(source, episode) {
                     const sakura = source === 'yhdmoe';
                     const el = Array.from(document.querySelectorAll(sakura ? 'a.my-episode[play_ep]' : 'span.play-btn[ep_slug]')).find(n => n.getAttribute(sakura ? 'play_ep' : 'ep_slug') === episode);
                     if (!el) return false;
                     const active = sakura ? 'disabled' : 'on';
                     if (!el.classList.contains(active)) el.click();
                     return el.classList.contains(active);
-                }.toString()})(${JSON.stringify(request.source)},${JSON.stringify(request.episode)})`));
+                }.toString()})(${JSON.stringify(request.source)},${JSON.stringify(request.episode)})`)));
                 if (!stillCurrent()) return;
                 if (pendingEpisode === request && clicked) pendingEpisode = null;
                 else if (pendingEpisode === request && Date.now() - request.at > 20000) {
@@ -619,10 +695,10 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             const ok = await scanMedia();
             reportMedia(!ok ? '正在识别，请稍后再试。' : catalog.reason || (catalog.items.size ? '请选择候选，再点“内置播放”。短片段可能是广告，请核对时长。' : '没有识别到可转移的视频。先在网页开始播放；失效源、blob、DASH 或受保护内容可能不支持。'));
         }
-        else if (value === 'original') { closeBuiltin(); browsing = false; layout(); status('已返回原网页，请按需点击播放。'); }
+        else if (value === 'original') { await parkFinder(discoveryView); closeBuiltin(); browsing = false; layout(); status('已返回原网页，请按需点击播放。'); }
         else if (value === 'discover') await showDiscovery();
-        else if (value === 'return-video') { browsing = false; layout(); }
-        else if (value === 'cinema') { browsing = false; cinema = !cinema; layout(); await focusPlayer(full || cinema); status(cinema ? '影院模式：只显示视频，可用原生控制条' : '网页模式：可在原站登录、选集或调整设置'); }
+        else if (value === 'return-video') { await parkFinder(discoveryView); browsing = false; layout(); }
+        else if (value === 'cinema') { await parkFinder(discoveryView); browsing = false; cinema = !cinema; layout(); await focusPlayer(full || cinema); status(cinema ? '影院模式：只显示视频，可用原生控制条' : '网页模式：可在原站登录、选集或调整设置'); }
         else if (value === 'invite') { clipboard.writeText(`${server}/room/${encodeURIComponent(current.room)}`); status(managed ? '邀请已复制。朋友在新版 Windows 客户端粘贴即可打开同一片源并同步；不需要再填视频链接。' : '邀请已复制。此兼容房间尚未记录片源，朋友仍需打开同一集。'); }
         else if (value === 'fullscreen') await toggleFullscreen();
         else if (value === 'detect') { await focusPlayer(false); selected = null; selectionFailed = false; pendingEpisode = null; searchingSince = Date.now(); status('正在重新识别播放器'); }
@@ -631,7 +707,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     const senderIsShell = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
         && event.senderFrame.url === policy.APP_ORIGIN + '/index.html';
-    // There is exactly one shell; remote views have no preload and no IPC API.
+    // Source views have no preload. The first-party catalogue has a separate,
+    // metadata-only bridge; it cannot invoke shell/player actions.
     shells.set(win.webContents.id, { senderIsShell, start, action });
     const shellId = win.webContents.id;
     win.webContents.on('will-navigate', event => event.preventDefault());
@@ -650,6 +727,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
 }
 
 app.whenReady().then(async () => {
+    ipcMain.handle('desktop:metadata',(event,data)=>{
+        const control=metadataControls.get(event.sender.id);
+        return control?.trusted(event)?control.request(data):{status:'unavailable'};
+    });
+    ipcMain.handle('desktop:metadata-cancel',(event,id)=>{
+        const control=metadataControls.get(event.sender.id);
+        return control?.trusted(event)?control.cancel(id):false;
+    });
     for (const command of ['start', 'action']) ipcMain.handle('desktop:' + command, (event, data) => {
         const control = shells.get(event.sender.id);
         return control?.senderIsShell(event) ? control[command](data) : { ok: false };
@@ -670,7 +755,15 @@ app.whenReady().then(async () => {
             const playerReady = await player.webContents.executeJavaScript('typeof Hls === "function" && typeof window.__twBuiltin?.load === "function" && typeof window.desktop === "undefined"');
             player.webContents.close();
             if (!playerReady) throw new Error('packaged independent player or HLS library unavailable');
-            console.log('PACKAGE CHECK PASS: packaged shell, preload, independent player and HLS assets loaded.');
+            const rules=require('./catalog-adapters.cjs');
+            if (!rules.api.request('search',{source:'pkavi',q:'test'}) || !rules.script.includes('readDocument')) throw new Error('packaged catalogue rules unavailable');
+            const discovery=new WebContentsView({webPreferences:securePreferences({session:client.state().mediaSession,preload:path.join(__dirname,'discovery-preload.cjs')})});
+            await discovery.webContents.loadURL(PLAYER_URL);
+            const bridgeReady=await discovery.webContents.executeJavaScript('typeof window.twSourceMetadata?.request === "function" && typeof require === "undefined"');
+            const rejected=await discovery.webContents.executeJavaScript('window.twSourceMetadata.request("package-test","search",{source:"pkavi",q:"test"})');
+            discovery.webContents.close();
+            if(!bridgeReady || rejected.status!=='unavailable') throw new Error('packaged metadata bridge or sender guard unavailable');
+            console.log('PACKAGE CHECK PASS: shell, preload, independent player, HLS, catalogue rules and metadata IPC sender guard.');
             app.exit(0);
         } catch (error) { console.error(error); app.exit(1); }
     } else await createDesktop();

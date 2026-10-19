@@ -1,6 +1,7 @@
 """Reviewed navigation metadata. Never a search API, media resolver or proxy."""
 import json
 from pathlib import Path
+from catalog_sources import PROVIDERS as CATALOG_PROVIDERS
 
 DIRECTORY = json.loads((Path(__file__).parent / "static/data/site-directory.json").read_text(encoding="utf-8"))
 STATUS_LABELS = {
@@ -13,6 +14,7 @@ STATUS_LABELS = {
 def site_entries(disabled=()):
     return [{**s, "status_label": STATUS_LABELS[s["status"]],
              "status_scope": "review_snapshot", "reviewed_at": DIRECTORY["reviewed"],
+             "catalog_adapter": s['id'] in CATALOG_PROVIDERS,
              "launch_path": "/discover/site/" + s["id"]} for s in DIRECTORY["sites"]
             if "site-" + s["id"] not in disabled]
 

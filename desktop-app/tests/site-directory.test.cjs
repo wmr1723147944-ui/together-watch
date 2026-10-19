@@ -5,14 +5,21 @@ const d = require('../src/site-directory.cjs');
 const {SERVER, programSelection} = require('../src/policy.cjs');
 
 test('directory shares reviewed metadata, excludes parked and dead sites', () => {
-    assert.equal(d.sites.length, 19);
+    assert.equal(d.sites.length, 9);
     for (const site of d.sites) {
         assert.equal(d.siteForUrl(site.url), site);
         assert.equal(d.siteHandoff(SERVER + '/discover/site/' + site.id, SERVER), site);
         assert.ok(d.siteNavigation(site, site.url));
         assert.equal(programSelection(site.url), null, 'portal must not create an invitation');
     }
-    for (const id of ['libvio','crackle','myflixer','nunflix']) assert.equal(d.siteById(id), null);
+    for (const id of ['libvio','crackle','myflixer','nunflix','zrf-live','xhzb','tubi','xumo','vudu','pluto','plex','nunuju','omofun','adys']) {
+        assert.equal(d.siteById(id), null);
+        assert.equal(d.siteHandoff(SERVER+'/discover/site/'+id,SERVER),null);
+    }
+    for (const url of ['https://live.zrfme.com/','https://www.xhzb.tw/','https://tubitv.com/','https://gdpr.tubi.tv/',
+        'https://play.xumo.com/','https://www.xumo.com/','https://www.vudu.com/','https://athome.fandango.com/',
+        'https://pluto.tv/','https://watch.plex.tv/','https://www.plex.tv/','https://nunuju.com/',
+        'https://fb.omoo.tv/','https://adys.cc/']) assert.equal(d.siteForUrl(url),null);
     assert.equal(d.siteForUrl('https://www.cupfox.in/'), null, 'similarly named sites are not aliases');
 });
 test('first-party handoff rejects forged routes and caller-supplied targets', () => {

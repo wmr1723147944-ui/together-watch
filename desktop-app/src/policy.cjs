@@ -1,5 +1,6 @@
 'use strict';
 const { isIP } = require('node:net');
+const {api:catalogAdapters}=require('./catalog-adapters.cjs');
 const SERVER = 'https://watchtogethernow.cloud';
 const APP_ORIGIN = 'tw-app://desktop';
 const ROOM_RE = /^[\p{L}\p{N}_-]{4,64}$/u;
@@ -68,9 +69,13 @@ function playSelection(value, server = SERVER) {
     try {
         const url = new URL(value);
         if (url.origin !== server || url.username || url.password || url.search || url.hash) return null;
-        const match = /^\/discover\/play\/(cupfox|huarw|blender|yhdmoe|fcma|ddys)\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+        const match = /^\/discover\/play\/(cupfox|huarw|blender|yhdmoe|fcma|ddys|233dm|pkavi|kanju)\/([^/]+)\/([^/]+)$/.exec(url.pathname);
         if (!match) return null;
         const [, source, item, episode] = match;
+        if (catalogAdapters.sources[source]) {
+            const selected=catalogAdapters.selection(source,item,episode);
+            return selected ? {source,episode,page:selected.page} : null;
+        }
         if (source === 'cupfox' && /^\d{1,20}$/.test(item) && /^ep\d{1,5}$/.test(episode))
             return { source, episode, page: `https://www.cupfox.in/vod-detail/${item}.html` };
         if (source === 'huarw' && /^\d{1,20}$/.test(item) && new RegExp('^' + item + '(?:-\\d{1,5}){1,3}$').test(episode))
@@ -91,6 +96,8 @@ function isDiscoveryUrl(value, server = SERVER) {
     catch { return false; }
 }
 function programSelection(value, server = SERVER) {
+    const original=catalogAdapters.fromPage(value);
+    if (original) return {source:original.source,item:original.item,episode:original.episode};
     const selection = playSelection(value, server);
     if (selection) {
         const parts = new URL(value).pathname.split('/');
@@ -100,10 +107,9 @@ function programSelection(value, server = SERVER) {
     for (const [item, page] of Object.entries(samples)) if (value === page) return {source:'sample',item,episode:'video'};
     try {
         const url = new URL(value);
-        if (url.protocol === 'https:' && ['www.kanju.ai','kanju.ai'].includes(url.host) && !url.username && !url.password) {
-            const match = /^\/player\/([A-Za-z0-9_-]{1,240})$/.exec(url.pathname);
-            // Only a public page identity. Drop tracking / session query fields.
-            if (match) return {source:'kanju',item:match[1],episode:'page'};
+        if (!url.searchParams.has('episode')) {
+            const d=catalogAdapters.detail('kanju',value);
+            if(d) return {source:'kanju',item:d.item,episode:'page'};
         }
     } catch {}
     return null;
@@ -115,7 +121,7 @@ function programTarget(value, server = SERVER) {
     const selection = playSelection(`${server}/discover/play/${p.source}/${p.item}/${p.episode}`, server);
     let page = selection?.page;
     if (p.source === 'sample' && ['sintel','bunny'].includes(p.item) && p.episode === 'video') page = `https://media.w3.org/2010/05/${p.item}/trailer.mp4`;
-    if (p.source === 'kanju' && /^[A-Za-z0-9_-]{1,240}$/.test(p.item) && p.episode === 'page') page = `https://www.kanju.ai/player/${p.item}`;
+    if (p.source === 'kanju' && catalogAdapters.publicId(p.item) && p.episode === 'page') page = `https://www.kanju.ai/player/${encodeURIComponent(p.item)}`;
     return page && page === p.page ? {...selection, page, revision:value.revision, exact:p.exact_episode === true} : null;
 }
 function isKanju(value) {

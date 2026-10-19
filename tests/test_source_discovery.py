@@ -34,7 +34,7 @@ class SourceDiscoveryTests(unittest.TestCase):
 
     def test_navigation_metadata_distinguishes_free_access_from_quality_and_rights(self):
         self.assertEqual(len({s["id"] for s in FREE_SOURCES}), len(FREE_SOURCES))
-        self.assertEqual(discovery_context()["discovery_source_count"], 8)
+        self.assertEqual(discovery_context()["discovery_source_count"], 6)
         for source in FREE_SOURCES:
             for field in ("name", "description", "access", "region", "quality_note"):
                 self.assertTrue(source[field])
@@ -71,7 +71,7 @@ class SourceDiscoveryTests(unittest.TestCase):
         context = discovery_context(source_type="<script>", quality="1080p")
         self.assertEqual(context["discovery_source_type"], "all")
         self.assertEqual(context["discovery_quality"], "all")
-        self.assertEqual(context["discovery_source_count"], 8)
+        self.assertEqual(context["discovery_source_count"], 6)
 
     def test_official_search_encodes_query_without_changing_host(self):
         query = '春天 &q=other # / ? <script> "'
@@ -115,10 +115,10 @@ class SourceDiscoveryTests(unittest.TestCase):
             html = self.client.get('/discover?type=animation&quality=4k').get_data(as_text=True)
         self.assertIn('value="animation" selected', html)
         self.assertIn('value="4k" selected', html)
-        self.assertIn('导航显示 0 / 8 个入口', html)
+        self.assertIn('导航显示 0 / 6 个入口', html)
         self.assertIn('本地目录匹配 2 / 7 部', html)
         self.assertIn('<p id="discoverySourceEmpty" >', html)
-        self.assertIn('中国大陆不在官方支持地区名单', html)
+        self.assertIn('片目与地区限制以原站为准', html)
         self.assertIn('超分辨率不等于原生 4K', html)
         self.assertIn('不会放行新域名', html)
         self.assertIn('data-has-4k="false" hidden', html)

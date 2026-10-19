@@ -128,14 +128,14 @@ test('other pages without the component are unaffected', () => {
     assert.doesNotThrow(() => init({ getElementById() { return null; } }));
 });
 
-function liveFixture(fetcher) {
+function liveFixture(fetcher, sourceIds=['cupfox','huarw']) {
     const make = (tag = 'div') => ({ tag, dataset: {}, value: '', checked: true, hidden: false, children: [], textContent: '', listeners: {},
         append(...nodes) { this.children.push(...nodes); }, replaceChildren(...nodes) { this.children = nodes; },
         addEventListener(type, fn) { this.listeners[type] = fn; }, setAttribute(name, value) { this[name] = value; }, focus() {}, select() { this.selected = true; } });
     const elements = new Map();
     for (const id of ['sourceDiscovery', 'discoveryLive', 'discoveryLiveResults', 'discoveryLiveStatus', 'discoveryQuery',
         'discoveryFeedback', 'discoveryCopyFallback', 'discoveryCopyValue', 'discoveryWelcome']) elements.set(id, make());
-    const choices = ['cupfox', 'huarw'].map(id => Object.assign(make('input'), { dataset: { liveSource: id, sourceName: id, sourceNote: '未验证播放' } }));
+    const choices = sourceIds.map(id => Object.assign(make('input'), { dataset: { liveSource: id, sourceName: id, sourceNote: '未验证播放' } }));
     elements.get('sourceDiscovery').querySelectorAll = () => choices;
     elements.get('discoveryLiveResults').dataset.linkTarget = '_self';
     const doc = { getElementById: id => elements.get(id), createElement: make };
@@ -145,6 +145,37 @@ function liveFixture(fetcher) {
 const foundResponse = (source, title = '开端') => ({ ok: true, json: async () => ({ source_id: source, status: 'ok', results: [{ title,
     page_url: source === 'cupfox' ? 'https://www.cupfox.in/vod-detail/202236115.html' : 'https://huarw.com/movie/85334' }] }) });
 const flatten = node => [node, ...node.children.flatMap(flatten)];
+
+test('adding a third source queues queries instead of exhausting native metadata slots',async()=>{
+    let active=0, peak=0, calls=0;
+    const f=liveFixture(async(_url,opts)=>{
+        calls++;active++;peak=Math.max(peak,active);
+        await new Promise(resolve=>setTimeout(resolve,5));active--;
+        return {ok:true,json:async()=>({source_id:JSON.parse(opts.body).source,status:'ok',results:[]})};
+    },['kanju','233dm','pkavi']);
+    f.elements.get('discoveryQuery').value='测试';await f.live.run();
+    assert.equal(calls,3);assert.equal(peak,2);
+    assert.match(f.elements.get('discoveryLiveStatus').textContent,/已完成 3 \/ 3/);
+});
+
+test('cancelling a search prevents queued sources from starting',async()=>{
+    const pending=[];let calls=0;
+    const f=liveFixture(async(_url,opts)=>{
+        calls++;await new Promise(resolve=>pending.push(resolve));
+        return {ok:true,json:async()=>({source_id:JSON.parse(opts.body).source,status:'ok',results:[]})};
+    },['kanju','233dm','pkavi']);
+    f.elements.get('discoveryQuery').value='测试';const run=f.live.run();
+    assert.equal(calls,2);f.live.cancel(true);pending.forEach(resolve=>resolve());await run;
+    assert.equal(calls,2);
+});
+
+test('browser explains Kanju capability limits rather than falsely reporting no film or verification',async()=>{
+    const f=liveFixture(async()=>({ok:true,json:async()=>({source_id:'kanju',status:'client_required',results:[]})}),['kanju']);
+    f.elements.get('discoveryQuery').value='测试';await f.live.run();
+    const nodes=flatten(f.elements.get('discoveryLiveResults'));
+    assert.ok(nodes.some(n=>n.textContent.includes('需要 Windows 0.6.0')));
+    assert.equal(new URL(nodes.find(n=>n.tag==='a').href).searchParams.get('q'),'测试');
+});
 
 test('source selection preserves empty-query suggestions and clearing restores them', async () => {
     let calls = 0;

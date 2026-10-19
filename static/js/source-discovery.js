@@ -1,5 +1,23 @@
 (function () {
     'use strict';
+    const adapters = typeof module === 'object' && module.exports ? require('./catalog-adapters.js') : globalThis.TogetherWatchCatalogAdapters;
+    let metadataSerial=0;
+    const hasAdapter = source => typeof source==='string' && !!adapters && Object.hasOwn(adapters.sources,source);
+    function nativeMetadata(source) { return hasAdapter(source) && typeof globalThis.twSourceMetadata?.request==='function'
+        && (source!=='kanju' || globalThis.twSourceMetadata.supportedSources?.includes('kanju')); }
+    async function metadataRequest(kind,payload,fetcher,signal,interactive=false) {
+        if (!nativeMetadata(payload.source)) return fetcher('/api/discover/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(payload),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal});
+        const id='catalog-'+Date.now()+'-'+(++metadataSerial);
+        const cancel=()=>Promise.resolve(globalThis.twSourceMetadata.cancel(id)).catch(()=>{});
+        if(signal.aborted) throw new Error('cancelled');
+        signal.addEventListener('abort',cancel,{once:true});
+        try {
+            const data=await globalThis.twSourceMetadata.request(id,kind,payload,interactive);
+            if(signal.aborted) throw new Error('cancelled');
+            return {ok:true,json:async()=>data};
+        } finally {signal.removeEventListener('abort',cancel);}
+    }
     function normalizeQuery(value) {
         return Array.from(String(value || '').normalize('NFKC').replace(/[\u0000-\u001f\u007f]/g, ' ')
             .replace(/\s+/g, ' ').trim()).slice(0, 80).join('').trim();
@@ -21,6 +39,7 @@
             && (quality !== '4k' || has4k === 'true');
     }
     function safeResultUrl(sourceId, value) {
+        if (hasAdapter(sourceId)) return adapters.detail(sourceId,value)?.page || null;
         const rules = {
             blender: ['video.blender.org', /^\/videos\/watch\/[0-9a-f-]{36}$/],
             huarw: ['huarw.com', /^\/movie\/[0-9]+$/],
@@ -38,6 +57,7 @@
         } catch (_) { return null; }
     }
     function safeLaunchPath(source, item, episode, value) {
+        if (hasAdapter(source)) { const s=adapters.selection(source,item,episode); return s && s.path===value ? s.path : null; }
         if (typeof item !== 'string' || typeof episode !== 'string') return null;
         const valid = source === 'cupfox' ? /^\d{1,20}$/.test(item) && /^ep\d{1,5}$/.test(episode)
             : source === 'huarw' ? /^\d{1,20}$/.test(item) && new RegExp('^' + item + '(?:-\\d{1,5}){1,3}$').test(episode)
@@ -77,7 +97,7 @@
         function close() { cancel(); if (panel.open) panel.close(); opener?.focus(); }
         doc.getElementById('discoveryDetailClose').addEventListener('click', close);
         panel.addEventListener('close', cancel);
-        async function open(source, row, trigger) {
+        async function open(source, row, trigger, interactive=false) {
             const url = safeResultUrl(source, row.page_url);
             if (!url) return;
             cancel(); const current = generation;
@@ -89,16 +109,20 @@
             original.href = url; status.textContent = '正在读取集数…';
             if (!panel.open) panel.showModal();
             const active = new AbortController(); controller = active;
-            const timer = setTimeout(() => active.abort(), 12000);
+            const timer = setTimeout(() => active.abort(), interactive?185000:12000);
             try {
-                const response = await fetcher('/api/discover/detail', { method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ source, page_url: url }),
-                    credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: active.signal });
+                const response = await metadataRequest('detail',{source,page_url:url},fetcher,active.signal,interactive);
                 if (!response.ok) throw new Error('unavailable');
                 const data = await response.json();
                 if (generation !== current) return;
+                if((data.status==='verification_required' || source==='kanju' && data.status==='unavailable') && nativeMetadata(source)) {
+                    status.textContent=data.status==='verification_required' ? '原站实际要求登录或验证；在软件内完成后，会继续显示选集。'
+                        : '原站尚未加载出集数，不代表需要验证。可打开原站检查网络或展开选集后继续。';
+                    const retry=doc.createElement('button'); retry.type='button'; retry.textContent='打开原站并继续读取集数';
+                    retry.addEventListener('click',()=>open(source,row,trigger,true)); list.append(retry); return;
+                }
                 const parts = new URL(url).pathname.split('/');
-                const item = source === 'fcma' ? parts.slice(2).join('-') : parts.pop().replace(/\.html$/, '');
+                const item = hasAdapter(source) ? adapters.detail(source,url)?.item : source === 'fcma' ? parts.slice(2).join('-') : parts.pop().replace(/\.html$/, '');
                 if (data.source_id !== source || data.page_url !== url || data.item_id !== item || !Array.isArray(data.episodes)) throw new Error('invalid');
                 if (typeof data.description === 'string') description.textContent = data.description.slice(0, 500);
                 for (const episode of data.episodes.slice(0, 6000)) {
@@ -110,13 +134,15 @@
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
-                status.textContent = found ? `${found} 个选集 · Windows 0.4.0 可选好再建房，朋友粘贴邀请自动跟随。`
+                status.textContent = found ? `${found} 个选集 · Windows ${source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
+                    : data.status === 'client_required' ? '看剧 AI 的统一选集需要 Windows 0.6.0；网页、安卓和旧版请改用原站选集。'
                     : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
                     : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';
                 if (found && data.selection_mode === 'original_page') {
                     status.textContent = '此来源由原站动态选集。Windows 0.2.1 起可在软件内打开，再选择线路和集数；这里不表示已验证播放。';
                 }
                 if (data.truncated === true) status.textContent += ' 已达选集数量上限，其余请用原站选集。';
+                if (data.selection_scope==='loaded_page') status.textContent += ' 这里只显示原站当前已加载的集数，其余请在原站选择；不表示已验证可播放。';
             } catch (_) {
                 if (generation === current) status.textContent = '集数读取失败或超时，可关闭后重试；没有切换当前影片。';
             } finally { clearTimeout(timer); }
@@ -168,25 +194,48 @@
                     + '。条目不等于已验证可播放；同名不一定是同一版本。';
             }
             progress();
-            const tasks = selected.map(async choice => {
+            const tasks = selected.map(choice => {
                 const sourceId = choice.dataset.liveSource;
                 const block = element('section', null, 'discovery-live-source');
                 block.append(element('h4', choice.dataset.sourceName), element('p', choice.dataset.sourceNote, 'discovery-note'));
-                const state = element('p', '正在查询…', 'discovery-query-state');
+                const state = element('p', '等待查询…', 'discovery-query-state');
                 const list = element('div', null, 'discovery-films');
                 block.append(state, list); results.append(block);
+                async function runSource(interactive=false) {
+                section.setAttribute('aria-busy','true');
+                state.textContent=interactive?'正在软件内打开原站；若出现登录或验证，请自行完成，结果会回到这里…':'正在查询…';
+                list.replaceChildren();
                 const controller = new AbortController();
                 controllers.add(controller);
-                const timer = setTimeout(() => controller.abort(), 12000);
+                const timer = setTimeout(() => controller.abort(), interactive?185000:12000);
                 try {
-                    const response = await fetcher('/api/discover/search', {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ source: sourceId, q: value }),
-                        credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store', signal: controller.signal,
-                    });
+                    const response = await metadataRequest('search',{source:sourceId,q:value},fetcher,controller.signal,interactive);
                     if (!response.ok) throw new Error(response.status === 429 ? 'rate' : 'unavailable');
                     const data = await response.json();
                     if (current !== generation) return;
+                    if(data.status==='client_required' && data.source_id===sourceId) {
+                        state.textContent='看剧 AI 的统一搜索需要 Windows 0.6.0；当前环境可直接在原站搜索。';
+                        const req=adapters.request('search',{source:sourceId,q:value});
+                        if(req){const link=element('a','在原站搜索这个片名 ↗');link.href=req.url;link.target='_blank';link.rel='noopener noreferrer';list.append(link);}
+                        return;
+                    }
+                    if((data.status==='verification_required' || sourceId==='kanju' && data.status==='unavailable') && data.source_id===sourceId) {
+                        failures++;
+                        if(nativeMetadata(sourceId)) {
+                            state.textContent=data.status==='verification_required' ? '原站这次要求登录或验证。完成后继续显示搜索结果，不用重输片名。'
+                                : '原站未加载出结果，不代表需要验证。可打开原站检查或重试；不会影响其他来源。';
+                            const retry=element('button',data.status==='verification_required'?'在软件中验证并继续搜索':'打开原站并继续搜索','discovery-primary'); retry.type='button';
+                            retry.addEventListener('click',async()=>{
+                                if(current!==generation || retry.disabled)return;
+                                retry.disabled=true; completed--; failures--; progress(); await runSource(true);
+                            }); list.append(retry);
+                        } else {
+                            state.textContent='原站这次要求验证；Windows 0.5.0 可完成验证后继续统一搜索。';
+                            const req=adapters?.request('search',{source:sourceId,q:value});
+                            if(req){const link=element('a','在原站查看本次搜索 ↗');link.href=req.url;link.target='_blank';link.rel='noopener noreferrer';list.append(link);}
+                        }
+                        return;
+                    }
                     if (data.source_id !== sourceId || !Array.isArray(data.results) || data.status !== 'ok') {
                         throw new Error(data.status === 'busy' ? 'busy' : 'unavailable');
                     }
@@ -240,8 +289,15 @@
                     clearTimeout(timer); controllers.delete(controller);
                     if (current === generation) { completed++; progress(); }
                 }
+                }
+                return () => runSource();
             });
-            await Promise.all(tasks);
+            // Keep within the desktop's two isolated metadata windows. Adding
+            // a third provider must not turn every search into a busy failure.
+            async function worker() {
+                while(current===generation && tasks.length) await tasks.shift()();
+            }
+            await Promise.all([worker(),worker()]);
             if (current === generation) section.setAttribute('aria-busy', 'false');
         }
         return { run, cancel };
@@ -368,6 +424,6 @@
         }
         render();
     }
-    if (typeof module !== 'undefined' && module.exports) module.exports = { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    if (typeof module !== 'undefined' && module.exports) module.exports = { metadataRequest, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));
 })();

@@ -47,20 +47,6 @@ FREE_SOURCES = (
         "quality_note": "免费观看与高画质权限分开，不承诺免费 4K。",
     },
     {
-        "id": "plex-free", "name": "Plex 免费影视", "genres": ("movie", "series", "animation"),
-        "url": "https://www.plex.tv/watch-free/", "evidence_url": "https://support.plex.tv/articles/frequently-asked-questions-vod/",
-        "description": "广告支持的官方免费电影和剧集；不要把租赁片目或聚合搜索结果当作免费正片。",
-        "access": "免费点播含广告；不需 Plex Pass", "region": "海外平台；片目因地区而异，中文内容和字幕有限",
-        "quality_note": "没有核实到免费片库统一提供 4K，不加 4K 标记。",
-    },
-    {
-        "id": "tubi-free", "name": "Tubi 免费影视", "genres": ("movie", "series", "animation"),
-        "url": "https://tubitv.com/", "evidence_url": "https://tubitv.com/help-center/About-Tubi/articles/4409969055259",
-        "description": "广告支持的电影、剧集和动漫片库。仅供平台支持地区的用户使用。",
-        "access": "免费含广告；不是全地区可用", "region": "中国大陆不在官方支持地区名单；不保证可用",
-        "quality_note": "未核验当前片目分辨率，不把免费片库标成 4K。",
-    },
-    {
         "id": "blender-films", "name": "Blender 开放动画", "genres": ("movie", "animation"),
         "url": "https://studio.blender.org/films/", "evidence_url": "https://studio.blender.org/films/",
         "description": "创作者发布的开放动画短片；下方列有逐部作品和许可资料。",

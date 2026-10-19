@@ -9,15 +9,16 @@ import re
 import socket
 import threading
 import time
-from urllib.parse import urlencode, urljoin, urlsplit
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import certifi
 import urllib3
 
 from source_discovery import OPEN_FILMS, normalize_query
+import catalog_sources
 
 
-SEARCH_VERSION = "20261018-watch-rooms"
+SEARCH_VERSION = "20261019-kanju-catalog"
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",
@@ -38,6 +39,7 @@ PROVIDERS = {
              "path": "/api/v1/search", "param": "q", "kind": "third_party_index",
              "note": "公开 API 目录；进入原站选择线路和集数。与其他同名站的关系、内容授权及画质未核实。"},
 }
+PROVIDERS.update(catalog_sources.PROVIDERS)
 MAX_BYTES = 1024 * 1024
 MAX_RESULTS = 12
 MAX_EPISODES = 6000
@@ -68,6 +70,12 @@ def _text(value, limit=160):
 
 
 def detail_url(provider, value):
+    if provider['id'] == 'kanju':
+        item = catalog_sources.detail_item('kanju', value)
+        return 'https://www.kanju.ai/player/' + quote(item, safe='-_') if item else None
+    if provider['id'] in catalog_sources.PROVIDERS:
+        return ('https://' + provider['host'] + catalog_sources.public_path(provider['id'], value)
+                if catalog_sources.detail_item(provider['id'], value) else None)
     if not isinstance(value, str) or len(value) > 500 or "\\" in value:
         return None
     try:
@@ -208,6 +216,11 @@ def _row(provider, title, url, year=None, episode="", duration=None):
 
 
 def parse_results(provider, body, query):
+    if provider['id'] in catalog_sources.PROVIDERS:
+        status, rows = catalog_sources.search_rows(provider['id'], body, query)
+        if status != 'ok':
+            raise SearchFailure(status)
+        return rows
     if provider["id"] == "ddys":
         payload = json.loads(body)
         if not isinstance(payload, dict) or payload.get("success") is not True or not isinstance(payload.get("data"), list):
@@ -287,6 +300,10 @@ def search_provider(source_id, query):
     query = normalize_query(query)
     if not query:
         raise ValueError("empty query")
+    if source_id == 'kanju':
+        # The original application signs its own requests. Never emulate that
+        # signature or forward a user's credentials through our server.
+        return dict(source_id=source_id, query=query, status='client_required', results=[], cached=False)
     key = (source_id, query.casefold())
     now = time.monotonic()
     with _lock:
@@ -301,7 +318,9 @@ def search_provider(source_id, query):
     try:
         remote_query = _provider_query(provider, query)
         result["results"] = parse_results(provider, _fetch(provider, remote_query), remote_query)
-    except (SearchFailure, urllib3.exceptions.HTTPError, OSError, ValueError, TypeError, RecursionError):
+    except SearchFailure as exc:
+        result['status'] = 'verification_required' if str(exc) == 'verification_required' else 'unavailable'
+    except (urllib3.exceptions.HTTPError, OSError, ValueError, TypeError, RecursionError):
         # Don't expose exception text, response HTML, request URLs or user queries in logs.
         result["status"] = "unavailable"
     finally:
@@ -318,6 +337,8 @@ def selection_path(source, item, episode):
     """Local handoff, not a media URL; the installed client opens its own video view."""
     if not isinstance(item, str) or not isinstance(episode, str):
         return None
+    if source in catalog_sources.PROVIDERS:
+        return f'/discover/play/{source}/{item}/{episode}' if catalog_sources.selection(source, item, episode) else None
     if source == "cupfox" and re.fullmatch(r"[0-9]{1,20}", item) and re.fullmatch(r"ep[0-9]{1,5}", episode):
         return f"/discover/play/{source}/{item}/{episode}"
     if source == "huarw" and re.fullmatch(r"[0-9]{1,20}", item) and re.fullmatch(re.escape(item) + r"(?:-[0-9]{1,5}){1,3}", episode):
@@ -336,6 +357,8 @@ def selection_path(source, item, episode):
 def selection_page(source, item, episode):
     if not selection_path(source, item, episode):
         return None
+    if source in catalog_sources.PROVIDERS:
+        return catalog_sources.selection(source, item, episode)
     return {"cupfox": f"https://www.cupfox.in/vod-detail/{item}.html",
             "huarw": f"https://huarw.com/play/{episode}",
             "yhdmoe": f"https://yhdmoe.com/watch/{item}#play_ep_{episode}",
@@ -440,11 +463,14 @@ def load_detail(source, page):
     page = detail_url(provider, page)
     if not page:
         raise ValueError("invalid detail")
-    item = "-".join(urlsplit(page).path.split("/")[2:]) if source == "fcma" else page.rsplit("/", 1)[-1].removesuffix(".html")
+    item = (catalog_sources.detail_item(source, page) if source in catalog_sources.PROVIDERS else
+            "-".join(urlsplit(page).path.split("/")[2:]) if source == "fcma" else page.rsplit("/", 1)[-1].removesuffix(".html"))
     key = ("detail", source, item)
     now = time.monotonic()
     base = {"source_id": source, "item_id": item, "page_url": page, "status": "ok", "title": "",
             "description": "", "episodes": [], "truncated": False, "cached": False, "playback_verified": False}
+    if source == 'kanju':
+        return {**base, 'status': 'client_required'}
     with _lock:
         for old in [k for k, (expiry, _) in _cache.items() if expiry <= now]:
             del _cache[old]
@@ -454,7 +480,9 @@ def load_detail(source, page):
             return {**base, "status": "busy"}
         _inflight.add(key)
     try:
-        if source == "ddys":
+        if source in catalog_sources.PROVIDERS:
+            base.update(catalog_sources.detail_rows(source, item, _fetch_path(provider, urlsplit(page).path)))
+        elif source == "ddys":
             payload = json.loads(_fetch_path(provider, "/api/v1/movies/" + item))
             if not isinstance(payload, dict) or payload.get("success") is not True:
                 raise SearchFailure("layout_changed")

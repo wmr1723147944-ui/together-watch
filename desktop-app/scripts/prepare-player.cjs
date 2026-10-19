@@ -8,3 +8,5 @@ fs.copyFileSync(source, target);
 console.log('Prepared bundled HLS.js 1.5.18');
 fs.copyFileSync(path.resolve(__dirname, '../../static/data/site-directory.json'), path.resolve(__dirname, '../ui/site-directory.json'));
 console.log('Prepared reviewed site directory');
+fs.copyFileSync(path.resolve(__dirname,'../../static/js/catalog-adapters.js'),path.resolve(__dirname,'../ui/catalog-adapters.js'));
+console.log('Prepared catalogue adapter rules');

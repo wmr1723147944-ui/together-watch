@@ -1,5 +1,7 @@
 """Share public episode identities, never arbitrary URLs or media credentials."""
 import re
+from urllib.parse import quote
+from catalog_sources import PUBLIC_ID
 
 from source_search import selection_page, selection_path
 
@@ -17,9 +19,9 @@ def normalize_program(value, enabled_sources):
         return None
     if source == "sample" and item in SAMPLES and episode == "video":
         return {**value, "page": SAMPLES[item], "exact_episode": True}
-    if source == "kanju" and re.fullmatch(r"[A-Za-z0-9_-]{1,240}", item) and episode == "page":
+    if source == "kanju" and re.fullmatch(PUBLIC_ID, item) and episode == "page":
         # A public player permalink, NOT an extracted stream / signed API URL.
-        return {**value, "page": "https://www.kanju.ai/player/" + item, "exact_episode": False}
+        return {**value, "page": "https://www.kanju.ai/player/" + quote(item, safe='-_'), "exact_episode": False}
     if source not in enabled_sources or not selection_path(source, item, episode):
         return None
     return {**value, "page": selection_page(source, item, episode),
