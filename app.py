@@ -32,6 +32,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from source_discovery import discovery_context, is_search_page, normalize_query
+from site_directory import DIRECTORY, site_entry, site_entries
 from source_search import SEARCH_VERSION, provider_choices, search_provider, load_detail, selection_page
 from room_program import normalize_program
 
@@ -1481,6 +1482,26 @@ def discover_play(source, item, episode):
     # must not be promised that an arbitrary third-party page can be iframed.
     response = app.make_response(render_template("discovery_launch.html", page_url=page))
     response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.route("/discover/site/<key>")
+def discover_site(key):
+    entry = site_entry(key, parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_SOURCES", "")))
+    if not entry:
+        abort(404)
+    response = app.make_response(render_template("discovery_site.html", site=entry))
+    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.route("/api/discover/sites")
+def discover_sites():
+    entries = site_entries(parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_SOURCES", "")))
+    response = jsonify({"version": DIRECTORY["version"], "reviewed": DIRECTORY["reviewed"],
+                        "mode": "original_site_navigation", "sites": entries})
+    response.headers["Cache-Control"] = "no-store"
     return response
 
 

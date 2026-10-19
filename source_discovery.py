@@ -3,6 +3,7 @@
 import re
 import unicodedata
 from urllib.parse import quote, urlencode, urlparse
+from site_directory import DIRECTORY, site_entries
 
 
 REVIEW_DATE = "2026-10-14"
@@ -200,6 +201,10 @@ def discovery_context(query="", disabled_providers=(), disabled_films=(),
                         "matches": (source_type == "all" or source_type in source["genres"])
                         and (quality != "4k" or source.get("has_4k_evidence", False))})
     return {
+        "discovery_sites": site_entries(disabled_sources),
+        "discovery_sites_reviewed": DIRECTORY["reviewed"],
+        "discovery_sites_reference": DIRECTORY["reference"],
+        "discovery_sites_excluded": DIRECTORY["excluded"],
         "discovery_query": query,
         "discovery_review_date": REVIEW_DATE,
         "discovery_films": films,

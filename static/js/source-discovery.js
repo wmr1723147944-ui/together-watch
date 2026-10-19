@@ -246,9 +246,47 @@
         }
         return { run, cancel };
     }
+    function initSiteDirectory(doc) {
+        const root = doc.getElementById('recommendedSites');
+        if (!root) return;
+        const query = doc.getElementById('siteDirectoryQuery');
+        const category = doc.getElementById('siteDirectoryCategory');
+        const status = doc.getElementById('siteDirectoryStatus');
+        const cards = Array.from(root.querySelectorAll('[data-directory-site]'));
+        const count = doc.getElementById('siteDirectoryCount');
+        function render() {
+            let visible = 0;
+            for (const card of cards) {
+                card.hidden = !matches(card.dataset.directoryText, query.value)
+                    || (category.value !== 'all' && card.dataset.directoryCategory !== category.value)
+                    || (status.value !== 'all' && card.dataset.directoryStatus !== status.value);
+                if (!card.hidden) visible++;
+            }
+            count.textContent = `显示 ${visible} / ${cards.length} 个原站入口（不是影片结果）`;
+            doc.getElementById('siteDirectoryEmpty').hidden = visible > 0;
+        }
+        query.addEventListener('input', render);
+        category.addEventListener('change', render);
+        status.addEventListener('change', render);
+        for (const button of root.querySelectorAll('[data-site-copy]')) {
+            button.hidden = false;
+            button.addEventListener('click', async () => {
+                const url = button.dataset.siteCopy;
+                try { await navigator.clipboard.writeText(url); count.textContent = '原站网址已复制；这不是视频直链。'; }
+                catch {
+                    doc.getElementById('discoveryCopyFallback').hidden = false;
+                    const input = doc.getElementById('discoveryCopyValue');
+                    input.value = url; input.focus(); input.select();
+                    count.textContent = '无法自动复制，请手动复制下方网址。';
+                }
+            });
+        }
+        render();
+    }
     function init(doc) {
         const root = doc.getElementById('sourceDiscovery');
         if (!root) return;
+        initSiteDirectory(doc);
         const query = doc.getElementById('discoveryQuery');
         const cards = Array.from(root.querySelectorAll('[data-search-text]'));
         const links = Array.from(root.querySelectorAll('[data-search-base]'));
@@ -330,6 +368,6 @@
         }
         render();
     }
-    if (typeof module !== 'undefined' && module.exports) module.exports = { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, init };
+    if (typeof module !== 'undefined' && module.exports) module.exports = { normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));
 })();

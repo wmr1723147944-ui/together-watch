@@ -10,6 +10,7 @@ function joined(id) { room = id; $('roomLabel').textContent = `房间 ${room}`; 
 $('finder-catalog').onclick = () => window.desktop.action('discover');
 $('finder-kanju').onclick = () => window.desktop.action('kanju');
 $('finder-pick').onclick = () => window.desktop.action('pick-current');
+for (const action of ['finder-back','finder-reload','finder-browser']) $(action).onclick = () => window.desktop.action(action);
 $('startForm').onsubmit = async event => {
     event.preventDefault(); $('error').textContent = ''; $('start').disabled = true;
     try {
@@ -37,7 +38,7 @@ window.desktop.onStatus(data => {
     if (data.message) $('status').textContent = data.message;
     if (data.finder) finder();
     if (data.joined) joined(data.joined);
-    if (data.finderMode) $('pick-current').hidden = data.finderMode !== 'kanju';
+    if (data.finderMode) { $('pick-current').hidden = data.finderMode === 'catalog'; $('finder-pick').hidden = data.finderMode === 'catalog'; }
     if (data.source) $('currentSource').value = data.source;
     if (Array.isArray(data.candidates)) {
         const previous = $('mediaChoices').value;

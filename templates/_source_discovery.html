@@ -53,9 +53,10 @@
             <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数或线路，例如 1180、线路 2" aria-label="筛选全部已读取的集数或线路" maxlength="80" hidden>
             <div id="discoveryEpisodes" class="discovery-episodes"></div>
             <button id="discoveryEpisodeMore" type="button" hidden>显示更多集数</button>
-            <p class="discovery-note">Windows 0.2.1 客户端支持全部当前入口，在软件内打开原站并保留聊天室。安卓、旧客户端与浏览器可用下方原站入口；清晰度和观看权限由原站决定。</p>
+            <p class="discovery-note">Windows 0.4.0 起支持此处选集建房；新增的网站目录需 0.4.1。安卓、旧客户端与浏览器可用下方原站入口；清晰度和观看权限由原站决定。</p>
             <a id="discoveryDetailOriginal" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">改用原站选集 ↗</a>
         </dialog>
+        {% include '_site_directory.html' %}
         <details class="discovery-advanced discovery-directory"><summary>更多来源与开放影片资料 <span>没有搜到？展开看看</span></summary>
         <section aria-labelledby="discoverySourcesTitle">
             <h3 id="discoverySourcesTitle">免费 / 部分免费影视导航</h3>

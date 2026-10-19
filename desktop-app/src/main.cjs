@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const policy = require('./policy.cjs');
+const siteDirectory = require('./site-directory.cjs');
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
 const AGENT = fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
 const MEDIA_SCAN = fs.readFileSync(path.join(__dirname, 'media-scan.js'), 'utf8');
@@ -332,6 +333,9 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     async function chooseSource(url, selection = null) {
         if (selecting) return;
+        const originalEntry = siteDirectory.siteForUrl(url);
+        const entry = siteDirectory.siteHandoff(url, server) || (originalEntry?.url === url && originalEntry);
+        if (entry) return showDiscovery('site:' + entry.id);
         const descriptor = policy.programSelection(url, server);
         if (!descriptor && policy.isKanju(url)) return showDiscovery('kanju');
         if (!current) {
@@ -375,6 +379,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     async function showDiscovery(mode = 'catalog') {
         await toggleFullscreen(false);
+        const entry = mode.startsWith('site:') ? siteDirectory.siteById(mode.slice(5)) : null;
+        if (mode.startsWith('site:') && !entry) { status('这个站点不在已核对的目录中'); return; }
         if (discoveryView && finderMode !== mode) {
             win.contentView.removeChildView(discoveryView); discoveryView.webContents.close(); discoveryView = null;
         }
@@ -384,21 +390,65 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             const wc = discoveryView.webContents;
             discoveryView.setBackgroundColor('#171423');
             win.contentView.addChildView(discoveryView);
+            const view = discoveryView, approved = new Set();
+            let asking = false;
+            const allowed = url => entry ? siteDirectory.siteNavigation(entry, url, approved)
+                : mode === 'kanju' ? policy.isKanju(url) : policy.isDiscoveryUrl(url, server);
+            const requestNavigation = async url => {
+                if (asking || !sourceAllowed(url)) return;
+                asking = true;
+                try {
+                    const answer = await dialog.showMessageBox(win, {type:'question', title:'原站请求打开页面',
+                        message:'是否在软件内打开这个页面？', detail:new URL(url).hostname + '\n原站可能正在跳转到播放、登录或广告页面。此确认不会把新域名加入自动搜片或邀请片源。',
+                        buttons:['取消','打开'], defaultId:0, cancelId:0});
+                    if (answer.response !== 1 || discoveryView !== view || wc.isDestroyed()) return;
+                    approved.add(new URL(url).origin);
+                    await wc.loadURL(url);
+                } catch { status('页面打开失败，可返回目录换一个来源。'); }
+                finally { asking = false; }
+            };
             const navigate = (event, url) => {
-                if (mode === 'kanju' && policy.isKanju(url)) return;
-                if (mode === 'catalog' && policy.isDiscoveryUrl(url, server)) return;
+                if (allowed(url)) return;
                 event.preventDefault();
+                if (entry) { requestNavigation(url); return; }
                 const selection = policy.playSelection(url, server);
-                if (mode === 'catalog' && (selection || sourceAllowed(url))) chooseSource(url, selection);
+                if (mode === 'catalog' && (selection || siteDirectory.siteHandoff(url, server) || sourceAllowed(url))) chooseSource(url, selection);
             };
             wc.on('will-navigate', navigate);
-            wc.on('will-redirect', (event, url) => { if (mode !== 'kanju' || !policy.isKanju(url)) event.preventDefault(); });
+            wc.on('will-redirect', (event, url) => {
+                if (allowed(url)) return;
+                event.preventDefault();
+                if (entry) status('原站自动跳到了未核对的域名，已暂停。可用“浏览器打开”自行查看；不会自动添加镜像站。');
+            });
             wc.on('before-input-event', keyHandler);
-            wc.setWindowOpenHandler(() => ({ action: 'deny' }));
-            wc.on('did-fail-load', (_e, code, _d, _u, main) => { if (main && code !== -3) status('找片页加载失败，请检查服务器更新或网络'); });
-            wc.loadURL(mode === 'kanju' ? 'https://www.kanju.ai/' : server + '/discover').catch(() => {});
+            wc.on('will-attach-webview', event => event.preventDefault());
+            wc.setWindowOpenHandler(({url}) => { if (entry) requestNavigation(url); return { action: 'deny' }; });
+            wc.on('did-fail-load', (_e, code, _d, _u, main) => { if (main && code !== -3) status(entry ? '原站加载失败。可重试、在浏览器打开，或返回目录换来源；没有修改房间影片。' : '找片页加载失败，请检查服务器更新或网络'); });
+            wc.loadURL(entry ? entry.url : mode === 'kanju' ? 'https://www.kanju.ai/' : server + '/discover').catch(() => {});
         }
-        browsing = true; layout(); status({finderMode:mode, message:mode === 'kanju' ? '看剧 AI 原站：搜索并打开播放页后，用当前页建房 / 换片。登录、验证码在原站完成。' : current ? '房主选集后，朋友自动跟随；原站动态选集请核对版本。' : '先搜索 → 详情 / 选集 → 点击集数再创建房间，现在还没有建房。'});
+        browsing = true; layout(); status({finderMode:mode, message:entry ? `${entry.name}：在原站搜索、登录或完成验证；尚未支持此站邀请自动选集。` : mode === 'kanju' ? '看剧 AI 原站：搜索并打开播放页后，用当前页建房 / 换片。登录、验证码在原站完成。' : current ? '房主选集后，朋友自动跟随；原站动态选集请核对版本。' : '先搜索 → 详情 / 选集 → 点击集数再创建房间，现在还没有建房。'});
+    }
+
+    async function pickDirectoryPage() {
+        const view = discoveryView, wc = view?.webContents;
+        if (!wc || selecting) return;
+        const url = wc.getURL();
+        if (policy.programSelection(url, server)) return chooseSource(url);
+        if (!finderMode.startsWith('site:') || !sourceAllowed(url)) return {ok:false,error:'请先打开具体播放页。'};
+        if (managed) return {ok:false,error:'此站尚无邀请自动选集适配，不能替换当前共享片源。可留在原站浏览，或返回首页建立兼容房间。'};
+        selecting = true;
+        try {
+            // Only inspect presence, never cookies or stream URLs. Ads can also
+            // contain video: the user still has to confirm the actual episode.
+            const found = await Promise.all(wc.mainFrame.framesInSubtree.slice(0,32).map(frame =>
+                timeout(frame.executeJavaScript('!!document.querySelector("video")')).catch(() => false)));
+            if (!found.some(Boolean)) return {ok:false,error:'还未找到视频。请在原站完成验证、选择剧集并开始播放，再试一次。'};
+            const answer = await dialog.showMessageBox(win, {type:'question', title:'使用兼容房间',
+                message:'确认当前播放的是想看的那一集？', detail:'该站暂不支持邀请自动选集。兼容房间可尝试同步播放器，但朋友仍需各自打开同一播放页并完成原站验证。账号和验证凭据不会共享。',
+                buttons:['暂不建房','继续'], defaultId:0, cancelId:0});
+            if (answer.response !== 1 || discoveryView !== view || wc.isDestroyed() || wc.getURL() !== url) return;
+            return current ? navigateVideo(url) : start({...draft, source:url});
+        } finally { selecting = false; }
     }
     async function start(data) {
         if (switching) return { ok: false, error: '正在打开，请稍候' };
@@ -550,8 +600,15 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (value === 'terms' || value === 'privacy') { await shell.openExternal(policy.SERVER + '/' + value); return; }
         if (value === 'settings') { closeViews(); status({ setup: true, message: '已退出房间，可以重新设置' }); return; }
         if (value === 'kanju' && (draft || current)) return showDiscovery('kanju');
+        if (['finder-back','finder-reload','finder-browser'].includes(value) && discoveryView) {
+            const wc = discoveryView.webContents;
+            if (value === 'finder-back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+            if (value === 'finder-reload') wc.reload();
+            if (value === 'finder-browser' && policy.publicHttps(wc.getURL())) await shell.openExternal(wc.getURL());
+            return;
+        }
         if (value === 'pick-current' && discoveryView) {
-            const result = await chooseSource(discoveryView.webContents.getURL());
+            const result = finderMode.startsWith('site:') ? await pickDirectoryPage() : await chooseSource(discoveryView.webContents.getURL());
             if (result?.error) status(result.error);
             return result;
         }
@@ -569,8 +626,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         else if (value === 'invite') { clipboard.writeText(`${server}/room/${encodeURIComponent(current.room)}`); status(managed ? '邀请已复制。朋友在新版 Windows 客户端粘贴即可打开同一片源并同步；不需要再填视频链接。' : '邀请已复制。此兼容房间尚未记录片源，朋友仍需打开同一集。'); }
         else if (value === 'fullscreen') await toggleFullscreen();
         else if (value === 'detect') { await focusPlayer(false); selected = null; selectionFailed = false; pendingEpisode = null; searchingSince = Date.now(); status('正在重新识别播放器'); }
-        else if (value === 'reload') { closeBuiltin(); selected = null; video.webContents.reload(); layout(); }
-        else if (value === 'back' && video.webContents.navigationHistory.canGoBack()) { closeBuiltin(); video.webContents.navigationHistory.goBack(); layout(); }
+        else if (value === 'reload') { if (browsing && discoveryView) discoveryView.webContents.reload(); else { closeBuiltin(); selected = null; video.webContents.reload(); layout(); } }
+        else if (value === 'back') { const wc = browsing && discoveryView ? discoveryView.webContents : video.webContents; if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); }
     }
     const senderIsShell = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
         && event.senderFrame.url === policy.APP_ORIGIN + '/index.html';

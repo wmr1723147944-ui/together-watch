@@ -104,6 +104,10 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
     const clients = [];
     try {
         await until('local backend', async () => { try { return (await fetch(server + '/health')).ok; } catch { return false; } });
+        if (process.env.TW_SMOKE_DIRECTORY_ONLY === '1') {
+            await require('./directory-smoke.cjs').run({createDesktop,server,output,until});
+            return;
+        }
         if (process.env.TW_SMOKE_INVITE_ONLY === '1') {
             await require('./invite-smoke.cjs').run({createDesktop,server,output,until});
             return;

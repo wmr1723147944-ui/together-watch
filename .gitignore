@@ -26,3 +26,4 @@ android-app/*.keystore
 desktop-app/node_modules/
 desktop-app/dist/
 desktop-app/ui/hls.min.js
+desktop-app/ui/site-directory.json
