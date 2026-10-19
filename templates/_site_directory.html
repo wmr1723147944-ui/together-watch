@@ -1,22 +1,23 @@
 <details class="discovery-advanced recommended-sites" id="recommendedSites">
-    <summary>更多网站 · 原站内搜索 <span>{{ discovery_sites|length }} 个入口 · 验证由你完成</span></summary>
-    <p class="discovery-note">这批入口来自你提供的帖子，未加入上方自动搜片。Windows 0.4.1 起可在软件内浏览；验证码和登录在原站完成。首页可达不等于正片可播，也不保证免费、4K 或邀请自动选集。</p>
+    <summary>更多网站 · 原站内搜索 <span>{{ discovery_sites|length }} 个原站入口</span></summary>
+    <p class="discovery-note">能直接打开就直接使用，无需额外验证。下方标签仅记录 {{ discovery_sites_reviewed }} 核对时的情况，不是你设备上的实时访问结果。只有原站实际弹出验证码或登录页时，才需要按原站提示操作。</p>
+    <p class="discovery-note">这些入口未加入上方自动搜片。Windows 0.4.1 起可在软件内浏览；首页可达不等于正片可播，也不保证免费、4K 或邀请自动选集。</p>
     <div class="site-directory-controls">
         <label>找网站<input id="siteDirectoryQuery" type="search" maxlength="80" placeholder="站名或域名，不是剧名"></label>
         <label>类别<select id="siteDirectoryCategory"><option value="all">全部</option><option>影视</option><option>动漫</option><option>聚合</option><option>直播</option><option>海外</option></select></label>
-        <label>访问情况<select id="siteDirectoryStatus"><option value="all">全部</option><option value="entry">首页已核对</option><option value="login">需登录</option><option value="verification">需验证</option><option value="publication">发布页</option><option value="regional">地区限制</option><option value="restricted">访问受限</option></select></label>
+        <label>历史核对记录<select id="siteDirectoryStatus"><option value="all">全部（不限制打开）</option><option value="entry">核对时首页可达</option><option value="login">核对时出现登录页</option><option value="verification">核对时遇到验证</option><option value="publication">核对时为发布页</option><option value="regional">核对时受地区限制</option><option value="restricted">核对时访问受限</option></select></label>
     </div>
     <p id="siteDirectoryCount" role="status" aria-live="polite">显示 {{ discovery_sites|length }} 个原站入口</p>
     <div class="site-directory-grid">
     {% for site in discovery_sites %}
         <article class="site-directory-card" data-directory-site="{{ site.id }}" data-directory-text="{{ site.name }} {{ site.url }}" data-directory-category="{{ site.category }}" data-directory-status="{{ site.status }}">
-            <div><span class="site-category">{{ site.category }}</span><span class="site-status">{{ site.status_label }}</span></div>
+            <div><span class="site-category">{{ site.category }}</span><span class="site-status" title="{{ site.reviewed_at }} 的核对记录，不代表你现在必须验证或登录">{{ site.status_label }}</span></div>
             <h4>{{ site.name }}</h4><p class="site-host">{{ site.url }}</p><p>{{ site.note }}</p>
             <nav><a class="discovery-primary" href="{{ site.launch_path }}" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">打开网站 →</a><button type="button" class="site-copy" data-site-copy="{{ site.url }}" hidden>复制网址</button></nav>
         </article>
     {% endfor %}
     </div>
-    <p id="siteDirectoryEmpty" {% if discovery_sites %}hidden{% endif %}>没有符合条件的网站。可清空站名或切回“全部”；验证失败时请更换来源。</p>
+    <p id="siteDirectoryEmpty" {% if discovery_sites %}hidden{% endif %}>没有符合筛选条件的网站。可清空站名或切回“全部”；历史记录不限制你打开原站。</p>
     <details class="site-exclusions"><summary>本次未收录的地址与原因</summary><ul>{% for item in discovery_sites_excluded %}<li><strong>{{ item.name }}</strong>：{{ item.reason }}</li>{% endfor %}</ul></details>
     <p class="discovery-note">核对日期：{{ discovery_sites_reviewed }}。网络与域名随时可能变化。<a href="{{ discovery_sites_reference }}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">推荐名单出处 ↗</a> · 保留站名和链接，自行核对状态，未照搬帖子的免费、无广告或画质承诺。</p>
 </details>

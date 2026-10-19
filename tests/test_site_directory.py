@@ -26,6 +26,8 @@ class SiteDirectoryTests(unittest.TestCase):
             self.assertIsNone(url.port)
             self.assertIn(url.hostname, site['hosts'])
             self.assertTrue(site['status_label'])
+            self.assertEqual(site['status_scope'], 'review_snapshot')
+            self.assertEqual(site['reviewed_at'], DIRECTORY['reviewed'])
             self.assertNotIn('media_url', site)
             self.assertNotIn('has_4k_evidence', site)
             self.assertTrue(site['note'])
@@ -36,14 +38,17 @@ class SiteDirectoryTests(unittest.TestCase):
             response = self.client.get('/api/discover/sites')
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json['mode'], 'original_site_navigation')
-            self.assertEqual(response.json['version'], '20261019-site-directory')
+            self.assertEqual(response.json['version'], '20261019-site-directory-r2')
             self.assertEqual(len(response.json['sites']), 19)
             html = self.client.get('/discover').text
         self.assertEqual(set(PROVIDERS), before)
         self.assertIn('未加入上方自动搜片', html)
-        self.assertIn('验证码和登录在原站完成', html)
-        self.assertIn('需原站验证', html)
-        self.assertIn('有地区限制', html)
+        self.assertIn('能直接打开就直接使用，无需额外验证', html)
+        self.assertIn('历史核对记录', html)
+        self.assertIn('核对时遇到验证', html)
+        self.assertIn('核对时受地区限制', html)
+        self.assertNotIn('需原站验证', html)
+        self.assertNotIn('验证由你完成', html)
         self.assertNotIn('data-live-source="aafun"', html)
         for key in ['aafun', 'noxx', '233dm']:
             self.assertIn(f'/discover/site/{key}', html)
@@ -63,6 +68,20 @@ class SiteDirectoryTests(unittest.TestCase):
         self.assertEqual(self.client.get('/discover/site/unknown').status_code, 404)
         self.assertEqual(self.client.get('/discover/site/libvio').status_code, 404)
         self.assertIsNone(site_entry('../admin'))
+
+    def test_verification_record_is_not_an_access_gate(self):
+        for key in ['aafun', 'noxx']:
+            with self.subTest(site=key):
+                site = site_entry(key)
+                self.assertEqual(site['status'], 'verification')
+                self.assertEqual(site['status_label'], '核对时遇到验证')
+                response = self.client.get(site['launch_path'])
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(f'href="{site["url"]}"', response.text)
+                self.assertIn(DIRECTORY['reviewed'] + ' 核对记录', response.text)
+                self.assertIn('本站不会因为历史标签而增加验证步骤', response.text)
+                self.assertNotIn('<form', response.text)
+                self.assertNotIn('disabled', response.text)
 
     def test_administrator_removal_applies_to_html_api_and_handoff(self):
         with patch.dict(os.environ, {'DISCOVERY_DISABLED_SOURCES': 'site-aafun,site-noxx'}):

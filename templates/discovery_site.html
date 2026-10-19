@@ -1,6 +1,7 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{{ site.name }} · 原站入口</title><link rel="stylesheet" href="{{ url_for('static', filename='css/site-directory.css') }}?v=20261019-sites"></head>
-<body class="site-launch"><main><p>原站浏览 · 不自动解析视频</p><h1>{{ site.name }}</h1><p>{{ site.status_label }}</p><p>{{ site.note }}</p>
-<p>Windows 0.4.1 起可在软件内浏览这个入口。浏览器和旧客户端请点击下面的链接。遇到验证码或登录，由你在原站自行完成；不代表完成验证后一定可以播放。</p>
+<body class="site-launch"><main><p>原站浏览 · 不自动解析视频</p><h1>{{ site.name }}</h1><p>{{ site.reviewed_at }} 核对记录：{{ site.status_label }}</p><p>{{ site.note }}</p>
+<p>能直接打开就直接使用，无需额外验证。上方记录不是你设备上的实时访问结果，本站不会因为历史标签而增加验证步骤。</p>
+<p>Windows 0.4.1 起可在软件内浏览这个入口。浏览器和旧客户端请点击下面的链接。只有原站实际弹出验证码或登录页时，才需要按原站提示操作；完成后也不代表一定可以播放。</p>
 <p><a class="discovery-primary" href="{{ site.url }}" target="_blank" rel="noopener noreferrer" referrerpolicy="no-referrer">打开原站 ↗</a> <a href="/discover#recommendedSites">返回站点目录</a></p>
 <p>这是网站入口，不是片名搜索结果。清晰度、地区限制、付费范围与内容授权须在原站核实；不会共享你的账号、Cookie 或验证凭据。</p></main></body></html>
