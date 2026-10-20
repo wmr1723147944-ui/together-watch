@@ -284,6 +284,43 @@ window.createVoiceCallController = ({
         );
     }
 
+    function microphoneErrorMessage(error) {
+        const androidApp = /Android/i.test(navigator.userAgent || '')
+            && /\bwv\b/i.test(navigator.userAgent || '');
+        const permissionHelp = androidApp
+            ? '请到手机设置 → 应用 → 一起看 → 权限，允许使用麦克风，并检查系统麦克风总开关。'
+            : '请在浏览器的网站权限和系统设置中允许麦克风。';
+        // Secure context is separate from device/permission failures. Do not
+        // tell a user already on HTTPS to fix their URL for every error.
+        if (window.isSecureContext === false) {
+            return '❌ 当前页面不是安全连接，请通过 HTTPS 打开房间后重试。';
+        }
+        switch (error?.name) {
+            case 'NotAllowedError':
+            case 'PermissionDeniedError':
+                return `❌ 麦克风访问被拒绝（NotAllowedError）。${permissionHelp}`;
+            case 'NotFoundError':
+            case 'DevicesNotFoundError':
+                return '❌ 未找到可用的麦克风（NotFoundError）。'
+                    + (androidApp ? '请更新一起看 APP 到 0.2.2 或更新版本；旧版缺少 WebView 音频设备权限。' : '请确认设备已连接并在系统中启用。');
+            case 'NotReadableError':
+            case 'TrackStartError':
+                return '❌ 麦克风无法启动（NotReadableError）。请检查系统麦克风开关，结束其他通话或录音后重试。'
+                    + (androidApp ? '旧版一起看 APP 请先更新到 0.2.2 或更新版本。' : '');
+            case 'OverconstrainedError':
+            case 'ConstraintNotSatisfiedError':
+                return '❌ 当前麦克风不支持请求的录音参数（OverconstrainedError），请换用手机自带麦克风或其他输入设备后重试。';
+            case 'AbortError':
+                return '❌ 麦克风启动被中断（AbortError），请保持房间在前台，再点一次「加入语音」。';
+            case 'SecurityError':
+                return '❌ 系统或网页安全策略禁止录音（SecurityError）。请检查应用权限与系统限制，不要关闭 HTTPS 校验。';
+            default: {
+                const name = /^[A-Za-z][A-Za-z0-9]{0,48}$/.test(error?.name || '') ? error.name : 'UnknownError';
+                return `❌ 无法启用麦克风（${name}）。请将这条错误、手机型号和 APP 版本反馈给维护者。`;
+            }
+        }
+    }
+
     async function joinCall() {
         if (!supported || joined || joining) return;
         if (!socket.connected) {
@@ -326,15 +363,12 @@ window.createVoiceCallController = ({
             socket.emit('call_join', signalPayload());
         } catch (error) {
             if (generation !== callGeneration) return;
-            const denied = error?.name === 'NotAllowedError';
-            addSystemMessage(
-                denied
-                    ? '❌ 麦克风权限被拒绝，请在浏览器地址栏中允许后重试。'
-                    : '❌ 无法启用麦克风，请确认使用 HTTPS 并检查音频设备。',
-            );
+            addSystemMessage(microphoneErrorMessage(error));
         } finally {
             if (generation === callGeneration) joining = false;
             if (generation === callGeneration && !joined) {
+                audioContext?.close?.().catch(() => {});
+                audioContext = null;
                 joinButton.disabled = !supported;
                 joinButton.textContent = '🎙 加入语音';
             }

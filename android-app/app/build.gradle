@@ -11,8 +11,8 @@ android {
         applicationId "cloud.watchtogethernow.mobile"
         minSdk 26
         targetSdk 36
-        versionCode 3
-        versionName "0.2.1"
+        versionCode 5
+        versionName "0.3.0"
 
         buildConfigField "String", "SERVER_ORIGIN", '"https://watchtogethernow.cloud"'
         buildConfigField "String", "LEGAL_NOTICE_VERSION", '"2026-07-28"'
@@ -35,6 +35,15 @@ android {
     }
 }
 
+// Package the same reviewed player timing/episode rules used on Windows.
+def sharedPlayerAssets = tasks.register('prepareSharedPlayerAssets', Sync) {
+    into layout.buildDirectory.dir('generated/sharedPlayerAssets')
+    from(rootProject.file('../desktop-app/src')) { include 'player-agent.js' }
+    from(rootProject.file('../static/js')) { include 'catalog-adapters.js' }
+}
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/sharedPlayerAssets'))
+tasks.named('preBuild').configure { dependsOn sharedPlayerAssets }
+
 dependencies {
     implementation "androidx.activity:activity:1.10.1"
     implementation "androidx.media3:media3-exoplayer:1.8.0"
@@ -42,4 +51,5 @@ dependencies {
     implementation "androidx.media3:media3-exoplayer-dash:1.8.0"
     implementation "androidx.media3:media3-ui:1.8.0"
     testImplementation "junit:junit:4.13.2"
+    testImplementation "org.json:json:20240303"
 }

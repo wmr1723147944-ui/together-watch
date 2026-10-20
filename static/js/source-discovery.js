@@ -134,7 +134,7 @@
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
-                status.textContent = found ? `${found} 个选集 · Windows ${source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
+                status.textContent = found ? `${found} 个选集 · Windows ${source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'}${source==='kanju'?'':' / 安卓 0.3.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
                     : data.status === 'client_required' ? '看剧 AI 的统一选集需要 Windows 0.6.0；网页、安卓和旧版请改用原站选集。'
                     : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
                     : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';

@@ -163,12 +163,13 @@ for (const [file, bookmark] of [['static/js/bookmarklet.js', true], ['browser-ex
     });
 }
 
-function voice(getUserMedia, AudioContext) {
+function voice(getUserMedia, AudioContext, environment = {}) {
     const timer = clock();
     const elements = new Map();
     const events = new Map();
     const emitted = [];
     const connections = [];
+    const messages = [];
     const socket = {
         connected: true, on(name, fn) { events.set(name, fn); },
         emit(name, payload) { emitted.push({ name, payload }); },
@@ -181,10 +182,10 @@ function voice(getUserMedia, AudioContext) {
         close() { this.connectionState = 'closed'; }
     }
     const context = vm.createContext({
-        window: { ...timer, RTCPeerConnection: Peer, AudioContext,
+        window: { ...timer, RTCPeerConnection: Peer, AudioContext, isSecureContext: environment.secure !== false,
             addEventListener() {}, removeEventListener() {} }, RTCPeerConnection: Peer,
         AbortController, console, localStorage: { getItem: () => null, setItem() {} },
-        navigator: { mediaDevices: { getUserMedia } },
+        navigator: { mediaDevices: { getUserMedia }, userAgent: environment.userAgent || '' },
         document: { getElementById(id) {
             if (!elements.has(id)) elements.set(id, new Element());
             return elements.get(id);
@@ -192,10 +193,54 @@ function voice(getUserMedia, AudioContext) {
     });
     vm.runInContext(read('static/js/voice-call.js'), context);
     const controller = context.window.createVoiceCallController({
-        socket, roomId: 'test-room', username: 'tester', addSystemMessage() {},
+        socket, roomId: 'test-room', username: 'tester', addSystemMessage(message) { messages.push(message); },
     });
-    return { timer, elements, events, emitted, connections, socket, controller };
+    return { timer, elements, events, emitted, connections, socket, controller, messages };
 }
+
+test('voice: Android device failure reports the actual error, never a generic HTTPS warning', async () => {
+    const contexts = [];
+    class AudioContext {
+        constructor() { this.state = 'running'; contexts.push(this); }
+        resume() { return Promise.resolve(); }
+        close() { this.state = 'closed'; return Promise.resolve(); }
+    }
+    let failure = true;
+    const runtime = voice(() => failure ? Promise.reject({ name: 'NotFoundError' }) : Promise.resolve(microphone()),
+        AudioContext, { userAgent: 'Mozilla/5.0 (Linux; Android 14; Phone Build/Test; wv)' });
+    await runtime.elements.get('joinCallBtn').fire('click');
+    assert.match(runtime.messages.at(-1), /NotFoundError.*0\.2\.2/);
+    assert.doesNotMatch(runtime.messages.at(-1), /HTTPS/);
+    assert.equal(contexts[0].state, 'closed');
+    assert.equal(runtime.controller.joined, false);
+    assert.equal(runtime.emitted.some(e => e.name === 'call_join'), false);
+    assert.equal(runtime.elements.get('joinCallBtn').disabled, false);
+    failure = false;
+    await runtime.elements.get('joinCallBtn').fire('click');
+    assert.equal(runtime.controller.joined, true);
+    runtime.controller.destroy();
+});
+
+test('voice: permission denial in Android WebView points to app permissions, not a nonexistent address bar', async () => {
+    const runtime = voice(() => Promise.reject({ name: 'NotAllowedError' }), null,
+        { userAgent: 'Mozilla/5.0 (Linux; Android 14; Phone; wv)' });
+    await runtime.elements.get('joinCallBtn').fire('click');
+    assert.match(runtime.messages.at(-1), /手机设置.*应用.*权限/);
+    assert.doesNotMatch(runtime.messages.at(-1), /地址栏|HTTPS/);
+});
+
+test('voice: busy microphone, interrupted recording and insecure context have separate diagnostics', async () => {
+    for (const [name, text] of [['NotReadableError', '其他通话或录音'], ['AbortError', '前台'],
+        ['OverconstrainedError', '录音参数'], ['SecurityError', '安全策略']]) {
+        const runtime = voice(() => Promise.reject({ name }));
+        await runtime.elements.get('joinCallBtn').fire('click');
+        assert.ok(runtime.messages.at(-1).includes(text));
+        assert.ok(runtime.messages.at(-1).includes(name));
+    }
+    const runtime = voice(() => Promise.reject({ name: 'TypeError' }), null, { secure: false });
+    await runtime.elements.get('joinCallBtn').fire('click');
+    assert.match(runtime.messages.at(-1), /HTTPS/);
+});
 
 function microphone() {
     const track = { enabled: true, stopped: false, stop() { this.stopped = true; } };

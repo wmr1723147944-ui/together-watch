@@ -7,6 +7,8 @@ on:
     paths:
       - "android-app/**"
       - "static/js/bookmarklet.js"
+      - "static/js/catalog-adapters.js"
+      - "desktop-app/src/player-agent.js"
       - ".github/workflows/android.yml"
 
 jobs:

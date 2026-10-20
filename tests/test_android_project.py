@@ -8,6 +8,26 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_managed_room_flow_and_revision_guard_are_wired(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        layout = (ANDROID / "app/src/main/res/layout/activity_main.xml").read_text(encoding="utf-8")
+        build = (ANDROID / "app/build.gradle").read_text(encoding="utf-8")
+        for text in ('ProgramPolicy.handoff', 'validatedProgram', 'b.applyProgram(', 'programRevision>0', 'PlaybackBoundary.sample', 'PlaybackBoundary.command', 'request.hasGesture()'):
+            self.assertIn(text, activity)
+        for control in ('findButton', 'findAgainButton', 'pickPageButton', 'finderToolbar'):
+            self.assertIn('@+id/' + control, layout)
+        self.assertIn('prepareSharedPlayerAssets', build)
+        self.assertIn("include 'player-agent.js'", build)
+        self.assertIn("include 'catalog-adapters.js'", build)
+
+    def test_microphone_rechecks_current_room_after_android_prompt(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        callback = activity.split('public void onRequestPermissionsResult', 1)[1].split('private void fetchAndInjectHelper', 1)[0]
+        self.assertIn('foreground && sessionActive && trustedRoomPage()', callback)
+        self.assertIn('request.getOrigin()', callback)
+        self.assertIn('cancelPendingMicrophone();pendingAudioPermission = request;', activity)
+        self.assertIn('runOnUiThread(request::deny)', activity)
+
     def test_android_xml_files_are_well_formed(self):
         xml_files = list((ANDROID / "app" / "src" / "main").rglob("*.xml"))
         self.assertGreaterEqual(len(xml_files), 8)
@@ -30,6 +50,7 @@ class AndroidProjectTests(unittest.TestCase):
 
         self.assertIn("android.permission.INTERNET", manifest)
         self.assertIn("android.permission.RECORD_AUDIO", manifest)
+        self.assertIn("android.permission.MODIFY_AUDIO_SETTINGS", manifest)
         self.assertIn('android:usesCleartextTraffic="false"', manifest)
         self.assertIn('cleartextTrafficPermitted="false"', security)
         self.assertIn("UrlPolicy.isTrustedServerUrl(request.getOrigin()", activity)
