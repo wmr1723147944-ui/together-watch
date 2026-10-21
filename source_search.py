@@ -19,7 +19,7 @@ import catalog_sources
 from poster_policy import poster_url
 
 
-SEARCH_VERSION = "20261021-film-first"
+SEARCH_VERSION = "20261021-live-catalog"
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",
@@ -103,7 +103,7 @@ def _fetch(provider, query):
     return _fetch_path(provider, path)
 
 
-def _fetch_path(provider, path):
+def _fetch_path(provider, path, *, expect_json=None):
     """Only callers with code-owned hosts and validated paths may use this transport."""
     host = provider["host"]  # Code-owned constant, never a request parameter.
     addresses = list(dict.fromkeys(row[4][0] for row in
@@ -116,7 +116,7 @@ def _fetch_path(provider, path):
                                       assert_hostname=host, cert_reqs="CERT_REQUIRED",
                                       ca_certs=certifi.where(), maxsize=1)
     response = None
-    expects_json = provider["id"] in {"blender", "ddys"}
+    expects_json = provider["id"] in {"blender", "ddys"} if expect_json is None else expect_json
     deadline = time.monotonic() + 8
     try:
         response = pool.urlopen("GET", path, headers={

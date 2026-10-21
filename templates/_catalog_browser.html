@@ -9,40 +9,33 @@
     {# Client metadata IPC reads this allowlist; it is not a source directory. #}
     <div hidden aria-hidden="true">
         {% for source in discovery_search_sources %}<input type="checkbox" data-live-source="{{ source.id }}" data-source-name="{{ source.name }}" checked tabindex="-1">{% endfor %}
+        {% for source in discovery_feed_sources %}<span data-feed-source="{{ source.id }}" data-source-name="{{ source.name }}" data-categories="{{ source.categories|join(',') }}"></span>{% endfor %}
     </div>
     <section id="discoveryWelcome" aria-label="推荐片单">
-        {% set featured = catalog_recommendations[0] %}
-        <div class="catalog-hero">
-            <img class="catalog-hero-image" src="{{ featured.poster }}" alt="" referrerpolicy="no-referrer" fetchpriority="high">
+        <div class="catalog-hero" id="catalogHero">
+            <img class="catalog-hero-image" id="catalogHeroImage" alt="" referrerpolicy="no-referrer" hidden>
             <div class="catalog-hero-copy">
                 <span class="catalog-eyebrow">今晚，一起看</span>
-                <h1>{{ featured.title }}</h1>
-                <p class="hero-tagline">{{ featured.tagline }}</p>
-                <p class="hero-facts">{{ featured.year }} <span>·</span> 科幻 / 冒险</p>
-                <button type="button" class="catalog-primary" data-discovery-query="{{ featured.title }}">找这部片 <span aria-hidden="true">→</span></button>
+                <h1 id="catalogHeroTitle">下一部好片，在这里</h1>
+                <p class="hero-tagline" id="catalogHeroTagline">从各站片单发现故事，选好再一起看。</p>
+                <p class="hero-facts" id="catalogHeroFacts">电影 · 剧集 · 动漫 · 纪录片</p>
+                <button type="button" class="catalog-primary" id="catalogHeroOpen" hidden>查看影片 <span aria-hidden="true">→</span></button>
             </div>
-            <span class="hero-caption">编辑精选 · 非实时热榜</span>
+            <span class="hero-caption">公开片单 · 按来源目录更新</span>
         </div>
         <div class="catalog-channels" role="group" aria-label="筛选推荐片单">
             {% for key, label in [('all','为你推荐'),('movie','电影'),('series','剧集'),('animation','动漫'),('documentary','纪录片')] %}
             <button type="button" data-catalog-category="{{ key }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>
             {% endfor %}
         </div>
-        <header class="catalog-section-title"><div><span class="catalog-eyebrow">PICK YOUR NEXT STORY</span><h2 id="recommendationTitle">值得一起看的故事</h2></div><span>选一部，留一晚</span></header>
-        <div class="catalog-grid catalog-recommendations">
-            {% for film in catalog_recommendations %}
-            <article class="catalog-film" data-recommendation-category="{{ film.category }}">
-                <button class="catalog-film-poster" type="button" data-discovery-query="{{ film.title }}" data-poster="{{ film.poster }}" aria-label="查找 {{ film.title }}">
-                    <span class="catalog-cover-placeholder">{{ film.title }}</span>
-                    <img src="{{ film.poster }}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">
-                    <span class="catalog-film-badge">{{ film.genre }}</span><span class="catalog-hover-action">查看影片 →</span>
-                </button>
-                <button class="catalog-title" type="button" data-discovery-query="{{ film.title }}">{{ film.title }}</button>
-                <p>{{ film.year }} · {{ film.tagline }}</p>
-            </article>
-            {% endfor %}
-        </div>
-        <p class="catalog-footnote">精选片单仅提供找片灵感；点击后查询实际结果，不代表已验证可播放。清晰度与观看权限以原站为准。</p>
+        <header class="catalog-section-title"><div><span class="catalog-eyebrow">KEEP EXPLORING</span><h2 id="recommendationTitle">发现更多好片</h2></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh">刷新片单 ↻</button></header>
+        <p id="catalogFeedStatus" class="catalog-feed-status" role="status" aria-live="polite">正在读取公开片单…</p>
+        <div id="catalogFeedGrid" class="catalog-grid catalog-recommendations" aria-busy="true"></div>
+        <div id="catalogFeedSkeleton" class="catalog-grid" aria-hidden="true">{% for i in range(8) %}<div class="catalog-skeleton"></div>{% endfor %}</div>
+        <div id="catalogFeedSentinel" class="catalog-feed-more"><button type="button" id="catalogFeedMore">加载更多影片</button></div>
+        <p id="catalogFeedEmpty" class="catalog-empty" hidden>暂时没有取得片单，可以重试，也可以直接搜索剧名。</p>
+        <details id="catalogFeedNotes" class="catalog-search-notes" hidden><summary>部分目录暂不可用</summary><div id="catalogFeedNotesBody"></div></details>
+        <p class="catalog-footnote">片单来自已接入来源的公开目录，向下滚动继续加载；不代表已验证可播放。清晰度与观看权限以原站为准。</p>
     </section>
     <section id="discoveryLive" class="catalog-results" hidden aria-busy="false" aria-labelledby="catalogResultTitle">
         <header class="catalog-section-title"><div><button id="catalogBack" type="button" class="catalog-back">← 返回推荐</button><h2 id="catalogResultTitle">搜索结果</h2></div><span id="catalogResultCount"></span></header>
@@ -56,6 +49,7 @@
         <header><span class="discovery-eyebrow">选好影片，再选集</span><button id="discoveryDetailClose" type="button" autofocus aria-label="关闭详情">返回结果 ×</button></header>
         <div class="catalog-detail-heading"><div id="catalogDetailPoster"></div><div><h2 id="discoveryDetailTitle"></h2><p id="catalogDetailFacts"></p><p class="discovery-note">同名可能有不同版本，请核对年份和集数。</p></div></div>
         <div id="catalogSourceChoices" class="catalog-source-choices" role="group" aria-label="此影片的可选来源"></div>
+        <button type="button" id="catalogFindOtherSources" class="catalog-back" hidden>搜索这部影片的其他来源 →</button>
         <p id="discoveryDetailDescription"></p>
         <p id="discoveryDetailStatus" role="status" aria-live="polite"></p>
         <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数" aria-label="筛选集数" hidden>

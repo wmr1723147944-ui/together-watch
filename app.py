@@ -1385,6 +1385,7 @@ def index():
 
 
 def source_discovery_context(query="", source_type="all", quality="all"):
+    from catalog_recommendations import feed_choices
     # Disabled IDs are deployment settings, not user-supplied URLs. Removing a
     # search entry never changes the playback allowlist or room state.
     return {**discovery_context(
@@ -1393,7 +1394,8 @@ def source_discovery_context(query="", source_type="all", quality="all"):
         disabled_films=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_FILMS", "")),
         disabled_sources=parse_host_allowlist(os.environ.get("DISCOVERY_DISABLED_SOURCES", "")),
         source_type=source_type, quality=quality,
-    ), "discovery_search_sources": enabled_search_sources()}
+    ), "discovery_search_sources": enabled_search_sources(),
+        "discovery_feed_sources": feed_choices(enabled_search_sources())}
 
 
 def enabled_search_sources():
@@ -1435,6 +1437,32 @@ def discover_search():
     response = jsonify(result)
     response.headers["Cache-Control"] = "no-store"
     response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
+@app.route("/api/discover/feed")
+@rate_limit("discover-feed", limit=90, window_seconds=60)
+def discover_feed():
+    from catalog_recommendations import load_page, feed_choices, MAX_PAGE
+    origin = request.headers.get('Origin')
+    if ((origin and origin.rstrip('/') != request.host_url.rstrip('/'))
+            or request.headers.get('Sec-Fetch-Site') == 'cross-site'):
+        return jsonify(error='请从本站浏览推荐'), 403
+    if (len(request.query_string) > 512 or set(request.args) != {'source', 'category', 'page'}
+            or any(len(request.args.getlist(k)) != 1 for k in request.args)):
+        return jsonify(error='推荐请求格式无效'), 400
+    source, category, page = (request.args[k] for k in ('source', 'category', 'page'))
+    enabled = {p['id']: p for p in feed_choices(enabled_search_sources())}
+    if (source not in enabled or category not in enabled[source]['categories']
+            or not re.fullmatch(r'[1-9][0-9]{0,3}', page) or int(page) > MAX_PAGE):
+        return jsonify(error='该推荐来源或分页未启用'), 400
+    try:
+        result = load_page(source, category, int(page))
+    except ValueError:
+        return jsonify(error='推荐分页无效'), 400
+    response = jsonify(result)
+    response.headers['Cache-Control'] = 'no-store'
+    response.headers['Referrer-Policy'] = 'no-referrer'
     return response
 
 

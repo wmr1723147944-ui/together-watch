@@ -10,13 +10,15 @@ from poster_policy import POSTER_DOMAINS, poster_url
 
 
 class PosterMetadataTests(unittest.TestCase):
-    def test_recommendations_have_safe_real_catalogue_covers_but_no_playback_claims(self):
-        from catalog_recommendations import recommendations
-        rows = recommendations()
-        self.assertGreaterEqual(len(rows), 8)
-        self.assertEqual(len({row['title'] for row in rows}), len(rows))
+    def test_feed_covers_follow_the_same_policy_without_playback_claims(self):
+        from catalog_recommendations import parse_page
+        rows, _ = parse_page('ddys', 'all', 1, '''<article class="movie-card">
+            <a href="/movie/test"><img src="https://img.ddys.io/movies/test.webp"></a>
+            <h3>测试片目</h3><p>2022 · 电影</p></article>''')
+        self.assertEqual(len(rows), 1)
         for row in rows:
-            self.assertEqual(poster_url(row['poster'], 'https://watchtogethernow.cloud'), row['poster'])
+            self.assertEqual(poster_url(row['poster_url'], 'https://watchtogethernow.cloud'), row['poster_url'])
+            self.assertFalse(row['playback_verified'])
             self.assertNotIn('play_url', row)
             self.assertNotIn('score', row)
             self.assertNotIn('media_url', row)

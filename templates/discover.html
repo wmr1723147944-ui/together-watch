@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261021-posters') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-cinema.css', v='20261021-posters') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser.css', v='20261021-film-first') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser.css', v='20261021-live-catalog') }}">
 </head>
 <body class="media-app catalog-cinema">
     {% include "_site_nav.html" %}
@@ -20,6 +20,7 @@
     </main>
     <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261021-posters') }}" defer></script>
     <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261021-film-first') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261021-film-first') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261021-live-catalog') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261021-live-catalog') }}" defer></script>
 </body>
 </html>

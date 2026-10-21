@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/film-home-20261021');
+const root=path.resolve(__dirname,'../..'),output=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'together-watch-catalog-qa-'));
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
@@ -16,6 +16,7 @@ async function run(){
 from pathlib import Path
 import app as module
 import source_search
+import catalog_recommendations
 rows = source_search.parse_results(source_search.PROVIDERS['ddys'], Path('tests/poster-search-fixture.json').read_text(encoding='utf8'), '星')
 def search(source, query):
     matching = rows if source == 'ddys' else [dict(title='绿色星球',year='2022',page_url='https://www.cupfox.in/vod-detail/1234.html')] if source == 'cupfox' else []
@@ -26,18 +27,47 @@ def detail(source, page):
     return dict(source_id=source, page_url=page, item_id='the-green-planet', status='ok', title='绿色星球', description='本地界面测试：公开目录样例，不代表已验证可播。', episodes=[dict(id='page',title='在原站选集',launch_path='/discover/play/ddys/the-green-planet/page')])
 module.search_provider=search
 module.load_detail=detail
+def feed(source, category, page):
+    matching = []
+    if source == 'ddys':
+        for batch in range(3):
+            for r in rows:
+                matching.append(r if page == 1 and batch == 0 else dict(r,
+                    title=f'分页测试 {page}-{batch} · ' + r['title'], page_url=r['page_url'] + f'-test-{page}-{batch}'))
+    return dict(source_id=source, category=category, page=page, status='ok', results=matching,
+                has_more=source == 'ddys' and page == 1, next_page=2 if source == 'ddys' and page == 1 else None)
+catalog_recommendations.load_page=feed
 module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
 `],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...process.env,APP_ENV:'development',SECRET_KEY:'catalog-ui-test-only'}});
     backend.stdout.on('data',d=>log=(log+d).slice(-5000));backend.stderr.on('data',d=>log=(log+d).slice(-5000));
     backend.on('error',e=>{log+=e.message;});
     await until('backend',async()=>{try{return (await fetch(server+'/health')).ok;}catch{return false;}});
-    win=new BrowserWindow({show:false,width:1440,height:1100,useContentSize:true,webPreferences:{offscreen:true,contextIsolation:true,nodeIntegration:false,partition:'catalog-layout-test'}});
+    win=new BrowserWindow({show:false,width:1440,height:1100,useContentSize:true,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,partition:'catalog-layout-test'}});
     const wc=win.webContents,js=s=>wc.executeJavaScript(s);
+    const errors=[];
+    wc.on('console-message',(_event,details,message)=>{
+        const level=typeof details==='object'?details.level:details;
+        const text=typeof details==='object'?details.message:message;
+        if(level==='error'||level===3)errors.push(text);
+    });
+    wc.on('render-process-gone',(_event,details)=>errors.push('renderer: '+details.reason));
     async function shot(name){await delay(350);fs.writeFileSync(path.join(output,name+'.png'),(await wc.capturePage()).toPNG());}
     async function noOverflow(){assert.ok(await js('document.documentElement.scrollWidth <= innerWidth + 1'),'horizontal overflow');}
     await win.loadURL(server+'/discover');
-    await until('initial recommendation images',()=>js('Array.from(document.querySelectorAll(".catalog-film-poster img")).every(i=>i.complete)'),25000);
+    assert.equal(wc.getURL(),server+'/discover');assert.match(wc.getTitle(),/一起看|影片|Together/i);
+    await until('initial catalogue',()=>js('document.querySelectorAll(".catalog-feed-film").length===24'));
+    assert.ok(await js('!document.querySelector("vite-error-overlay, #webpack-dev-server-client-overlay, nextjs-portal")'));
+    await until('visible recommendation images',()=>js('Array.from(document.querySelectorAll("#catalogFeedGrid img")).slice(0,8).every(i=>i.complete)'),30000);
     await noOverflow();await shot('desktop-welcome');
+    assert.equal(await js('document.querySelectorAll(".catalog-feed-film").length'),24,'next page must wait for scroll');
+    await js('document.getElementById("catalogFeedSentinel").scrollIntoView();dispatchEvent(new Event("scroll"))');
+    await until('scroll appends second page',()=>js('document.querySelectorAll(".catalog-feed-film").length===48'));
+    assert.ok(await js('document.getElementById("catalogFeedMore").hidden'));
+    await shot('desktop-page-two');
+    await js('scrollTo(0,0);document.querySelector("#catalogFeedGrid .catalog-film-poster").click()');
+    await until('feed detail',()=>js('document.getElementById("discoveryDetail").open'));
+    assert.ok(await js('!document.getElementById("catalogFindOtherSources").hidden'));
+    await js('document.getElementById("discoveryDetailClose").click()');
     await js(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['ddys','huarw','blender','cupfox'].includes(c.dataset.liveSource);document.getElementById('discoveryQuery').value='星';document.getElementById('discoveryForm').requestSubmit();`);
     await until('eight poster results',()=>js('document.querySelectorAll(".discovery-title-card").length===8'));
     await until('loaded cover',()=>js('Array.from(document.querySelectorAll(".discovery-poster-image")).filter(i=>i.complete && i.naturalWidth>0).length>=6'),30000);
@@ -64,6 +94,15 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await until('failed-cover still opens',()=>js('document.getElementById("discoveryDetail").open'));await noOverflow();
     await js('document.getElementById("discoveryDetailClose").click();document.getElementById("discoveryClear").click()');
     assert.ok(await js('!document.getElementById("discoveryWelcome").hidden'));
+    assert.equal(await js('document.querySelectorAll(".catalog-feed-film").length'),48,'return preserves loaded recommendations');
+    await js('document.querySelector("[data-catalog-category=movie]").click()');
+    await until('movie category loads',()=>js('document.getElementById("recommendationTitle").textContent==="电影片单" && document.querySelectorAll(".catalog-feed-film").length>=8'));
+    await noOverflow();
+    await js('document.getElementById("catalogFeedRefresh").click()');
+    await until('refresh completes',()=>js('document.getElementById("catalogFeedGrid").getAttribute("aria-busy")==="false" && document.querySelectorAll(".catalog-feed-film").length>=8'));
+    await js('document.querySelector("[data-catalog-category=all]").click();scrollTo(0,0)');
+    await until('mobile feed ready',()=>js('document.querySelectorAll(".catalog-feed-film").length===24'));
+    win.setContentSize(320,1000);await delay(250);await noOverflow();
     win.setContentSize(390,1000);await shot('mobile-welcome');
     await win.loadURL(server+'/');await delay(500);await noOverflow();await shot('mobile-home');
     assert.equal(await js('document.getElementById("roomEntry").open'),false);
@@ -74,7 +113,11 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await win.loadURL(server+'/?room=4ccfa3f3db24a52c2b5c68bc');
     await until('invitation opens join form',()=>js('document.getElementById("roomEntry").open'));
     assert.equal(await js('document.getElementById("roomId").value'),'4ccfa3f3db24a52c2b5c68bc');
-    console.log('PASS: film-first home, unified results, covers, fallback, detail/episode, clear, responsive widths, invitation dialog');
+    const appErrors=errors.filter(e=>!/net::|Failed to load resource|Electron Security Warning/.test(e));
+    assert.deepEqual(appErrors,[],'runtime console errors');
+    console.log('External cover errors (fallback tested):',errors.filter(e=>/net::|Failed to load resource/.test(e)).length);
+    console.log('Evidence:',output);
+    console.log('PASS: real rendered feed append on scroll, dedup, preserved return, categories, refresh, unified search, covers, fallback, detail/episode, responsive widths, invitation dialog, no runtime console errors');
 }
 function finish(code){backend?.kill();win?.destroy();app.exit(code);}
 app.whenReady().then(run).then(()=>finish(0)).catch(e=>{console.error(e.stack,log);finish(1);});

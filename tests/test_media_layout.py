@@ -61,7 +61,9 @@ class MediaLayoutTests(unittest.TestCase):
         self.assertNotIn('data-directory-site=', page)
         self.assertIn('href="/#roomEntry"', page)
         self.assertIn('data-live-source="ddys"', page)
-        self.assertIn('data-discovery-query="Sintel"', page)
+        self.assertIn('id="catalogFeedGrid"', page)
+        self.assertIn('catalog-feed.js', page)
+        self.assertNotIn('data-discovery-query="Sintel"', page)
         self.assertIn('id="discoveryWelcome"', page)
         self.assertNotIn('href="https://img.ddys.io', page)
 

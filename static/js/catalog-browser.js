@@ -2,12 +2,13 @@
     'use strict';
     const shared = typeof module === 'object' && module.exports ? require('./source-discovery.js') : globalThis.TogetherWatchDiscovery;
     const adapters = typeof module === 'object' && module.exports ? require('./catalog-adapters.js') : globalThis.TogetherWatchCatalogAdapters;
+    const feedApi = typeof module === 'object' && module.exports ? require('./catalog-feed.js') : globalThis.TogetherWatchFeed;
 
     // Without a year, two equal titles may be remakes. Keep those entries
     // separate rather than silently offering the wrong film to a room owner.
-    function groupResults(records) {
+    function groupResults(records, limit = 12) {
         const groups = new Map(), seen = new Set();
-        for (const record of records) for (const row of (record.rows || []).slice(0, 12)) {
+        for (const record of records) for (const row of (record.rows || []).slice(0, limit)) {
             if (!row || typeof row.title !== 'string') continue;
             const page = shared.safeResultUrl(record.source, row.page_url);
             const title = row.title.normalize('NFKC').replace(/\s+/g, ' ').trim().slice(0, 160);
@@ -32,6 +33,7 @@
         const sources = [...root.querySelectorAll('[data-live-source]')];
         let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0;
         const controllers = new Set(), cards = new Map(), retries = new Set();
+        const feed = feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, openGroup });
         function el(tag, text, className) {
             const node = doc.createElement(tag);
             if (text != null) node.textContent = text;
@@ -47,8 +49,14 @@
             stop(); query.value = ''; activeQuery = ''; records = []; cards.clear(); results.replaceChildren();
             welcome.hidden = false; live.hidden = true; $('discoveryClear').hidden = true;
             live.setAttribute('aria-busy', 'false'); query.focus();
+            feed?.setVisible(true);
         }
-        function openGroup(group, trigger) {
+        function openGroup(group, trigger, fromFeed = false) {
+            const otherSources = $('catalogFindOtherSources');
+            if (otherSources) {
+                otherSources.hidden = !fromFeed;
+                otherSources.onclick = () => { details.close(); query.value = group.title; run(); root.scrollIntoView?.({ block: 'start' }); };
+            }
             const choices = $('catalogSourceChoices'); choices.replaceChildren();
             $('catalogDetailFacts').textContent = (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个条目';
             const poster = $('catalogDetailPoster'); poster.replaceChildren();
@@ -155,6 +163,7 @@
             const value = shared.normalizeQuery(query.value);
             if (!value) { home(); return; }
             stop(); activeQuery = value; query.value = value; const current = generation;
+            feed?.setVisible(false);
             const queue = sources.filter(source => source.checked !== false);
             records = []; cards.clear(); results.replaceChildren(); groupCount = 0; completed = 0; pending = sourceCount = queue.length;
             welcome.hidden = true; live.hidden = false; $('discoveryClear').hidden = false;
@@ -172,14 +181,14 @@
         for (const button of root.querySelectorAll('[data-catalog-category]')) button.addEventListener('click', () => {
             const category = button.dataset.catalogCategory;
             for (const tab of root.querySelectorAll('[data-catalog-category]')) tab.setAttribute('aria-pressed', String(tab === button));
-            for (const card of root.querySelectorAll('[data-recommendation-category]')) card.hidden = category !== 'all' && card.dataset.recommendationCategory !== category;
-            $('recommendationTitle').textContent = category === 'all' ? '值得一起看的故事' : button.textContent + '精选';
+            $('recommendationTitle').textContent = category === 'all' ? '发现更多好片' : button.textContent + '片单';
+            feed?.reset(category);
         });
         for (const img of root.querySelectorAll('.catalog-film-poster img, .catalog-hero-image')) {
             const failed = () => { img.hidden = true; };
             img.addEventListener('error', failed); if (img.complete && !img.naturalWidth) failed();
         }
-        if (shared.normalizeQuery(query.value)) run();
+        if (shared.normalizeQuery(query.value)) run(); else feed?.setVisible(true);
         return { run, home, cancel: stop };
     }
     if (typeof module === 'object' && module.exports) module.exports = { groupResults, createBrowser };
