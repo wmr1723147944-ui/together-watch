@@ -18,13 +18,17 @@ function publicHttps(value) {
 }
 function roomFrom(value, server = SERVER) {
     const text = String(value || '').trim();
-    if (ROOM_RE.test(text)) return text;
+    if (text.length > 2048) return '';
+    const clean = id => ROOM_RE.test(id) ? (/^[a-f\d]{24}$/i.test(id) ? id.toLowerCase() : id) : '';
+    const bare = clean(text.replace(/^房间(?:号)?[：:\s]+/, '').trim());
+    if (bare) return bare;
     try {
-        const url = new URL(text);
+        const link = text.match(/https?:\/\/[^\s<>]+/i);
+        const url = new URL(link ? link[0].replace(/[)\]}>，。；！？]+$/, '') : text);
         if (url.origin !== server || url.username || url.password) return '';
-        const match = /^\/(?:mobile-room|room)\/([^/]+)$/.exec(url.pathname);
-        const id = match ? decodeURIComponent(match[1]) : '';
-        return ROOM_RE.test(id) ? id : '';
+        const match = /^\/(?:mobile-room|room)\/([^/]+)\/?$/.exec(url.pathname);
+        const id = match ? decodeURIComponent(match[1]) : url.pathname === '/' && url.searchParams.getAll('room').length === 1 ? url.searchParams.get('room').trim() : '';
+        return clean(id);
     } catch { return ''; }
 }
 function isRoomUrl(value, room, server = SERVER) {

@@ -5,6 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -129,9 +131,11 @@ public final class MainActivity extends ComponentActivity {
     private long programRevision, appliedProgramRevision, episodeStarted;
     private ProgramPolicy.Selection programSelection;
     private String ownerKey = "";
-    private String playerAgent = "", webSyncScript = "", catalogScript = "";
+    private String playerAgent = "", webSyncScript = "", catalogScript = "", pageLayoutScript = "";
+    private String playerBridgeNotice = "";
     private boolean roomBootstrapPending = false;
     private volatile int videoPageGeneration = 0;
+    private ProgramPolicy.Selection pendingSetupSelection = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -143,6 +147,7 @@ public final class MainActivity extends ComponentActivity {
         restoreInputs();
         readSharedText(getIntent());
         bindActions();
+        if (!Intent.ACTION_SEND.equals(getIntent().getAction())) showFinder();
     }
 
     private void bindViews() {
@@ -202,6 +207,7 @@ public final class MainActivity extends ComponentActivity {
         playerAgent = readAsset("player-agent.js");
         webSyncScript = readAsset("android-web-sync.js");
         catalogScript = readAsset("catalog-adapters.js");
+        pageLayoutScript = readAsset("android-page-layout.js");
         arrangePanels();
     }
 
@@ -228,6 +234,8 @@ public final class MainActivity extends ComponentActivity {
         settings.setJavaScriptCanOpenWindowsAutomatically(supportsCompanionPopup);
         settings.setBuiltInZoomControls(false);
         settings.setDisplayZoomControls(false);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
@@ -259,7 +267,11 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.privacyButton).setOnClickListener(view -> openExternal(SERVER_ORIGIN + "/privacy"));
         findViewById(R.id.sourceButton).setOnClickListener(view -> choosePlayback());
         findViewById(R.id.sampleButton).setOnClickListener(view -> chooseSample());
-        findViewById(R.id.findButton).setOnClickListener(view -> { if(validateIdentity()) showFinder(); });
+        findViewById(R.id.findButton).setOnClickListener(view -> {
+            // A filled invitation always means join, even if "find a film" was tapped.
+            if(!roomInput.getText().toString().trim().isEmpty()) startSession();
+            else showFinder();
+        });
         findViewById(R.id.findAgainButton).setOnClickListener(view -> showFinder());
         findViewById(R.id.pickPageButton).setOnClickListener(view -> chooseCurrentPage());
         findViewById(R.id.fullscreenButton).setOnClickListener(view -> {
@@ -267,9 +279,19 @@ public final class MainActivity extends ComponentActivity {
             else enterWebFullscreen();
         });
         findViewById(R.id.inviteButton).setOnClickListener(view -> {
-            Intent invite = new Intent(Intent.ACTION_SEND).setType("text/plain");
-            invite.putExtra(Intent.EXTRA_TEXT, "来一起看：" + SERVER_ORIGIN + "/room/" + Uri.encode(activeRoom));
-            startActivity(Intent.createChooser(invite, "邀请朋友"));
+            String link=SERVER_ORIGIN+"/room/"+Uri.encode(activeRoom);
+            new AlertDialog.Builder(this).setTitle("房间号："+activeRoom)
+                .setItems(new String[]{"复制房间号", "复制邀请链接", "分享邀请"},(dialog,which)->{
+                    if(which<2) {
+                        ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                        if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("一起看邀请",which==0?activeRoom:link));
+                        Toast.makeText(this,"已复制，请让朋友粘贴到房间号输入框",Toast.LENGTH_LONG).show();
+                    } else {
+                        Intent invite=new Intent(Intent.ACTION_SEND).setType("text/plain");
+                        invite.putExtra(Intent.EXTRA_TEXT,"来一起看："+link);
+                        startActivity(Intent.createChooser(invite,"邀请朋友"));
+                    }
+                }).setNegativeButton("关闭",null).show();
         });
     }
 
@@ -278,10 +300,13 @@ public final class MainActivity extends ComponentActivity {
         String room = UrlPolicy.extractRoom(roomInput.getText().toString(), SERVER_HOST);
         String videoUrl = UrlPolicy.extractFirstHttpsUrl(videoUrlInput.getText().toString());
         if(!roomInput.getText().toString().trim().isEmpty()) {
-            if(room.isEmpty()) {showInputError(roomInput,"房间号无效，请输入完整邀请链接");return;}
+            if(room.isEmpty()) {showInputError(roomInput,"请粘贴房主复制的完整房间号或邀请链接");return;}
             final String requestedRoom=room;
             requestProgram("/api/watch-rooms/"+Uri.encode(room)+"/program","GET",null,"", data -> {
                 if(data.optBoolean("legacy")) {
+                    if(requestedRoom.matches("[a-f0-9]{24}")) {
+                        reportError("找不到这个房间，可能已过期或服务器已重启。请让房主重新创建并复制邀请；不会另开新房间。");return;
+                    }
                     if(videoUrl.isEmpty()){reportError("此邀请没有可读取的片源。旧房间需双方填写同一视频链接；新流程请先找片再建房。");return;}
                     new AlertDialog.Builder(this).setTitle("按旧兼容房间加入？")
                         .setMessage("没有查到房间片源。仅在确认这是旧房间且双方已填写相同影片时继续；过期的新邀请请让房主重新发送。")
@@ -296,6 +321,10 @@ public final class MainActivity extends ComponentActivity {
             });
             return;
         }
+        if(pendingSetupSelection!=null) {
+            ProgramPolicy.Selection selected=pendingSetupSelection;pendingSetupSelection=null;
+            if(selected.page.equals(videoUrl)) {chooseSelection(selected);return;}
+        }
         if(videoUrlInput.getText().toString().trim().isEmpty()) {showFinder();return;}
         if(videoUrl.isEmpty()) {
             showInputError(videoUrlInput, "只允许公开 HTTPS 网页，不能使用本机或局域网地址");
@@ -305,7 +334,7 @@ public final class MainActivity extends ComponentActivity {
         if(selected!=null) {chooseSelection(selected);return;}
         new AlertDialog.Builder(this).setTitle("此播放页暂不支持邀请自动选集")
             .setMessage("可建立兼容房间，但朋友仍需自行打开同一影片。也可以返回软件内找片，选集后建立带片源的房间。")
-            .setPositiveButton("建立兼容房间",(d,w)->{programRevision=0;programSelection=null;ownerKey="";startResolved(UUID.randomUUID().toString().replace("-", "").substring(0,24),videoUrl);})
+            .setPositiveButton("建立兼容房间",(d,w)->{programRevision=0;programSelection=null;ownerKey="";startResolved("legacy-"+UUID.randomUUID().toString().replace("-", "").substring(0,24),videoUrl);})
             .setNegativeButton("返回找片",(d,w)->showFinder()).show();
     }
 
@@ -360,6 +389,7 @@ public final class MainActivity extends ComponentActivity {
     private void showFinder() {
         if(requestBusy)return;
         if(sessionActive && ownerKey.isEmpty()) {reportError("当前房间只有房主能换片；要自己选片请先返回设置。");return;}
+        pendingSetupSelection=null;
         finding=true;navigationBack.setEnabled(true);hideKeyboard();
         exitNativeFullscreen();hideFullscreenVideo();nativePlayer.pauseLocally();destroyCompanion();
         videoWebView.evaluateJavascript("window.__twAndroidPage?.pause();document.querySelectorAll('video,audio').forEach(v=>v.pause())",null);
@@ -368,7 +398,9 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);
         findViewById(R.id.playbackToolbar).setVisibility(View.GONE);
         videoContainer.setVisibility(View.VISIBLE);roomContainer.setVisibility(View.GONE);statusText.setVisibility(View.VISIBLE);
-        setStatus("先搜索 → 详情 / 选集 → 选好再建房。看剧 AI 本机统一查询暂限 Windows，可在原站选好播放页后确认。");
+        setStatus("选择推荐影片，或搜索想看的片名。选好集数后再建房。");
+        browserToolbar.setVisibility(View.GONE);statusText.setVisibility(View.GONE);
+        findViewById(R.id.finderToolbar).setVisibility(View.GONE);
         videoWebView.loadUrl(SERVER_ORIGIN+"/discover");
     }
 
@@ -381,11 +413,23 @@ public final class MainActivity extends ComponentActivity {
         }
         ProgramPolicy.Selection selection=ProgramPolicy.fromPage(videoWebView.getUrl());
         if(selection==null){reportError("当前不是已适配的播放页，请回到目录点具体集数；不会把首页当成影片。");return;}
-        if(!finding && programSelection!=null && !programSelection.exact()) {
+        if(!finding && programSelection!=null && !programSelection.exact()
+            && !(selection.source.equals("kanju") && !ownerKey.isEmpty())) {
             new AlertDialog.Builder(this).setTitle("确认双方已经选好同一集")
                 .setMessage("此来源不能自动确认集数。请双方核对影片和集数后再开始同步。")
                 .setPositiveButton("我已核对",(d,w)->{awaitingEpisode=false;appliedProgramRevision=0;})
                 .setNegativeButton("取消",null).show();return;
+        }
+        if(selection.source.equals("kanju") && !selection.exact()) {
+            // The original site can select an episode without putting it in the URL.
+            final String expectedUrl=videoWebView.getUrl();final int epoch=flowGeneration;
+            videoWebView.evaluateJavascript(catalogScript+";"+webSyncScript+";window.__twAndroidPage.currentEpisode('kanju')", result->{
+                if(destroyed || epoch!=flowGeneration || !expectedUrl.equals(videoWebView.getUrl()))return;
+                String episode="";try{episode=new JSONArray("["+result+"]").optString(0,"");}catch(Exception ignored){}
+                ProgramPolicy.Selection exact=ProgramPolicy.create(selection.source,selection.item,episode);
+                if(exact==null || !exact.exact()){reportError("还没确认当前集数。请先在原站点选一集，再点「确认当前集数」；未创建房间。");return;}
+                chooseSelection(exact);
+            });return;
         }
         chooseSelection(selection);
     }
@@ -441,7 +485,14 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void chooseSelection(ProgramPolicy.Selection selection) {
-        if(!validateIdentity() || requestBusy)return;
+        if(requestBusy)return;
+        if(!sessionActive && !roomInput.getText().toString().trim().isEmpty()){startSession();return;}
+        if(!sessionActive && (nicknameInput.getText().toString().trim().isEmpty() || !consentCheck.isChecked())) {
+            showSetup();pendingSetupSelection=selection;videoUrlInput.setText(selection.page);
+            ((Button)findViewById(R.id.openVideoButton)).setText("确认并创建房间");
+            setStatus("影片和集数已保留。填写昵称并勾选使用说明，再点击下方按钮建房。");return;
+        }
+        if(!validateIdentity())return;
         if(sessionActive && ownerKey.isEmpty()){reportError("只有房主可以换片。");return;}
         boolean change=sessionActive;
         requestProgram(change?"/api/watch-rooms/"+activeRoom+"/program":"/api/watch-rooms",change?"PUT":"POST",selection,change?ownerKey:"",data->{
@@ -495,6 +546,8 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showSetup() {
+        pendingSetupSelection=null;
+        ((Button)findViewById(R.id.openVideoButton)).setText(R.string.open_video);
         exitNativeFullscreen();
         sessionActive = false;
         finding=false;requestBusy=false;++flowGeneration;
@@ -563,6 +616,7 @@ public final class MainActivity extends ComponentActivity {
     }
     private void samplePlayer(int generation) {
         final int page=videoPageGeneration;
+        playerBridgeNotice="";
         if(finding || (programRevision>0 && programSelection==null)) {deliverSample(generation,page,new JSONObject(),-1);return;}
         if(programRevision>0 && !nativePlayer.isActive() && (!currentProgramPage() || videoLoading)) {
             if(!videoLoading)setStatus("当前页面与房间片源不同，已停止同步。点「确认当前集数」返回房主片源。");
@@ -580,14 +634,20 @@ public final class MainActivity extends ComponentActivity {
             });return;
         }
         if(!nativePlayer.isActive() && System.currentTimeMillis()-lastDiscovery>2000)discoverMedia();
-        if(nativePlayer.isActive() || programRevision==0) {deliverSample(generation,page,nativePlayer.sample(),-1);return;}
+        if(nativePlayer.isActive()) {deliverSample(generation,page,nativePlayer.sample(),-1);return;}
         if(playerAgent.isEmpty() || webSyncScript.isEmpty()){setStatus("播放器组件缺失，请重新安装完整 APK。");deliverSample(generation,page,new JSONObject(),-1);return;}
-        videoWebView.evaluateJavascript(webSyncScript+";window.__twAndroidPage.sample("+js(playerAgent)+")",result->{
+        videoWebView.evaluateJavascript(WebPlayerScripts.sample(webSyncScript,playerAgent),result->{
             if(!bridgeCurrent(generation))return;
             if(page!=videoPageGeneration){scheduleBridge(generation);return;}
             JSONObject sample=new JSONObject();long localSession=-1;
-            try {if(result.length()>65536)throw new IOException("oversize");JSONObject raw=new JSONObject(result);sample=PlaybackBoundary.sample(raw,page);localSession=raw.optLong("session",-1);}catch(Exception ignored){}
-            if(!sample.optBoolean("active") && System.currentTimeMillis()-episodeStarted>10000)setStatus("未找到可控制的播放器。请先点播放；跨域内嵌播放器可能不兼容，可试「播放方式」。");
+            String reason="adapter_error";
+            try {if(result.length()>65536)throw new IOException("oversize");JSONObject raw=new JSONObject(result);sample=PlaybackBoundary.sample(raw,page);localSession=raw.optLong("session",-1);reason=raw.optString("reason","no_video");}catch(Exception ignored){}
+            if(!sample.optBoolean("active")) {
+                playerBridgeNotice=WebPlayerScripts.diagnostic(reason);
+                setStatus(playerBridgeNotice);
+            } else {
+                setStatus(sample.optBoolean("ready")?"已识别网页播放器；连接进度请看下方房间状态。":"已识别网页播放器，正在等待视频就绪…");
+            }
             deliverSample(generation,page,sample,localSession);
         });
     }
@@ -597,7 +657,11 @@ public final class MainActivity extends ComponentActivity {
         final long revision=programRevision;
         boolean apply=revision>0 && appliedProgramRevision!=revision && !awaitingEpisode && !finding && programSelection!=null && sample.optBoolean("active");
         String script="(function(){const b=window.TogetherWatchMobile;if(!b)return null;"
-            +(apply?"b.applyProgram("+revision+");":"")+"b.receive("+sample+");return b.drain();})()";
+            +(apply?"b.applyProgram("+revision+");":"")+"b.receive("+sample+");"
+            // Also works with the deployed room script: a connected chat must
+            // not keep saying "opening the episode" after detection has failed.
+            +(!playerBridgeNotice.isEmpty()?"const s=document.getElementById('mobilePlayerStatus');if(s)s.textContent="+js(playerBridgeNotice)+";":"")
+            +"return b.drain();})()";
         roomWebView.evaluateJavascript(script,result->{
             if(!bridgeCurrent(generation))return;
             if(page!=videoPageGeneration || revision!=programRevision){scheduleBridge(generation);return;}
@@ -717,6 +781,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void setStatus(String text) {
         statusText.setText(text);
+        ((TextView)findViewById(R.id.setupStatus)).setText(text);
     }
 
     private void hideKeyboard() {
@@ -763,6 +828,17 @@ public final class MainActivity extends ComponentActivity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             Uri uri = request.getUrl();
+            if(finding && request.isForMainFrame() && request.hasGesture()
+                    && UrlPolicy.isTrustedServerUrl(view.getUrl(),SERVER_HOST)
+                    && uri.toString().equals(SERVER_ORIGIN+"/")) {
+                showFinder();return true;
+            }
+            if(finding && request.isForMainFrame() && request.hasGesture()
+                    && UrlPolicy.isTrustedServerUrl(view.getUrl(),SERVER_HOST)
+                    && uri.toString().equals(SERVER_ORIGIN+"/#roomEntry")) {
+                showSetup();roomInput.setText("");videoUrlInput.setText("");
+                setStatus("粘贴朋友的邀请链接或房间号，确认后加入同一个房间。");return true;
+            }
             ProgramPolicy.Selection selected=ProgramPolicy.handoff(uri.toString(),SERVER_ORIGIN);
             if(request.isForMainFrame() && selected!=null) {
                 if(finding && request.hasGesture() && UrlPolicy.isTrustedServerUrl(view.getUrl(),SERVER_HOST))chooseSelection(selected);
@@ -780,6 +856,13 @@ public final class MainActivity extends ComponentActivity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
             if ("about:blank".equals(url)) return;
+            if(finding) {
+                boolean catalogue=UrlPolicy.isTrustedServerUrl(url,SERVER_HOST)
+                    && ("/discover".equals(Uri.parse(url).getPath()) || "/".equals(Uri.parse(url).getPath()));
+                browserToolbar.setVisibility(catalogue?View.GONE:View.VISIBLE);
+                statusText.setVisibility(catalogue?View.GONE:View.VISIBLE);
+                findViewById(R.id.finderToolbar).setVisibility(catalogue?View.GONE:View.VISIBLE);
+            }
             videoLoading=true;
             videoPageGeneration += 1;
             protectedPage = false;
@@ -796,24 +879,34 @@ public final class MainActivity extends ComponentActivity {
             super.onPageFinished(view, url);
             if(!url.equals(view.getUrl()))return;
             videoLoading=false;
+            if(!pageLayoutScript.isEmpty())view.evaluateJavascript(pageLayoutScript,null);
             if(finding){setStatus("搜索影片，进入详情并点击具体集数。原站选好后也可点「确认当前集数」。");return;}
             if (!sessionActive || nativePlayer.isActive() || !UrlPolicy.isHttpsWebUrl(url)) return;
             int generation = videoPageGeneration;
-            if(programRevision>0){setStatus("网页已打开，正在确认房间片源与播放器…");return;}
-            setStatus("网页已打开，正在加载同步助手…");
-            fetchAndInjectHelper(generation, url);
+            if(programRevision>0){
+                if(awaitingEpisode && currentProgramPage())episodeStarted=System.currentTimeMillis();
+                setStatus("网页已打开，正在确认房间片源与播放器…");return;
+            }
+            // Both room types use the local timing bridge; no bookmarklet popup.
+            setStatus("网页已打开，正在识别播放器并连接房间同步…");
             discoverMedia();
         }
 
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
-            if (request.isForMainFrame()) setStatus("网页加载失败：" + error.getDescription());
+            if (request.isForMainFrame()) {
+                statusText.setVisibility(View.VISIBLE);
+                if(finding) {browserToolbar.setVisibility(View.VISIBLE);findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);}
+                setStatus("网页加载失败，可返回找片重试：" + error.getDescription());
+            }
         }
 
         @Override
         public void onReceivedSslError(WebView view, SslErrorHandler handler, android.net.http.SslError error) {
             handler.cancel();
+            statusText.setVisibility(View.VISIBLE);
+            if(finding)browserToolbar.setVisibility(View.VISIBLE);
             setStatus("网页证书异常，已停止访问");
         }
     }

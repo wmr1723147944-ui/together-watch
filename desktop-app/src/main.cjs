@@ -212,7 +212,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (win.isDestroyed()) return;
         const [width, height] = win.getContentSize();
         if (!video || !roomView) {
-            layoutFinder({x:0,y:200,width,height:Math.max(1,height-200)}, browsing);
+            const top = finderMode === 'catalog' ? 72 : 200;
+            layoutFinder({x:0,y:top,width,height:Math.max(1,height-top)}, browsing);
             return;
         }
         const bounds = policy.panelBounds(width, height, full);
@@ -361,6 +362,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (!descriptor && policy.isKanju(url)) return showDiscovery('kanju');
         if (!current) {
             if (!descriptor) { status('请先选择具体集数；看剧 AI 请打开播放页后点“用当前页建房”。'); return; }
+            if (!draft) {
+                await parkFinder(discoveryView); browsing = false; layout();
+                status({setup:true,pendingSource:url,message:'影片已选好，填写昵称并确认后创建房间。'});
+                return;
+            }
             selecting = true;
             try {
                 const result = await start({...draft, source:url});
@@ -474,6 +480,13 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 finally { asking = false; }
             };
             const navigate = (event, url) => {
+                // Catalogue navigation must not become a third-party playback
+                // URL or open a web room outside the native sync session.
+                if (mode === 'catalog' && (url === server + '/#roomEntry' || url === server + '/')) {
+                    event.preventDefault();
+                    if (url.endsWith('#roomEntry')) action('settings'); else showDiscovery();
+                    return;
+                }
                 if (allowed(url)) return;
                 event.preventDefault();
                 if (!browsing || discoveryView !== view) return;
@@ -675,7 +688,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (value && typeof value === 'object' && value.type === 'source') return chooseSource(value.source, policy.playSelection(value.source,server));
         if (value === 'terms' || value === 'privacy') { await shell.openExternal(policy.SERVER + '/' + value); return; }
         if (value === 'settings') { closeViews(); status({ setup: true, message: '已退出房间，可以重新设置' }); return; }
-        if (value === 'kanju' && (draft || current)) return showDiscovery('kanju');
+        if (value === 'home') { closeViews(); await showDiscovery(); status({finder:true}); return; }
+        if (value === 'kanju' && (draft || current || browsing)) return showDiscovery('kanju');
         if (['finder-back','finder-reload','finder-browser'].includes(value) && discoveryView) {
             const wc = discoveryView.webContents;
             if (value === 'finder-back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
@@ -688,7 +702,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             if (result?.error) status(result.error);
             return result;
         }
-        if (value === 'discover' && draft) return showDiscovery();
+        if (value === 'discover' && (draft || browsing)) return showDiscovery();
         if (!current) return;
         if (value?.type === 'play-media') return openBuiltin(value.id);
         if (value === 'scan-media') {
@@ -700,6 +714,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         else if (value === 'return-video') { await parkFinder(discoveryView); browsing = false; layout(); }
         else if (value === 'cinema') { await parkFinder(discoveryView); browsing = false; cinema = !cinema; layout(); await focusPlayer(full || cinema); status(cinema ? '影院模式：只显示视频，可用原生控制条' : '网页模式：可在原站登录、选集或调整设置'); }
         else if (value === 'invite') { clipboard.writeText(`${server}/room/${encodeURIComponent(current.room)}`); status(managed ? '邀请已复制。朋友在新版 Windows 客户端粘贴即可打开同一片源并同步；不需要再填视频链接。' : '邀请已复制。此兼容房间尚未记录片源，朋友仍需打开同一集。'); }
+        else if (value === 'copy-room') { clipboard.writeText(current.room); status('房间号已复制；朋友粘贴后点击加入，不要再单独创建新房间。'); }
         else if (value === 'fullscreen') await toggleFullscreen();
         else if (value === 'detect') { await focusPlayer(false); selected = null; selectionFailed = false; pendingEpisode = null; searchingSince = Date.now(); status('正在重新识别播放器'); }
         else if (value === 'reload') { if (browsing && discoveryView) discoveryView.webContents.reload(); else { closeBuiltin(); selected = null; video.webContents.reload(); layout(); } }
@@ -723,6 +738,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     powerMonitor.on('suspend', suspend); powerMonitor.on('resume', resume);
     win.on('closed', () => { powerMonitor.removeListener('suspend', suspend); powerMonitor.removeListener('resume', resume); });
     await win.loadURL(policy.APP_ORIGIN + '/index.html');
+    if (!PACKAGE_CHECK) { await showDiscovery(); status({finder:true}); }
     return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, mediaSession: playerPartition, roomView, discoveryView, browsing, cinema, selected, full, current }), toggleFullscreen };
 }
 

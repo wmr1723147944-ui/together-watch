@@ -26,8 +26,31 @@ test('replaced player and selected frame both invalidate stale commands',()=>{
 });
 test('missing player stays inactive and injection runs only once per frame',()=>{
     const main=frame();delete main.w.__twDesktopPlayer;let calls=0;
-    main.w.eval=()=>{calls++;main.w.__twDesktopPlayer={sample:()=>null};};
-    const bridge=start(main.w);assert.equal(bridge.sample('agent').active,false);bridge.sample('agent');assert.equal(calls,1);
+    main.w.eval=()=>{throw Error('CSP forbids eval');};
+    const install=w=>{calls++;w.__twDesktopPlayer={sample:()=>null};};
+    const bridge=start(main.w);assert.equal(bridge.sample(install).active,false);bridge.sample(install);assert.equal(calls,1);
+});
+test('compiled installer receives each same-origin frame, never calls page eval',()=>{
+    const main=frame(),child=frame();main.w.frames=[child.w];
+    for(const f of [main,child]){delete f.w.__twDesktopPlayer;f.w.eval=()=>{throw Error('CSP forbids eval');};}
+    const installed=[];
+    const sample=start(main.w).sample(w=>{installed.push(w);w.__twDesktopPlayer={sample:()=>({area:500,time:2,serial:1})};});
+    assert.equal(sample.active,true);assert.deepEqual(installed,[main.w,child.w]);
+});
+test('diagnostics distinguish absent video, blocked child frames and adapter failure',()=>{
+    const main=frame(),bridge=start(main.w);
+    assert.equal(bridge.sample(()=>{}).reason,'no_video');
+    const child={};Object.defineProperty(child,'document',{get(){throw Error('cross origin');}});
+    main.w.frames=[child];assert.equal(bridge.sample(()=>{}).reason,'cross_origin_frame');
+    delete main.w.__twDesktopPlayer;
+    assert.equal(bridge.sample(()=>{throw Error('private error details');}).reason,'adapter_error');
+    assert.ok(!JSON.stringify(bridge.sample(()=>{throw Error('secret');})).includes('secret'));
+});
+test('losing all reachable players invalidates delayed commands and reacquisition session',()=>{
+    const main=frame(100),bridge=start(main.w),one=bridge.sample(()=>{});
+    main.resize(0);assert.equal(bridge.sample(()=>{}).active,false);
+    bridge.apply({session:one.session,type:'state'});assert.equal(main.commands.length,0);
+    main.resize(100);assert.notEqual(bridge.sample(()=>{}).session,one.session);
 });
 test('pause stops accessible audio/video without accessing account data',()=>{
     const main=frame(),child=frame();let pauses=0;main.w.frames=[child.w];
@@ -45,4 +68,15 @@ test('Kanju confirms the original selected marker, never trusts only the URL',()
     const main=frame(),bridge=start(main.w);assert.equal(bridge.confirm('kanju','ep-2'),false);
     main.w.TogetherWatchCatalogAdapters={episodeReady:(_d,e)=>e==='ep-2'};
     assert.equal(bridge.confirm('kanju','ep-3'),false);assert.equal(bridge.confirm('kanju','ep-2'),true);
+});
+
+test('Android host shares exactly one confirmed episode, not a bare player page',()=>{
+    const main=frame(),bridge=start(main.w);
+    main.w.document.querySelectorAll=()=>[{getAttribute:()=> 'part:1'}, {getAttribute:()=> 'part:2'}];
+    assert.equal(bridge.currentEpisode('kanju'),'');
+    main.w.TogetherWatchCatalogAdapters={episodeReady:(_d,id)=>id==='ep-part:2'};
+    assert.equal(bridge.currentEpisode('kanju'),'ep-part:2');
+    main.w.TogetherWatchCatalogAdapters.episodeReady=()=>true;
+    assert.equal(bridge.currentEpisode('kanju'),'','ambiguous selections must not create a guessed invitation');
+    assert.equal(bridge.currentEpisode('unknown'),'');
 });

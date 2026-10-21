@@ -167,6 +167,7 @@ def is_search_page(target_url):
 
 def discovery_context(query="", disabled_providers=(), disabled_films=(),
                       disabled_sources=(), source_type="all", quality="all"):
+    from catalog_recommendations import recommendations
     query = normalize_query(query)
     source_type = source_type if source_type in SOURCE_TYPES else "all"
     quality = "4k" if quality == "4k" else "all"
@@ -187,6 +188,7 @@ def discovery_context(query="", disabled_providers=(), disabled_films=(),
                         "matches": (source_type == "all" or source_type in source["genres"])
                         and (quality != "4k" or source.get("has_4k_evidence", False))})
     return {
+        "catalog_recommendations": recommendations(),
         "discovery_sites": site_entries(disabled_sources),
         "discovery_sites_reviewed": DIRECTORY["reviewed"],
         "discovery_sites_reference": DIRECTORY["reference"],

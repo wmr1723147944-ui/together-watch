@@ -8,6 +8,44 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_home_browses_before_identity_but_selected_episode_waits_for_consent(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        startup = activity.split('protected void onCreate', 1)[1].split('private void bindViews', 1)[0]
+        self.assertIn('bindActions();', startup)
+        self.assertIn('if (!Intent.ACTION_SEND.equals(getIntent().getAction())) showFinder();', startup)
+        selection = activity.split('private void chooseSelection(', 1)[1].split('boolean change=', 1)[0]
+        self.assertIn('!consentCheck.isChecked()', selection)
+        self.assertIn('showSetup();pendingSetupSelection=selection', selection)
+        self.assertIn('if(selected.page.equals(videoUrl)) {chooseSelection(selected);return;}', activity)
+        self.assertIn('uri.toString().equals(SERVER_ORIGIN+"/#roomEntry")', activity)
+        self.assertIn('statusText.setVisibility(View.VISIBLE)', activity)
+
+    def test_android_entry_preserves_invitation_and_legacy_uses_local_sync(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        find_action = activity.split('findViewById(R.id.findButton).setOnClickListener', 1)[1].split('findViewById(R.id.findAgainButton)', 1)[0]
+        self.assertIn('roomInput.getText()', find_action)
+        self.assertIn('startSession()', find_action)
+        selection = activity.split('private void chooseSelection(', 1)[1].split('boolean change=', 1)[0]
+        self.assertIn('startSession();return;', selection)
+        self.assertNotIn('nativePlayer.isActive() || programRevision==0', activity)
+        self.assertNotIn('fetchAndInjectHelper(generation, url);', activity)
+        self.assertIn("currentEpisode('kanju')", activity)
+        self.assertIn('R.id.setupStatus', activity)
+
+    def test_web_player_uses_compiled_injection_and_scoped_mobile_layout(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        wrapper = (ANDROID / "app/src/main/assets/android-web-sync.js").read_text(encoding="utf-8")
+        layout = (ANDROID / "app/src/main/assets/android-page-layout.js").read_text(encoding="utf-8")
+        self.assertIn("WebPlayerScripts.sample(webSyncScript,playerAgent)", activity)
+        self.assertNotIn(".eval(", wrapper)
+        self.assertIn("settings.setUseWideViewPort(true)", activity)
+        self.assertIn("WebPlayerScripts.diagnostic(reason)", activity)
+        self.assertIn("document.getElementById('mobilePlayerStatus')", activity)
+        self.assertIn("['kanju.ai','www.kanju.ai']", layout)
+        self.assertIn("location.pathname.startsWith('/player/')", layout)
+        self.assertIn("@media (max-width: 700px)", layout)
+        self.assertNotIn("display: none", layout)
+
     def test_managed_room_flow_and_revision_guard_are_wired(self):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
         layout = (ANDROID / "app/src/main/res/layout/activity_main.xml").read_text(encoding="utf-8")

@@ -16,9 +16,10 @@ import urllib3
 
 from source_discovery import OPEN_FILMS, normalize_query
 import catalog_sources
+from poster_policy import poster_url
 
 
-SEARCH_VERSION = "20261019-kanju-catalog"
+SEARCH_VERSION = "20261021-film-first"
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",
@@ -173,7 +174,10 @@ class _Cards(HTMLParser):
                    "yhdmoe": "card" in classes and any(a.get("id") == "search_list" for _, a in self.stack),
                    "fcma": "module-card-item" in classes}.get(source, False)
         if self.card is None and is_card:
-            self.card = {"depth": len(self.stack), "title": [], "year": [], "episode": [], "links": []}
+            self.card = {"depth": len(self.stack), "title": [], "year": [], "episode": [], "links": [], "poster": None}
+        if self.card is not None and tag == "img" and not self.card["poster"]:
+            self.card["poster"] = next((url for key in ('data-original', 'data-src', 'data-lazy-src', 'src')
+                                       if (url := poster_url(attrs.get(key), 'https://' + self.provider['host']))), None)
         if self.card is not None and tag == "a":
             link = detail_url(self.provider, attrs.get("href", ""))
             if link:
@@ -208,11 +212,12 @@ class _Cards(HTMLParser):
             self.card = None
 
 
-def _row(provider, title, url, year=None, episode="", duration=None):
+def _row(provider, title, url, year=None, episode="", duration=None, poster=None):
     return {"title": title, "page_url": url, "year": year, "episode_label": episode,
             "duration_seconds": duration, "source_id": provider["id"], "source_name": provider["name"],
             "playback_verified": False, "synchronization_verified": False,
-            "quality": "未核实", "access": "以原站为准", "kind": provider["kind"]}
+            "quality": "未核实", "access": "以原站为准", "kind": provider["kind"],
+            "poster_url": poster_url(poster, 'https://' + provider['host'])}
 
 
 def parse_results(provider, body, query):
@@ -239,7 +244,7 @@ def parse_results(provider, body, query):
             seen.add(url)
             year = str(item.get("year", ""))
             rows.append(_row(provider, title, url, year if re.fullmatch(r"(?:19|20)[0-9]{2}", year) else None,
-                             "原站选集 · " + _text(item.get("type"), 16)))
+                             "原站选集 · " + _text(item.get("type"), 16), poster=item.get('poster')))
         return rows[:MAX_RESULTS]
     if provider["id"] == "blender":
         payload = json.loads(body)
@@ -259,7 +264,8 @@ def parse_results(provider, body, query):
             url = detail_url(provider, video.get("url"))
             duration = video.get("duration")
             if url:
-                rows.append(_row(provider, title, url, duration=duration if type(duration) is int and 0 < duration < 86400 else None))
+                rows.append(_row(provider, title, url, duration=duration if type(duration) is int and 0 < duration < 86400 else None,
+                                 poster=video.get('thumbnailPath')))
         return rows[:MAX_RESULTS]
     parser = _Cards(provider)
     parser.feed(body)
@@ -280,7 +286,7 @@ def parse_results(provider, body, query):
         seen.add(url)
         year = _text("".join(card["year"]), 4)
         rows.append(_row(provider, title, url, year if re.fullmatch(r"(?:19|20)[0-9]{2}", year) else None,
-                         _text("".join(card["episode"]), 50)))
+                         _text("".join(card["episode"]), 50), poster=card['poster']))
     if parser.cards and not any(c["title"] and c["links"] for c in parser.cards):
         raise SearchFailure("layout_changed")
     return rows[:MAX_RESULTS]

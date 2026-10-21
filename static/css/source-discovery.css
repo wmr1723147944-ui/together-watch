@@ -1,4 +1,4 @@
-/* Shared discovery surface: light in the catalog, quiet dark in the watch room. */
+/* Shared catalogue controls; the standalone cinema theme is scoped separately. */
 .source-discovery {
     --d-bg: #191c24; --d-raised: #222631; --d-soft: #252b37; --d-border: #353d4b;
     --d-text: #edf1f7; --d-muted: #a9b4c5; --d-accent: #70cef4; --d-tint: #1b3546;
@@ -86,16 +86,15 @@
 .discovery-body .discovery-copy { min-height: 32px; padding: 6px 0; border: 0; background: transparent; color: var(--d-muted); font-size: 12px; }
 .discovery-live-source .discovery-films { grid-template-columns: repeat(auto-fill, minmax(min(100%, 205px), 1fr)); }
 .discovery-title-card { padding: 0 0 12px; border-color: transparent; background: transparent; }
-.discovery-body .discovery-title-art { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; aspect-ratio: 16 / 10; padding: 20px; margin-bottom: 12px; background: #e9f3f8; color: #355669; border: 1px solid #d8e7ee; font-size: 23px; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
-.discovery-title-art::after { content: '片名预览'; position: absolute; left: 10px; bottom: 8px; font-size: 10px; font-weight: 400; opacity: .75; }
+.discovery-body .discovery-title-art { display: flex; align-items: center; justify-content: center; position: relative; width: 100%; aspect-ratio: 2 / 3; padding: 0; margin-bottom: 12px; background: var(--d-soft); color: var(--d-text); border: 1px solid var(--d-border); font-size: 23px; font-weight: 700; line-height: 1.35; overflow: hidden; overflow-wrap: anywhere; }
 .discovery-body [data-source="ddys"] { background: #e4f3ef; color: #265e52; border-color: #cde4dd; }
 .discovery-body [data-source="cupfox"] { background: #f8eeeb; color: #8a4d3b; border-color: #eddbd3; }
 .discovery-body [data-source="yhdmoe"] { background: #f7eaf0; color: #815166; border-color: #edd7e2; }
 .discovery-body [data-source="fcma"] { background: #eeecf8; color: #62558c; border-color: #e1dbef; }
 .discovery-title-card h5 { font-size: 15px; line-height: 1.5; color: var(--d-text); }
-.discovery-title-card > .discovery-note { min-height: 38px; }
+.discovery-title-card > .discovery-note { min-height: 20px; }
 .discovery-title-card nav { margin-top: 8px; }
-.discovery-title-card nav .discovery-primary { width: 100%; background: var(--d-tint); color: var(--d-accent); border-color: transparent; min-height: 38px; padding: 8px; font-weight: 600; }
+.discovery-title-card nav .discovery-primary { flex: 1; background: var(--d-tint); color: var(--d-accent); border-color: transparent; min-height: 38px; padding: 8px; font-weight: 600; }
 .discovery-title-card nav .discovery-primary:hover { border-color: var(--d-accent); }
 #discoveryEmpty, #discoverySourceEmpty, #discoveryFeedback, #discoveryCopyFallback { color: var(--d-muted); }
 #discoveryCopyValue { width: 100%; margin-top: 6px; color: var(--d-text); background: var(--d-soft); }
@@ -134,3 +133,34 @@
     .discovery-episodes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) { .discovery-body *, .discovery-starter::after { transition: none !important; } }
+
+/* Cover tiles: dimensions are reserved before loading, so results never jump. */
+.discovery-live-results { display: flex; flex-direction: column; }
+.discovery-live-source[data-state="notice"], .discovery-live-source[data-state="empty"] { order: 1; }
+.discovery-source-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.discovery-source-info { position: relative; flex-shrink: 0; }
+.discovery-source-info summary { padding: 4px 0; color: var(--d-muted); font-size: 11px; }
+.discovery-source-info p { position: absolute; z-index: 5; right: 0; width: min(270px, 70vw); padding: 14px; background: var(--d-raised); border: 1px solid var(--d-border); border-radius: 10px; box-shadow: 0 8px 30px #0004; }
+.discovery-poster-image { position: absolute; width: 100%; height: 100%; inset: 0; object-fit: cover; transition: transform .25s; }
+.discovery-poster-image[data-loading="true"] { opacity: 0; }
+.discovery-title-art:hover .discovery-poster-image { transform: scale(1.035); }
+.discovery-poster-fallback { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 20px; width: 100%; height: 100%; justify-content: center; background: linear-gradient(150deg, #273348, #19202d); color: #e6edf8; }
+.discovery-poster-fallback strong { font-size: clamp(18px, 2vw, 26px); }
+.discovery-poster-fallback small { font-size: 11px; color: #a9b4c5; font-weight: 400; }
+.discovery-poster-badge { position: absolute; bottom: 0; left: 0; right: 0; padding: 28px 10px 9px; background: linear-gradient(transparent,#000c); color: white; font-size: 11px; font-weight: 500; text-align: right; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.discovery-poster-play { position: absolute; width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; background: #25c5b8; color: #071b20; font-size: 18px; opacity: 0; transform: scale(.85); transition: opacity .2s, transform .2s; }
+.discovery-title-art:hover .discovery-poster-play, .discovery-title-art:focus-visible .discovery-poster-play { opacity: 1; transform: scale(1); }
+.discovery-title-card h5 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 45px; font-weight: 600; }
+.discovery-title-card nav { gap: 8px; align-items: flex-start; }
+.discovery-card-more { position: relative; font-size: 12px; }
+.discovery-card-more summary { padding: 9px 3px; color: var(--d-muted); font-size: 12px; font-weight: 400; }
+.discovery-card-more[open] { z-index: 4; }
+.discovery-card-more[open] a, .discovery-card-more[open] .discovery-copy { display: block; width: 120px; padding: 10px; border: 1px solid var(--d-border); background: var(--d-raised); position: absolute; right: 0; white-space: nowrap; border-radius: 6px; }
+.discovery-card-more[open] .discovery-copy { top: 78px; }
+.discovery-source-settings { order: 1; border-block: 1px solid var(--d-border); }
+.discovery-source-settings > summary { padding: 12px 0; font-size: 12px; color: var(--d-text); }
+.discovery-source-settings[open] { padding-bottom: 12px; }
+.discovery-source-settings .search-privacy { margin-top: 10px; }
+.discovery-form > .discovery-advanced { order: 2; }
+.discovery-starter-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
+.discovery-body .discovery-starter::after { inset: 0; width: auto; height: auto; border: 0; border-radius: 0; background: linear-gradient(90deg,#0c101dea,#0c101d45); z-index: -1; transform: none; }

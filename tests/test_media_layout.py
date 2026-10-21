@@ -50,11 +50,15 @@ class MediaLayoutTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 200, css)
                     self.assertIn("text/css", response.content_type)
 
-    def test_home_separates_room_form_from_expanded_discovery_and_keeps_consent(self):
+    def test_film_first_home_hides_room_form_until_invited_and_keeps_consent(self):
         page = self.client.get("/").text
         for identifier in ["loginForm", "username", "roomId", "complianceConsent", "formError", "createRoomBtn", "joinRoomBtn", "roomEntry", "discoveryForm"]:
             self.assertIn(f'id="{identifier}"', page)
-        self.assertIn('id="sourceDiscovery" open', page)
+        self.assertIn('data-catalog-mode="films"', page)
+        self.assertIn('<dialog id="roomEntry"', page)
+        self.assertNotIn('class="home-intro"', page)
+        self.assertNotIn('discovery-source-settings', page)
+        self.assertNotIn('data-directory-site=', page)
         self.assertIn('href="/#roomEntry"', page)
         self.assertIn('data-live-source="ddys"', page)
         self.assertIn('data-discovery-query="Sintel"', page)

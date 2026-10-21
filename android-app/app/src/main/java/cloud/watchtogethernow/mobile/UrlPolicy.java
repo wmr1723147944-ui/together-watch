@@ -8,8 +8,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 final class UrlPolicy {
-    private static final Pattern ROOM_PATTERN = Pattern.compile("^[\\p{L}\\p{N}_-]{4,64}$");
-    private static final Pattern ROOM_PATH_PATTERN = Pattern.compile("^/room/([^/?#]+)$");
     private static final Pattern HTTPS_IN_TEXT = Pattern.compile("https://\\S+", Pattern.CASE_INSENSITIVE);
 
     private UrlPolicy() {}
@@ -49,17 +47,7 @@ final class UrlPolicy {
     }
 
     static String extractRoom(String rawValue, String serverHost) {
-        String value = rawValue == null ? "" : rawValue.trim();
-        if (ROOM_PATTERN.matcher(value).matches()) return value;
-
-        String inviteUrl = extractFirstHttpsUrl(value);
-        Uri uri = Uri.parse(inviteUrl);
-        if (!"https".equalsIgnoreCase(uri.getScheme())) return "";
-        if (uri.getHost() == null || !uri.getHost().equalsIgnoreCase(serverHost)) return "";
-        Matcher matcher = ROOM_PATH_PATTERN.matcher(uri.getPath() == null ? "" : uri.getPath());
-        if (!matcher.matches()) return "";
-        String candidate = Uri.decode(matcher.group(1));
-        return ROOM_PATTERN.matcher(candidate).matches() ? candidate : "";
+        return RoomInvite.parse(rawValue, serverHost);
     }
 
     static boolean isTrustedServerUrl(String rawValue, String serverHost) {

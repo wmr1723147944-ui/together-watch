@@ -1,7 +1,7 @@
 <details class="source-discovery" id="sourceDiscovery" {% if discovery_standalone or discovery_expanded %}open{% endif %}>
     <summary>找片 <span>搜索 · 选集 · 一起看</span></summary>
     <div class="discovery-body">
-        <div class="discovery-section-heading"><h2>发现想看的</h2><span>搜索 / 详情 / 选集</span></div>
+        <div class="discovery-section-heading"><h2>发现想看的</h2><span>搜片名 → 选集数 → 邀请一起看</span></div>
         <form class="discovery-form" id="discoveryForm" action="{{ url_for('discover') }}" method="get" {% if not discovery_standalone %}target="_blank" rel="noopener noreferrer"{% endif %}>
             <label class="sr-only" for="discoveryQuery">片名或关键词</label>
             <div class="discovery-input-row">
@@ -22,21 +22,23 @@
                     </select>
                 </label>
             </div></details>
+            <details class="discovery-source-settings"><summary>搜索来源 <span>{{ discovery_search_sources|length }} 个可选 · 点击调整</span></summary>
             <fieldset class="discovery-search-options">
                 <legend>自动查询的来源（可取消勾选）</legend>
                 {% for source in discovery_search_sources %}
                 <label><input type="checkbox" data-live-source="{{ source.id }}" data-source-name="{{ source.name }}" data-source-note="{{ source.note }}" checked> {{ source.name }}</label>
                 {% else %}<p>自动查询暂未开放，可使用下方原站入口。</p>{% endfor %}
             </fieldset>
-            <p class="discovery-note search-privacy">主动搜索时向勾选来源发送片名，不发送房间号或共享账号。Windows 的本机查询会使用你在原站的本地登录 / 验证状态，不上传这些凭据。片目、画质与观看权限以原站为准。</p>
+            <p class="discovery-note search-privacy">主动搜索时向勾选来源发送片名，不发送房间号或共享账号。封面从原站图片服务加载，不携带本站页面地址。Windows 本机查询沿用你在原站的登录 / 验证状态，不上传这些凭据，不代签原站接口。片目、画质与观看权限以原站为准。</p>
+            </details>
         </form>
-        <p class="discovery-note"><a href="https://www.kanju.ai/" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">看剧 AI · 原站入口 ↗</a> · Windows 0.6.0 支持本机目录搜索、读取已加载集数并邀请同集。网页与旧客户端保留原站入口；不代签原站接口，实际播放仍需核实。</p>
+        <p class="discovery-note discovery-search-tip">点击封面查看详情与集数，再创建房间。<a href="https://www.kanju.ai/" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">看剧 AI 原站 ↗</a> · 统一搜索需 Windows 0.6.0 起。</p>
         <section id="discoveryWelcome" class="discovery-welcome" aria-labelledby="discoveryWelcomeTitle">
             <div class="discovery-section-heading"><h3 id="discoveryWelcomeTitle">从一个片名开始</h3><span>试搜示例 · 不是播放推荐</span></div>
             <div class="discovery-starters">
-                <button type="button" data-discovery-query="星际穿越" class="discovery-starter starter-space"><span class="starter-category">电影 / 科幻</span><strong>星际穿越</strong><span>搜索不同来源 <b aria-hidden="true">↗</b></span></button>
-                <button type="button" data-discovery-query="开端" class="discovery-starter starter-drama"><span class="starter-category">剧集 / 悬疑</span><strong>开端</strong><span>查看片名结果 <b aria-hidden="true">↗</b></span></button>
-                <button type="button" data-discovery-query="Sintel" class="discovery-starter starter-animation"><span class="starter-category">开放动画 / 短片</span><strong>Sintel</strong><span>查找官方目录 <b aria-hidden="true">↗</b></span></button>
+                <button type="button" data-discovery-query="星际穿越" data-example-poster="https://img.ddys.io/movies/interstellar.webp" class="discovery-starter starter-space"><span class="starter-category">电影 / 科幻</span><strong>星际穿越</strong><span>搜索不同来源 <b aria-hidden="true">↗</b></span></button>
+                <button type="button" data-discovery-query="开端" data-example-poster="https://img.ddys.io/movies/reset.webp" class="discovery-starter starter-drama"><span class="starter-category">剧集 / 悬疑</span><strong>开端</strong><span>查看片名结果 <b aria-hidden="true">↗</b></span></button>
+                <button type="button" data-discovery-query="Sintel" data-example-poster="https://video.blender.org/lazy-static/thumbnails/0eb052d0-fd51-43e6-aa33-ecdbf77a5d40.jpg" class="discovery-starter starter-animation"><span class="starter-category">开放动画 / 短片</span><strong>Sintel</strong><span>查找官方目录 <b aria-hidden="true">↗</b></span></button>
             </div>
             <p class="discovery-note">点击卡片会发起搜索。示例不保证所有来源收录，也不代表已验证可播。</p>
         </section>

@@ -1,12 +1,14 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let room = '';
+let room = '', finderMode = 'catalog';
 const samples = { sintel: 'https://media.w3.org/2010/05/sintel/trailer.mp4', bunny: 'https://media.w3.org/2010/05/bunny/trailer.mp4' };
 for (const button of document.querySelectorAll('[data-sample]')) button.onclick = () => { $('source').value = samples[button.dataset.sample]; };
 $('nickname').value = localStorage.getItem('nickname') || '观影成员';
 $('room').oninput = () => { $('start').textContent = $('room').value.trim() ? '加入邀请，自动跟随 →' : '先找片，选好再建房 →'; $('source').disabled = !!$('room').value.trim(); };
-function finder() { $('setup').hidden = true; $('tools').hidden = true; $('finderTools').hidden = false; $('placeholder').hidden = true; }
-function joined(id) { room = id; $('roomLabel').textContent = `房间 ${room}`; $('setup').hidden = true; $('tools').hidden = false; $('finderTools').hidden = true; $('placeholder').hidden = false; }
+$('roomLabel').onclick = () => window.desktop.action('copy-room');
+function finder() { document.body.classList.toggle('catalog-home',finderMode==='catalog'); $('setup').hidden = true; $('tools').hidden = true; $('finderTools').hidden = finderMode==='catalog'; $('placeholder').hidden = true; }
+function joined(id) { document.body.classList.remove('catalog-home'); room = id; $('roomLabel').textContent = `房间 ${room}`; $('setup').hidden = true; $('tools').hidden = false; $('finderTools').hidden = true; $('placeholder').hidden = false; }
+$('home').onclick = () => window.desktop.action('home');
 $('finder-catalog').onclick = () => window.desktop.action('discover');
 $('finder-kanju').onclick = () => window.desktop.action('kanju');
 $('finder-pick').onclick = () => window.desktop.action('pick-current');
@@ -38,7 +40,7 @@ window.desktop.onStatus(data => {
     if (data.message) $('status').textContent = data.message;
     if (data.finder) finder();
     if (data.joined) joined(data.joined);
-    if (data.finderMode) { $('pick-current').hidden = data.finderMode === 'catalog'; $('finder-pick').hidden = data.finderMode === 'catalog'; }
+    if (data.finderMode) { finderMode=data.finderMode; $('pick-current').hidden = finderMode === 'catalog'; $('finder-pick').hidden = finderMode === 'catalog'; if($('tools').hidden)finder(); }
     if (data.source) $('currentSource').value = data.source;
     if (Array.isArray(data.candidates)) {
         const previous = $('mediaChoices').value;
@@ -49,5 +51,8 @@ window.desktop.onStatus(data => {
         $('play-media').disabled = !$('mediaChoices').value;
     }
     if (typeof data.builtin === 'boolean') $('modeLabel').textContent = data.builtin ? '内置播放' : '原网页';
-    if (data.setup) { $('setup').hidden = false; $('tools').hidden = true; $('finderTools').hidden = true; $('placeholder').hidden = true; }
+    if (data.setup) { document.body.classList.remove('catalog-home'); $('setup').hidden = false; $('tools').hidden = true; $('finderTools').hidden = true; $('placeholder').hidden = true;
+        $('room').value=''; $('source').disabled=false; $('source').value=data.pendingSource||''; $('error').textContent='';
+        $('start').textContent=data.pendingSource?'确认并创建房间 →':'加入邀请 / 继续 →';
+        (data.pendingSource?$('nickname'):$('room')).focus(); }
 });

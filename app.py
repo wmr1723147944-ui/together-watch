@@ -1334,6 +1334,7 @@ def cleanup_expired_uploads():
 
 @app.after_request
 def add_security_headers(response):
+    from poster_policy import image_csp_sources
     authorized_media_sources = " ".join(
         f"https://{rule}" for rule in AUTHORIZED_MEDIA_HOSTS
     )
@@ -1351,7 +1352,7 @@ def add_security_headers(response):
         "default-src 'self'; "
         "script-src 'self'; "
         "style-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:; "
+        f"img-src 'self' data: {image_csp_sources()}; "
         f"{media_src} "
         f"{connect_src} "
         "worker-src 'self' blob:; "

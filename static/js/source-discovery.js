@@ -3,6 +3,22 @@
     const adapters = typeof module === 'object' && module.exports ? require('./catalog-adapters.js') : globalThis.TogetherWatchCatalogAdapters;
     let metadataSerial=0;
     const hasAdapter = source => typeof source==='string' && !!adapters && Object.hasOwn(adapters.sources,source);
+    function addPoster(doc, container, value, page, title) {
+        const fallback=doc.createElement('span'); fallback.className='discovery-poster-fallback';
+        const name=doc.createElement('strong'); name.textContent=title.slice(0,40);
+        const hint=doc.createElement('small'); hint.textContent='暂无封面';
+        fallback.append(name,hint); container.append(fallback);
+        const url=adapters?.safePosterUrl(value,page);
+        if(!url) return;
+        hint.textContent='正在加载封面…';
+        const img=doc.createElement('img'); img.className='discovery-poster-image';
+        img.alt=''; img.loading='lazy'; img.decoding='async'; img.referrerPolicy='no-referrer';
+        // Do not display:none a lazy image: Chromium will never start loading it.
+        img.hidden=false; img.dataset.loading='true';
+        img.addEventListener('load',()=>{img.dataset.loading='false';img.hidden=false;fallback.hidden=true;});
+        img.addEventListener('error',()=>{img.hidden=true;fallback.hidden=false;hint.textContent='封面暂不可用';});
+        img.src=url; container.append(img);
+    }
     function nativeMetadata(source) { return hasAdapter(source) && typeof globalThis.twSourceMetadata?.request==='function'
         && (source!=='kanju' || globalThis.twSourceMetadata.supportedSources?.includes('kanju')); }
     async function metadataRequest(kind,payload,fetcher,signal,interactive=false) {
@@ -197,7 +213,11 @@
             const tasks = selected.map(choice => {
                 const sourceId = choice.dataset.liveSource;
                 const block = element('section', null, 'discovery-live-source');
-                block.append(element('h4', choice.dataset.sourceName), element('p', choice.dataset.sourceNote, 'discovery-note'));
+                block.dataset.state='loading';
+                const heading=element('div',null,'discovery-source-heading');
+                const info=element('details',null,'discovery-source-info');
+                info.append(element('summary','来源说明'),element('p',choice.dataset.sourceNote,'discovery-note'));
+                heading.append(element('h4', choice.dataset.sourceName),info); block.append(heading);
                 const state = element('p', '等待查询…', 'discovery-query-state');
                 const list = element('div', null, 'discovery-films');
                 block.append(state, list); results.append(block);
@@ -205,6 +225,7 @@
                 section.setAttribute('aria-busy','true');
                 state.textContent=interactive?'正在软件内打开原站；若出现登录或验证，请自行完成，结果会回到这里…':'正在查询…';
                 list.replaceChildren();
+                block.dataset.state='loading';
                 const controller = new AbortController();
                 controllers.add(controller);
                 const timer = setTimeout(() => controller.abort(), interactive?185000:12000);
@@ -214,12 +235,14 @@
                     const data = await response.json();
                     if (current !== generation) return;
                     if(data.status==='client_required' && data.source_id===sourceId) {
+                        block.dataset.state='notice';
                         state.textContent='看剧 AI 的统一搜索需要 Windows 0.6.0；当前环境可直接在原站搜索。';
                         const req=adapters.request('search',{source:sourceId,q:value});
                         if(req){const link=element('a','在原站搜索这个片名 ↗');link.href=req.url;link.target='_blank';link.rel='noopener noreferrer';list.append(link);}
                         return;
                     }
                     if((data.status==='verification_required' || sourceId==='kanju' && data.status==='unavailable') && data.source_id===sourceId) {
+                        block.dataset.state='notice';
                         failures++;
                         if(nativeMetadata(sourceId)) {
                             state.textContent=data.status==='verification_required' ? '原站这次要求登录或验证。完成后继续显示搜索结果，不用重输片名。'
@@ -246,13 +269,17 @@
                         if (!url) continue;
                         found++;
                         const card = element('article', null, 'discovery-film discovery-title-card');
-                        const cover = element('button', row.title.slice(0, 24), 'discovery-title-art');
+                        const cover = element('button', null, 'discovery-title-art');
                         cover.dataset.source = sourceId;
                         cover.type = 'button'; cover.setAttribute('aria-label', `查看${row.title.slice(0, 160)}的详情和集数`);
                         cover.addEventListener('click', () => details.open(sourceId, row, cover));
+                        addPoster(doc,cover,row.poster_url,url,row.title);
+                        const badge = typeof row.episode_label==='string' ? row.episode_label.slice(0,40) : '';
+                        if(badge) cover.append(element('span',badge,'discovery-poster-badge'));
+                        const play=element('span','▶','discovery-poster-play'); play.setAttribute('aria-hidden','true'); cover.append(play);
                         card.append(cover);
                         card.append(element('h5', row.title.slice(0, 160)));
-                        const facts = [row.year || '年份未标注', row.episode_label || '', '画质以原站为准'].filter(Boolean);
+                        const facts = [typeof row.year==='string' || typeof row.year==='number' ? row.year : '', '画质以原站为准'].filter(Boolean);
                         card.append(element('p', facts.join(' · '), 'discovery-note'));
                         const nav = element('nav');
                         const select = element('button', '详情 / 选集', 'discovery-primary');
@@ -274,14 +301,18 @@
                                 field.value = url; field.focus(); field.select();
                             }
                         });
-                        nav.append(select, link, copy); card.append(nav); list.append(card);
+                        const actions=element('details',null,'discovery-card-more');
+                        actions.append(element('summary','更多'),link,copy);
+                        nav.append(select, actions); card.append(nav); list.append(card);
                     }
                     count += found;
+                    block.dataset.state=found?'ok':'empty';
                     state.textContent = found ? `找到 ${found} 个条目${data.cached ? '（5 分钟内缓存）' : ''}，尚未验证播放。`
                         : '此来源没有匹配条目，不代表其他来源没有这部作品。';
                 } catch (error) {
                     if (current !== generation) return;
                     failures++;
+                    block.dataset.state='notice';
                     state.textContent = error.message === 'rate' ? '搜索较频繁，请稍后再试。'
                         : error.message === 'busy' ? '来源正在查询中，请稍后重试。'
                         : '此来源查询失败或超时；其他来源仍会显示，可稍后重试或用下方原站入口。';
@@ -341,7 +372,7 @@
     }
     function init(doc) {
         const root = doc.getElementById('sourceDiscovery');
-        if (!root) return;
+        if (!root || root.dataset.catalogMode === 'films') return;
         initSiteDirectory(doc);
         const query = doc.getElementById('discoveryQuery');
         const cards = Array.from(root.querySelectorAll('[data-search-text]'));
@@ -381,6 +412,7 @@
             doc.getElementById('discoveryEmpty').hidden = count > 0;
             feedback.textContent = '';
             fallback.hidden = true;
+            clear.hidden = !value && (!sourceType || sourceType.value==='all') && (!quality || quality.value==='all');
         }
         doc.getElementById('discoveryForm').addEventListener('submit', async event => {
             event.preventDefault();
@@ -390,6 +422,12 @@
         });
         query.addEventListener('input', () => { render(); live.cancel(!normalizeQuery(query.value)); });
         for (const suggestion of root.querySelectorAll('[data-discovery-query]')) {
+            const poster=adapters?.safePosterUrl(suggestion.dataset.examplePoster);
+            if(poster) {
+                const img=doc.createElement('img'); img.alt=''; img.className='discovery-starter-image';
+                img.referrerPolicy='no-referrer'; img.decoding='async'; img.loading='lazy';
+                img.addEventListener('error',()=>{img.hidden=true;}); img.src=poster; suggestion.append(img);
+            }
             suggestion.addEventListener('click', () => {
                 query.value = normalizeQuery(suggestion.dataset.discoveryQuery);
                 render(); live.run();
@@ -397,7 +435,6 @@
         }
         if (sourceType) sourceType.addEventListener('change', render);
         if (quality) quality.addEventListener('change', render);
-        clear.hidden = false;
         clear.addEventListener('click', () => {
             query.value = '';
             if (sourceType) sourceType.value = 'all';
@@ -424,6 +461,8 @@
         }
         render();
     }
-    if (typeof module !== 'undefined' && module.exports) module.exports = { metadataRequest, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    const api = { addPoster, metadataRequest, nativeMetadata, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    if (typeof module !== 'undefined' && module.exports) module.exports = api;
+    else globalThis.TogetherWatchDiscovery = api;
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));
 })();

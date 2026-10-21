@@ -42,6 +42,10 @@ nav { margin-top: 6px; }
 #play-media { background: #0998cc; color: white; border-color: #0998cc; }
 #modeLabel { color: #0785b3; font-size: 12px; min-width: 50px; }
 [hidden] { display: none !important; }
+.catalog-home { background: #101215; color: #e5eaf0; }
+.catalog-home header { background: #101215; border-color: #2c333c; }
+.catalog-home header button { background: #25372e; color: #8be2b4; border-color: #3d5947; }
+.catalog-home #status { color: #9baab8; }
 #finderTools { height:128px; padding:12px 24px; background:#fff; border-bottom:1px solid #dce3ed; }
 #finderTools span { margin-left:20px; color:#728095; font-size:13px; }
 #finderTools p { color:#728095; font-size:12px; margin:8px 0; }

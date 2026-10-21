@@ -25,8 +25,8 @@ exports.run=async({createDesktop,server,output,until})=>{
                 // Local mock only. The test supplies the human action; production
                 // never clicks or solves verification controls.
                 html=!verified?`<title>系统安全验证</title><button id="verify" onclick="location.href='/search/fixture-verified?wd=测试'">Mock human continue</button>`
-                    : source==='kanju' ? `<title>看剧 AI</title><div id="results"></div><script>setTimeout(()=>document.getElementById('results').innerHTML='<a href="${detail}?from=collection" aria-label="打开播放器：测试动画">封面</a>',600)</script>`
-                    : `<title>搜索结果</title><a href="${detail}" title="测试动画">测试动画</a>`;
+                    : source==='kanju' ? `<title>看剧 AI</title><div id="results"></div><script>setTimeout(()=>document.getElementById('results').innerHTML='<a href="${detail}?from=collection" aria-label="打开播放器：测试动画"><img src="/covers/fixture.jpg">封面</a>',600)</script>`
+                    : `<title>搜索结果</title><a href="${detail}" title="测试动画"><img src="/covers/fixture.jpg">测试动画</a>`;
             } else if(u.pathname===detail) {
                 html=source==='kanju' ? `<title>测试动画 · 看剧 AI</title><h1>测试动画</h1><div id="episodes"></div>`
                     + (u.searchParams.has('episode')?'<style>body{margin:0}video{width:100%;height:90vh}</style><video controls muted preload="auto" src="/sample.mp4"></video>':'')
@@ -58,9 +58,9 @@ exports.run=async({createDesktop,server,output,until})=>{
             assert.equal((await finder.executeJavaScript('twSourceMetadata.request("bad-url","detail",{source:"pkavi",page_url:"https://127.0.0.1/"})')).status,'unavailable');
             await finder.executeJavaScript(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=c.dataset.liveSource===${JSON.stringify(source)};document.getElementById('discoveryQuery').value='测试';document.getElementById('discoveryForm').requestSubmit()`);
             if(source==='233dm') {
-                await until('manual verification choice',()=>finder.executeJavaScript('document.getElementById("discoveryLiveResults").textContent.includes("在软件中验证并继续搜索")'));
+                await until('manual verification choice',()=>finder.executeJavaScript('!!document.querySelector(".catalog-query-note button:not(:disabled)")'));
                 assert.equal(host.verifications(),0);assert.equal(a.state().current,null);
-                await finder.executeJavaScript('document.querySelector(".discovery-live-source button").click()');
+                await finder.executeJavaScript('document.querySelector(".catalog-query-note button").click()');
                 let manual;
                 await until('isolated original verification window',()=>{
                     manual=BrowserWindow.getAllWindows().find(w=>w.id!==a.win.id && w.webContents.getURL().startsWith('https://www.233dm.com/search/'));return !!manual;
@@ -72,8 +72,8 @@ exports.run=async({createDesktop,server,output,until})=>{
                 await until('clearing search closes verification window',()=>manual.isDestroyed());
                 assert.equal(host.verifications(),0);assert.equal(a.state().current,null);
                 await finder.executeJavaScript('document.getElementById("discoveryQuery").value="测试";document.getElementById("discoveryForm").requestSubmit()');
-                await until('challenge can be retried after cancellation',()=>finder.executeJavaScript('!!document.querySelector(".discovery-live-source button")'));
-                await finder.executeJavaScript('document.querySelector(".discovery-live-source button").click()');
+                await until('challenge can be retried after cancellation',()=>finder.executeJavaScript('!!document.querySelector(".catalog-query-note button:not(:disabled)")'));
+                await finder.executeJavaScript('document.querySelector(".catalog-query-note button").click()');
                 await until('new verification window',()=>{
                     manual=BrowserWindow.getAllWindows().find(w=>w.id!==a.win.id && w.webContents.getURL().startsWith('https://www.233dm.com/search/'));return !!manual;
                 });
@@ -81,6 +81,7 @@ exports.run=async({createDesktop,server,output,until})=>{
                 await manual.webContents.executeJavaScript('document.getElementById("verify").click()',true);
             }
             await until('unified search result',()=>finder.executeJavaScript('!!document.querySelector(".discovery-title-card button")'));
+            assert.equal(await finder.executeJavaScript('document.querySelector(".discovery-poster-image")?.src'),`https://${api.sources[source].host}/covers/fixture.jpg`);
             assert.equal(a.state().current,null);
             await finder.executeJavaScript('document.querySelector(".discovery-title-card button").click()');
             await until('unified episodes',()=>finder.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===2'));

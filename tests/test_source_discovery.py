@@ -92,8 +92,13 @@ class SourceDiscoveryTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(html.count('id="sourceDiscovery"'), 1)
             self.assertIn("source-discovery.js", html)
-            self.assertIn("这是搜索入口，不是影片结果", html)
-            self.assertIn("具体影片文件、字幕和兼容性尚未核验", html)
+            if route.startswith('/room/'):
+                self.assertIn("这是搜索入口，不是影片结果", html)
+                self.assertIn("具体影片文件、字幕和兼容性尚未核验", html)
+            else:
+                self.assertIn('catalog-browser.js', html)
+                self.assertIn('搜索结果', html)
+                self.assertNotIn('data-directory-site=', html)
         response = self.client.get('/discover', query_string={"q": '\"><script>alert(1)</script>'})
         html = response.get_data(as_text=True)
         self.assertNotIn('<script>alert(1)</script>', html)
@@ -102,17 +107,22 @@ class SourceDiscoveryTests(unittest.TestCase):
         self.assertIn("script-src 'self'", response.headers["Content-Security-Policy"])
         self.assertIn('referrerpolicy="no-referrer"', html)
 
-    def test_server_search_works_without_javascript_and_makes_no_remote_requests(self):
+    def test_home_is_offline_rendered_and_no_javascript_fallback_is_honest(self):
         with patch.object(application.requests, "get", side_effect=AssertionError("must stay offline")):
             html = self.client.get('/discover?q=sintel').get_data(as_text=True)
-        self.assertIn("本地目录匹配 1 / 7 部", html)
-        self.assertIn("keyword=sintel", html)
-        self.assertIn('data-search-text="big buck bunny', html)
+        self.assertIn('value="sintel"', html)
+        self.assertIn('请启用 JavaScript 以搜索影片和查看集数', html)
+        self.assertIn('编辑精选 · 非实时热榜', html)
+        self.assertNotIn('本地目录匹配', html)
         self.assertIn('target="_self"', html)
 
     def test_filters_work_without_javascript_and_have_honest_empty_states(self):
+        # The legacy room tool still offers navigation filters. Home no longer
+        # renders this directory; its categories filter recommendations only.
+        from flask import render_template
         with patch.object(application.requests, "get", side_effect=AssertionError("must stay offline")):
-            html = self.client.get('/discover?type=animation&quality=4k').get_data(as_text=True)
+            with application.app.test_request_context('/room/filters'):
+                html = render_template('_source_discovery.html', **application.source_discovery_context(source_type='animation', quality='4k'))
         self.assertIn('value="animation" selected', html)
         self.assertIn('value="4k" selected', html)
         self.assertIn('导航显示 0 / 6 个入口', html)
@@ -143,9 +153,12 @@ class SourceDiscoveryTests(unittest.TestCase):
                 self.assertNotIn("data-search-base=", html)
                 self.assertNotIn("data-search-text=", html)
                 self.assertNotIn("data-source-id=", html)
-                self.assertIn("平台搜索入口暂未开放", html)
-                self.assertIn("本地目录匹配 0 / 0 部", html)
-                self.assertIn("导航显示 0 / 0 个入口", html)
+                if route.startswith('/room/'):
+                    self.assertIn("平台搜索入口暂未开放", html)
+                    self.assertIn("本地目录匹配 0 / 0 部", html)
+                    self.assertIn("导航显示 0 / 0 个入口", html)
+                else:
+                    self.assertIn('data-catalog-mode="films"', html)
 
     def test_compose_passes_source_disable_settings_into_container(self):
         root = Path(__file__).resolve().parents[1]

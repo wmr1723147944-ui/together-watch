@@ -4,6 +4,20 @@
     else root.TogetherWatchCatalogAdapters = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
+    const posterDomains = ['img.ddys.io','video.blender.org','huarw.com','cupfox.in','yhdmoe.com','fcma.cc',
+        '233dm.com','pkavi.com','kanju.ai','doubanio.com','image.tmdb.org'];
+    function safePosterUrl(value, base) {
+        if (typeof value!=='string' || !value || value.length>2048 || /[\s\\\x00-\x1f\x7f]/.test(value)) return null;
+        try {
+            const u=new URL(value,base);
+            if(u.protocol!=='https:' || u.username || u.password || u.port || u.hash
+                || !posterDomains.some(d=>u.hostname===d || u.hostname.endsWith('.'+d))
+                || !/\.(?:jpe?g|png|webp|avif|gif)$/i.test(u.pathname)
+                || /placeholder|loading|favicon|spacer/i.test(u.pathname)
+                || Array.from(u.searchParams.keys()).some(k=>!['w','h','width','height','q','quality','format','fit','auto','size','v'].includes(k))) return null;
+            return u.href;
+        } catch {return null;}
+    }
     const sources = {
         kanju: {host:'www.kanju.ai', name:'看剧 AI', nativeOnly:true, search:'/collections/browse'},
         '233dm': {host:'www.233dm.com', name:'233 动漫', detail:/^\/anime\/([a-f0-9]{24})\.html$/,
@@ -93,7 +107,8 @@
                 const d=detail(req.source,row?.page_url), title=text(row?.title);
                 if (!d || !title || seen.has(d.page) || !req.q.toLowerCase().split(/\s+/).every(t=>title.toLowerCase().includes(t))) continue;
                 seen.add(d.page); result.results.push({title,page_url:d.page,source_id:req.source,source_name:sources[req.source].name,
-                    kind:'third_party_index',playback_verified:false,synchronization_verified:false,quality:'未核实',access:'以原站为准'});
+                    kind:'third_party_index',playback_verified:false,synchronization_verified:false,quality:'未核实',access:'以原站为准',
+                    poster_url:safePosterUrl(row.poster_url,'https://'+sources[req.source].host)});
                 if (result.results.length>=12) break;
             }
         } else {
@@ -115,11 +130,20 @@
         const links=Array.from(doc.querySelectorAll('a[href]')).slice(0,15000);
         if (req.kind==='search') {
             const rows=[];
+            const covers=new Map();
+            for(const a of links) {
+                const d=detail(req.source,a.getAttribute('href'));
+                if(!d) continue;
+                for(const img of Array.from(a.querySelectorAll?.('img')||[]).slice(0,4)) {
+                    const url=['data-original','data-src','data-lazy-src','src'].map(k=>safePosterUrl(img.getAttribute(k),req.url)).find(Boolean);
+                    if(url && !covers.has(d.page)) covers.set(d.page,url);
+                }
+            }
             for (const a of links) {
                 const d=detail(req.source,a.getAttribute('href'));
                 const title=text(req.source==='kanju' ? (a.getAttribute('aria-label')||'').replace(/^打开播放器[：:]\s*/,'') || a.getAttribute('title') || a.textContent
                     : a.getAttribute('title') || a.textContent);
-                if (d && title) rows.push({title,page_url:d.page});
+                if (d && title) rows.push({title,page_url:d.page,poster_url:covers.get(d.page)});
             }
             const empty=/没有找到|暂无数据|没有相关|暂无相关/.test((doc.body?.textContent||'').slice(0,30000));
             return normalizeResult(req,{status:rows.length||empty?'ok':'unavailable',results:rows});
@@ -149,5 +173,5 @@
         return Array.from(doc.querySelectorAll('button[data-directory-episode]')).some(el=>el.getAttribute('data-directory-episode')===episode.slice(3)
             && (el.classList.contains('movie-button-primary') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-selected')==='true'));
     }
-    return {sources,text,publicId,urlFor,detail,selection,fromPage,request,expectedPage,normalizeResult,readDocument,episodeReady};
+    return {sources,text,publicId,urlFor,detail,selection,fromPage,request,expectedPage,normalizeResult,readDocument,episodeReady,posterDomains,safePosterUrl};
 });

@@ -42,6 +42,10 @@ class SiteDirectoryTests(unittest.TestCase):
             self.assertEqual(len(response.json['sites']), 9)
             html = self.client.get('/discover').text
         self.assertEqual(set(PROVIDERS), before)
+        self.assertNotIn('data-directory-site=', html)
+        self.assertNotIn('历史核对记录', html)
+        # Navigation remains available in the legacy room tool, not home.
+        html = self.client.get('/room/directory-test').text
         self.assertIn('未加入上方自动搜片', html)
         self.assertIn('能直接打开就直接使用，无需额外验证', html)
         self.assertIn('历史核对记录', html)

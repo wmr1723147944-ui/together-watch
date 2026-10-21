@@ -1,6 +1,15 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+test('room numbers, copied labels, shared text and web invites preserve room identity', () => {
+    const p = require('../src/policy.cjs'), id = '0123456789abcdef01234567';
+    for (const value of [id, id.toUpperCase(), '房间号：' + id, '房间 ' + id,
+        p.SERVER + '/?room=' + id, p.SERVER + '/mobile-room/' + id + '/',
+        '来一起看：' + p.SERVER + '/room/' + id + '。']) assert.equal(p.roomFrom(value), id, value);
+    for (const value of [p.SERVER + '/?room=' + id + '&room=other', p.SERVER + '/other?room=' + id,
+        'https://evil.example/?room=' + id, 'https://user@watchtogethernow.cloud/?room=' + id]) assert.equal(p.roomFrom(value), '');
+});
 const fs = require('node:fs');
 const path = require('node:path');
 const p = require('../src/policy.cjs');

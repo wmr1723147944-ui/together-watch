@@ -7,17 +7,19 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/site-directory.css', v='20261019-sites') }}">
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261017-ddys-ui') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261021-posters') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-cinema.css', v='20261021-posters') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser.css', v='20261021-film-first') }}">
 </head>
-<body class="media-app">
+<body class="media-app catalog-cinema">
     {% include "_site_nav.html" %}
     <main id="mainContent" class="discovery-page">
-        <header class="discovery-page-heading"><div><span class="section-kicker">FIND YOUR NEXT WATCH</span><h1>今晚，想看什么？</h1><p>按来源找片，按集数相聚。搜索不会打断正在播放的影片。</p></div><span class="catalog-label">{{ discovery_search_sources|length }} 个可选查询来源</span></header>
-        {% include "_source_discovery.html" %}
+        {% include "_catalog_browser.html" %}
         {% include "_site_footer.html" %}
     </main>
-    <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261019-kanju') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261020-android') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261021-posters') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261021-film-first') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261021-film-first') }}" defer></script>
 </body>
 </html>

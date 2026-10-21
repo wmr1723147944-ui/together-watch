@@ -2,6 +2,7 @@
 import re
 from html.parser import HTMLParser
 from urllib.parse import quote, unquote, urljoin, urlsplit
+from poster_policy import poster_url
 
 PROVIDERS = {
     'kanju': dict(id='kanju', name='看剧 AI · Windows', host='www.kanju.ai', path='/collections/browse', param='q',
@@ -67,7 +68,10 @@ class Metadata(HTMLParser):
         if self.ignored: return
         if tag == 'title': self.in_title = True
         if tag == 'meta' and attrs.get('name') == 'description': self.description = clean(attrs.get('content'), 500)
-        if tag == 'a': self.anchor = dict(href=attrs.get('href', ''), title=attrs.get('title', ''), text=[])
+        if tag == 'a': self.anchor = dict(href=attrs.get('href', ''), title=attrs.get('title', ''), text=[], images=[])
+        if tag == 'img' and self.anchor is not None:
+            self.anchor['images'].extend(attrs.get(k) for k in ('data-original', 'data-src', 'data-lazy-src', 'src'))
+            if not self.anchor['title']: self.anchor['title'] = attrs.get('alt', '')
 
     def handle_data(self, data):
         if self.ignored: return
@@ -92,6 +96,12 @@ def search_rows(source, body, query):
     p = Metadata(); p.feed(body)
     if p.challenge: return 'verification_required', []
     rows, seen, recognized = [], set(), False
+    # A poster anchor and a title anchor may be separate links to the same film.
+    covers = {}
+    for a in p.links:
+        item = detail_item(source, a['href'])
+        cover = next((url for v in a['images'] if (url := poster_url(v, 'https://' + PROVIDERS[source]['host']))), None)
+        if item and cover: covers.setdefault(item, cover)
     for a in p.links:
         item = detail_item(source, a['href'])
         if not item: continue
@@ -101,7 +111,8 @@ def search_rows(source, body, query):
         seen.add(item)
         rows.append(dict(title=title, page_url='https://' + PROVIDERS[source]['host'] + public_path(source, a['href']),
                          source_id=source, source_name=PROVIDERS[source]['name'], playback_verified=False,
-                         synchronization_verified=False, quality='未核实', access='以原站为准', kind='third_party_index'))
+                         synchronization_verified=False, quality='未核实', access='以原站为准', kind='third_party_index',
+                         poster_url=covers.get(item)))
         if len(rows) >= 12: break
     return ('ok' if recognized or p.empty else 'unavailable'), rows
 

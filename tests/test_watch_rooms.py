@@ -83,7 +83,7 @@ class WatchRoomTests(unittest.TestCase):
         self.assertNotIn(created['room'], application.room_programs)
 
     def test_kanju_search_is_labeled_windows_only_not_server_scraping(self):
-        html = self.client.get('/discover').text
+        html = self.client.get('/room/kanju-notice').text
         self.assertIn('https://www.kanju.ai/',html)
         self.assertIn('data-live-source="kanju"',html)
         self.assertIn('Windows 0.6.0',html)
