@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
+const { dialog } = require('electron');
 const { setTimeout: delay } = require('node:timers/promises');
 const root = path.resolve(__dirname, '../..');
 const output = path.join(root, '.review-artifacts/desktop-smoke');
@@ -232,7 +233,7 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         // Hidden WebContentsViews may not expose a capturable compositor surface.
         // Geometry and restored styles above/below are the fullscreen assertions.
         await a.toggleFullscreen(false); await delay(400);
-        assert.equal(a.state().video.getBounds().y, 200);
+        assert.equal(a.state().video.getBounds().y, 128);
         assert.equal(await a.state().selected.frame.executeJavaScript('document.querySelector("video").style.position'), '');
         await a.action('cinema');
         assert.equal(await a.state().selected.frame.executeJavaScript('document.querySelector("video").style.position'), 'fixed');
@@ -256,7 +257,14 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         await until('back to one member', async () => (await a.state().roomView.webContents.executeJavaScript("document.getElementById('onlineCount').textContent")).includes('1'));
         await continuousPlayback(a, 11000);
         const oldVideo = a.state().video.webContents;
-        await a.action('settings');
+        const originalDialog = dialog.showMessageBox;
+        try {
+            dialog.showMessageBox = async (_win, options) => {
+                assert.equal(options.message, '离开当前房间？');
+                return {response: 1};
+            };
+            await a.action('settings');
+        } finally { dialog.showMessageBox = originalDialog; }
         await until('old playback view destroyed', () => oldVideo.isDestroyed(), 5000);
         assert.equal(a.state().current, null);
         // A deterministic origin-bound provider fixture, never a production

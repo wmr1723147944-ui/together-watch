@@ -1,15 +1,35 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'none'; frame-src 'none'">
 <title>一起看 · Windows</title><link rel="stylesheet" href="shell.css"></head><body>
-<header><div class="brand"><span class="mark">▶</span><div>一起看<small>WINDOWS · 0.6.5 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">先找好片，再邀请朋友。</span><button id="home">推荐首页</button><button id="settings">加入房间 / 设置</button></header>
-<section id="setup"><p class="eyebrow">WATCH TOGETHER</p><h1>把今晚的片刻，<br>留给一起看的人。</h1><p class="intro">不用插件，不用书签。打开视频，邀请朋友，边看边聊。</p>
-<form id="startForm"><div class="fields"><label>你的昵称<input id="nickname" maxlength="32" value="观影成员" required></label><label>加入朋友的房间<input id="room" maxlength="256" placeholder="粘贴房主复制的房间号或邀请链接"></label></div>
-<label>已有视频链接？也可以先留空<input id="source" type="url" maxlength="4096" placeholder="留空进入软件内找片，也可粘贴 HTTPS 播放页"></label>
-<div class="samples"><span>先试一段公开短片</span><button type="button" data-sample="sintel">Sintel</button><button type="button" data-sample="bunny">Big Buck Bunny</button></div>
+<header><div class="brand"><span class="mark">▶</span><div>一起看<small>WINDOWS · 0.6.7 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
+<dialog id="setup" hidden aria-labelledby="entryTitle">
+<div class="entry-heading"><h1 id="entryTitle">加入朋友房间</h1><button id="cancelEntry" aria-label="关闭，返回选片">关闭</button></div>
+<p id="entryHint" class="intro">粘贴邀请，自动打开朋友正在看的影片。</p>
+<form id="startForm">
+<label id="roomField">邀请链接或房间号<input id="room" maxlength="256" placeholder="粘贴朋友发来的邀请"></label>
+<details id="profileFields"><summary>昵称与使用说明</summary>
+<label>你的昵称<input id="nickname" maxlength="32" value="观影成员" required></label>
 <label class="consent"><input id="consent" type="checkbox" required>我同意<a href="https://watchtogethernow.cloud/terms" id="terms">用户协议</a>与<a href="https://watchtogethernow.cloud/privacy" id="privacy">隐私政策</a>，只同步本人有权观看的内容。</label>
-<button class="primary" type="submit" id="start">先找片，选好再建房 →</button><p id="error" role="alert"></p></form>
-<p class="hint">搜索 → 选集建房 → 复制邀请。朋友在新版客户端输入邀请即可跟随。会员内容需各自登录；动态选集站点可能仍需核对集数。</p></section>
-<section id="tools" hidden><form id="sourceForm"><button id="discover" type="button">找片 / 选集</button><button id="return-video" type="button">回到播放</button><input id="currentSource" aria-label="视频网页地址" type="url" required><button type="submit">打开链接</button><button id="back" type="button">后退</button><button id="reload" type="button">刷新</button></form><nav><button id="roomLabel" title="点击复制房间号"></button><button id="kanju">看剧 AI</button><button id="pick-current" hidden>用当前页换片</button><button id="cinema">影院 / 网页</button><button id="invite">复制邀请</button><button id="detect">重连同步</button><button id="fullscreen">全屏 · F11</button></nav>
-<div class="media-tools"><span id="modeLabel">原网页</span><button id="scan-media">识别视频</button><select id="mediaChoices" aria-label="当前页面识别到的视频"><option value="">先播放网页视频，再识别</option></select><button id="play-media" disabled>内置播放</button><button id="original">原网页</button></div></section>
+</details>
+<details id="manualEntry"><summary>手动打开视频链接（兼容模式）</summary>
+<label>视频网页<input id="source" type="url" maxlength="4096" placeholder="HTTPS 播放页"></label>
+<div class="samples"><span>公开短片</span><button type="button" data-sample="sintel">Sintel</button><button type="button" data-sample="bunny">Big Buck Bunny</button></div>
+</details>
+<button class="primary" type="submit" id="start">加入房间</button><p id="error" role="alert"></p></form>
+</dialog>
+<section id="tools" hidden>
+    <nav class="room-actions" aria-label="观影操作">
+        <span class="watch-label">一起看 <small id="modeLabel">网页播放</small></span>
+        <button id="discover">换片 / 选集</button><button id="return-video" hidden>回到播放</button>
+        <button id="invite">邀请朋友</button><button id="fullscreen" title="全屏（F11）">全屏</button>
+        <button id="more" aria-expanded="false" aria-controls="roomMore">更多 ···</button>
+    </nav>
+    <section id="roomMore" hidden aria-label="更多房间操作">
+        <div class="extra-row"><strong>播放与同步</strong><button id="cinema">切换网页布局</button><button id="detect">重新连接同步</button><button id="reload">刷新当前页</button><button id="pick-current" hidden>确认当前集数</button></div>
+        <div class="extra-row"><strong>播放方式</strong><button id="scan-media">查找可播放视频</button><select id="mediaChoices" aria-label="可用的视频"><option value="">尚未找到视频</option></select><button id="play-media" disabled>用内置播放器</button><button id="original">用原网页播放</button></div>
+        <form id="sourceForm" class="extra-row"><label for="currentSource">手动打开</label><input id="currentSource" aria-label="视频网页地址" type="url" required placeholder="粘贴视频网页链接"><button type="submit">打开链接</button><button id="kanju" type="button">看剧 AI 原站</button></form>
+        <div class="extra-row room-options"><button id="roomLabel" title="点击复制房间号"></button><span>通常无需调整以上选项</span><button id="leave" class="danger">离开房间</button></div>
+    </section>
+</section>
 <section id="finderTools" hidden><div><strong>选好这一集，一起看</strong><span>原站页面</span></div><nav><button id="finder-catalog">返回推荐 / 搜索</button><button id="finder-kanju">看剧 AI</button><button id="finder-back">后退</button><button id="finder-reload">刷新 / 重试</button><button id="finder-browser">浏览器打开</button><button id="finder-pick">用当前播放页建房</button></nav><p>确认影片和集数后再建房；登录和验证只在原站实际要求时进行。</p></section>
 <div id="placeholder" hidden>正在加载播放页和房间…</div><script src="shell.js"></script></body></html>

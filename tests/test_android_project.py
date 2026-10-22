@@ -8,6 +8,20 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_room_actions_are_contextual_and_exit_requires_confirmation(self):
+        activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
+        layout = (ANDROID / 'app/src/main/res/layout/activity_main.xml').read_text(encoding='utf-8')
+        tree = ET.fromstring(layout)
+        ids = {'a': 'http://schemas.android.com/apk/res/android'}
+        toolbar = next(el for el in tree.iter('LinearLayout') if el.get('{'+ids['a']+'}id') == '@+id/browserToolbar')
+        self.assertEqual([el.get('{'+ids['a']+'}id') for el in toolbar], ['@+id/findAgainButton', '@+id/inviteButton', '@+id/fullscreenButton'])
+        self.assertNotIn('playbackToolbar', layout)
+        self.assertIn('R.id.moreButton', activity)
+        self.assertIn('setNegativeButton("继续观看",null)', activity)
+        self.assertIn('setPositiveButton("离开房间"', activity)
+        self.assertIn('actions.add(this::choosePlayback)', activity)
+        self.assertIn('finding && originalFinderActive?View.VISIBLE:View.GONE', activity)
+
     def test_back_preserves_catalogue_original_finder_and_room(self):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
         finder = activity.split('private void showFinder(boolean original)', 1)[1].split('private void pauseFinder', 1)[0]
@@ -32,7 +46,8 @@ class AndroidProjectTests(unittest.TestCase):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
         startup = activity.split('protected void onCreate', 1)[1].split('private void bindViews', 1)[0]
         self.assertIn('bindActions();', startup)
-        self.assertIn('if (!Intent.ACTION_SEND.equals(getIntent().getAction())) showFinder();', startup)
+        self.assertIn('showFinder();', startup)
+        self.assertIn('if (Intent.ACTION_SEND.equals(getIntent().getAction()))', startup)
         selection = activity.split('private void chooseSelection(', 1)[1].split('boolean change=', 1)[0]
         self.assertIn('!consentCheck.isChecked()', selection)
         self.assertIn('showSetup();pendingSetupSelection=selection', selection)
@@ -42,15 +57,30 @@ class AndroidProjectTests(unittest.TestCase):
 
     def test_android_entry_preserves_invitation_and_legacy_uses_local_sync(self):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
-        find_action = activity.split('findViewById(R.id.findButton).setOnClickListener', 1)[1].split('findViewById(R.id.findAgainButton)', 1)[0]
-        self.assertIn('roomInput.getText()', find_action)
-        self.assertIn('startSession()', find_action)
+        start = activity.split('private void startSession()', 1)[1].split('private boolean validateIdentity()', 1)[0]
+        self.assertLess(start.index('final String requestedRoom=room'), start.index('pendingSetupSelection!=null'))
+        self.assertIn('startResolved(requestedRoom,selected.page)', start)
         selection = activity.split('private void chooseSelection(', 1)[1].split('boolean change=', 1)[0]
-        self.assertIn('startSession();return;', selection)
+        self.assertIn('if(!sessionActive)roomInput.setText("")', selection)
+        self.assertNotIn('startSession();return;', selection)
         self.assertNotIn('nativePlayer.isActive() || programRevision==0', activity)
         self.assertNotIn('fetchAndInjectHelper(generation, url);', activity)
         self.assertIn("currentEpisode('kanju')", activity)
         self.assertIn('R.id.setupStatus', activity)
+
+    def test_first_watch_is_compact_and_returning_selection_skips_entry(self):
+        activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
+        layout = ET.fromstring((ANDROID / 'app/src/main/res/layout/activity_main.xml').read_text(encoding='utf-8'))
+        attr = '{http://schemas.android.com/apk/res/android}'
+        panel = next(el for el in layout.iter('ScrollView') if el.get(attr+'id') == '@+id/setupPanel')
+        self.assertEqual(panel.get(attr+'layout_height'), 'wrap_content')
+        self.assertEqual(panel.get(attr+'layout_gravity'), 'center')
+        selection = activity.split('private void chooseSelection(', 1)[1].split('private void openProgramPage', 1)[0]
+        self.assertIn('configureEntry(true)', selection)
+        self.assertIn('!consentCheck.isChecked()', selection)
+        self.assertIn('requestProgram(change?', selection)
+        self.assertIn('"consent", true', activity)
+        self.assertIn('showSetup();showFinder();', activity)
 
     def test_web_player_uses_compiled_injection_and_scoped_mobile_layout(self):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
@@ -72,7 +102,7 @@ class AndroidProjectTests(unittest.TestCase):
         build = (ANDROID / "app/build.gradle").read_text(encoding="utf-8")
         for text in ('ProgramPolicy.handoff', 'validatedProgram', 'b.applyProgram(', 'programRevision>0', 'PlaybackBoundary.sample', 'PlaybackBoundary.command', 'request.hasGesture()'):
             self.assertIn(text, activity)
-        for control in ('findButton', 'findAgainButton', 'pickPageButton', 'finderToolbar'):
+        for control in ('entryAdvancedButton', 'findAgainButton', 'pickPageButton', 'finderToolbar'):
             self.assertIn('@+id/' + control, layout)
         self.assertIn('prepareSharedPlayerAssets', build)
         self.assertIn("include 'player-agent.js'", build)

@@ -90,6 +90,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await until('opening another original evicts previous original',()=>resumedOriginal.isDestroyed());
         assert.equal(resumedCatalog.isDestroyed(),false,'bounded original cache must retain catalogue');
         const nextOriginal = client.state().discoveryView.webContents;
+        dialog.showMessageBox=async(_win,options)=>{assert.match(options.message,/离开/);return {response:1};};
         await client.action('settings');
         assert.equal(resumedCatalog.isDestroyed(),false,'setup must retain search');
         assert.equal(nextOriginal.isDestroyed(),false,'setup must retain original-site history');

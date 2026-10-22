@@ -149,9 +149,12 @@ public final class MainActivity extends ComponentActivity {
         bindViews();
         createWebViews();
         restoreInputs();
-        readSharedText(getIntent());
         bindActions();
-        if (!Intent.ACTION_SEND.equals(getIntent().getAction())) showFinder();
+        showFinder();
+        if (Intent.ACTION_SEND.equals(getIntent().getAction())) {
+            showSetup();readSharedText(getIntent());
+            if(!videoUrlInput.getText().toString().isEmpty())setEntryAdvanced(true);
+        }
     }
 
     private void bindViews() {
@@ -268,44 +271,78 @@ public final class MainActivity extends ComponentActivity {
         };
         getOnBackPressedDispatcher().addCallback(this, navigationBack);
         findViewById(R.id.openVideoButton).setOnClickListener(view -> startSession());
-        findViewById(R.id.videoTabButton).setOnClickListener(view -> {
-            if(finding && sessionActive)resumePlayback();
-            else showVideoTab();
-        });
         findViewById(R.id.previousButton).setOnClickListener(view -> handleBackNavigation());
         findViewById(R.id.setupBackButton).setOnClickListener(view -> showPreviousFinder());
-        findViewById(R.id.roomTabButton).setOnClickListener(view -> showRoomTab());
-        findViewById(R.id.setupTabButton).setOnClickListener(view -> showSetup());
+        findViewById(R.id.moreButton).setOnClickListener(view -> showRoomMenu());
+        findViewById(R.id.finderCatalogButton).setOnClickListener(view -> showFinder());
         findViewById(R.id.termsButton).setOnClickListener(view -> openExternal(SERVER_ORIGIN + "/terms"));
         findViewById(R.id.privacyButton).setOnClickListener(view -> openExternal(SERVER_ORIGIN + "/privacy"));
-        findViewById(R.id.sourceButton).setOnClickListener(view -> choosePlayback());
         findViewById(R.id.sampleButton).setOnClickListener(view -> chooseSample());
-        findViewById(R.id.findButton).setOnClickListener(view -> {
-            // A filled invitation always means join, even if "find a film" was tapped.
-            if(!roomInput.getText().toString().trim().isEmpty()) startSession();
-            else showFinder();
-        });
+        findViewById(R.id.entryAdvancedButton).setOnClickListener(view ->
+            setEntryAdvanced(videoUrlInput.getVisibility()!=View.VISIBLE));
         findViewById(R.id.findAgainButton).setOnClickListener(view -> showFinder());
         findViewById(R.id.pickPageButton).setOnClickListener(view -> chooseCurrentPage());
         findViewById(R.id.fullscreenButton).setOnClickListener(view -> {
+            showVideoTab();
             if (nativePlayer.isActive()) enterNativeFullscreen();
             else enterWebFullscreen();
         });
-        findViewById(R.id.inviteButton).setOnClickListener(view -> {
-            String link=SERVER_ORIGIN+"/room/"+Uri.encode(activeRoom);
-            new AlertDialog.Builder(this).setTitle("房间号："+activeRoom)
-                .setItems(new String[]{"复制房间号", "复制邀请链接", "分享邀请"},(dialog,which)->{
-                    if(which<2) {
-                        ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
-                        if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("一起看邀请",which==0?activeRoom:link));
-                        Toast.makeText(this,"已复制，请让朋友粘贴到房间号输入框",Toast.LENGTH_LONG).show();
-                    } else {
-                        Intent invite=new Intent(Intent.ACTION_SEND).setType("text/plain");
-                        invite.putExtra(Intent.EXTRA_TEXT,"来一起看："+link);
-                        startActivity(Intent.createChooser(invite,"邀请朋友"));
-                    }
-                }).setNegativeButton("关闭",null).show();
+        findViewById(R.id.inviteButton).setOnClickListener(view -> inviteFriends());
+    }
+
+    private void inviteFriends() {
+        if(!sessionActive)return;
+        String link=SERVER_ORIGIN+"/room/"+Uri.encode(activeRoom);
+        new AlertDialog.Builder(this).setTitle("房间号："+activeRoom)
+            .setItems(new String[]{"复制房间号", "复制邀请链接", "分享邀请"},(dialog,which)->{
+                if(which<2) {
+                    ClipboardManager clipboard=(ClipboardManager)getSystemService(CLIPBOARD_SERVICE);
+                    if(clipboard!=null)clipboard.setPrimaryClip(ClipData.newPlainText("一起看邀请",which==0?activeRoom:link));
+                    Toast.makeText(this,"已复制，请让朋友粘贴到房间号输入框",Toast.LENGTH_LONG).show();
+                } else {
+                    Intent invite=new Intent(Intent.ACTION_SEND).setType("text/plain");
+                    invite.putExtra(Intent.EXTRA_TEXT,"来一起看："+link);
+                    startActivity(Intent.createChooser(invite,"邀请朋友"));
+                }
+            }).setNegativeButton("关闭",null).show();
+    }
+
+    private void showRoomMenu() {
+        List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
+        if(sessionActive) {
+            labels.add(finding?"回到播放":videoContainer.getVisibility()==View.VISIBLE?"只看聊天与语音":"恢复同屏观看");
+            actions.add(finding?this::resumePlayback:videoContainer.getVisibility()==View.VISIBLE?this::showRoomTab:this::showVideoTab);
+            if(!finding) {
+                labels.add("播放方式与故障处理");actions.add(this::choosePlayback);
+                if(!nativePlayer.isActive()){labels.add("核对当前集数 / 重新连接同步");actions.add(this::chooseCurrentPage);}
+            }
+        }
+        if(finding && originalFinderActive && originalFinderWebView!=null) {
+            labels.add("返回搜索结果");actions.add(this::showFinder);
+            labels.add("刷新原站页面");actions.add(()->originalFinderWebView.reload());
+        }
+        labels.add(sessionActive?"离开房间":"加入朋友房间");
+        actions.add(()->{
+            if(!sessionActive){showSetup();return;}
+            new AlertDialog.Builder(this).setTitle("离开当前房间？")
+                .setMessage("将断开本机的同步和通话。刚才的搜索仍会保留。")
+                .setNegativeButton("继续观看",null).setPositiveButton("离开房间",(dialog,which)->{showSetup();showFinder();}).show();
         });
+        new AlertDialog.Builder(this).setTitle("更多操作")
+            .setItems(labels.toArray(new String[0]),(dialog,index)->actions.get(index).run())
+            .setNegativeButton("关闭",null).show();
+    }
+
+    private void updateRoomControls() {
+        boolean watching=sessionActive && !finding;
+        browserToolbar.setVisibility(watching?View.VISIBLE:View.GONE);
+        findViewById(R.id.finderToolbar).setVisibility(finding && originalFinderActive?View.VISIBLE:View.GONE);
+        findViewById(R.id.moreButton).setVisibility(sessionActive || originalFinderActive?View.VISIBLE:View.GONE);
+        boolean canChoose=!sessionActive || programRevision==0 || !ownerKey.isEmpty();
+        findViewById(R.id.findAgainButton).setEnabled(canChoose);
+        findViewById(R.id.findAgainButton).setTooltipText(canChoose?"保留房间，选择影片或集数":"由房主换片，你会自动跟随");
+        findViewById(R.id.pickPageButton).setEnabled(canChoose);
+        ((Button)findViewById(R.id.pickPageButton)).setText(sessionActive?"确认并切换到这一集":"选好这集，开始一起看");
     }
 
     private void startSession() {
@@ -338,7 +375,7 @@ public final class MainActivity extends ComponentActivity {
             ProgramPolicy.Selection selected=pendingSetupSelection;pendingSetupSelection=null;
             if(selected.page.equals(videoUrl)) {chooseSelection(selected);return;}
         }
-        if(videoUrlInput.getText().toString().trim().isEmpty()) {showFinder();return;}
+        if(videoUrlInput.getText().toString().trim().isEmpty()) {showInputError(roomInput,"请粘贴朋友的邀请；自己选片请关闭此窗口");return;}
         if(videoUrl.isEmpty()) {
             showInputError(videoUrlInput, "只允许公开 HTTPS 网页，不能使用本机或局域网地址");
             return;
@@ -385,7 +422,6 @@ public final class MainActivity extends ComponentActivity {
         hideKeyboard();
         setupPanel.setVisibility(View.GONE);
         browserToolbar.setVisibility(View.VISIBLE);
-        findViewById(R.id.playbackToolbar).setVisibility(View.VISIBLE);
         statusText.setVisibility(View.VISIBLE);
         mainContent.setVisibility(View.VISIBLE);
         setStatus("正在打开视频页面…");
@@ -422,12 +458,12 @@ public final class MainActivity extends ComponentActivity {
         }
         setupPanel.setVisibility(View.GONE);mainContent.setVisibility(View.VISIBLE);browserToolbar.setVisibility(View.VISIBLE);
         findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);
-        findViewById(R.id.playbackToolbar).setVisibility(View.GONE);
         videoContainer.setVisibility(View.VISIBLE);roomContainer.setVisibility(View.GONE);statusText.setVisibility(View.VISIBLE);
         setStatus("选择推荐影片，或搜索想看的片名。选好集数后再建房。");
         browserToolbar.setVisibility(original?View.VISIBLE:View.GONE);statusText.setVisibility(original?View.VISIBLE:View.GONE);
         findViewById(R.id.finderToolbar).setVisibility(original?View.VISIBLE:View.GONE);
         if(catalogWebView.getUrl()==null)catalogWebView.loadUrl(SERVER_ORIGIN+"/discover");
+        updateRoomControls();
     }
 
     private void pauseFinder(WebView view) {
@@ -458,7 +494,6 @@ public final class MainActivity extends ComponentActivity {
         setupPanel.setVisibility(View.GONE);mainContent.setVisibility(View.VISIBLE);
         browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
         findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);
-        findViewById(R.id.playbackToolbar).setVisibility(View.VISIBLE);
         showVideoTab();setStatus("已返回当前播放，房间保持连接。");
     }
 
@@ -546,11 +581,13 @@ public final class MainActivity extends ComponentActivity {
 
     private void chooseSelection(ProgramPolicy.Selection selection) {
         if(requestBusy)return;
-        if(!sessionActive && !roomInput.getText().toString().trim().isEmpty()){startSession();return;}
+        // Choosing an episode is a new watch action, never an implicit rejoin
+        // using an invitation left in the separate join dialog.
+        if(!sessionActive)roomInput.setText("");
         if(!sessionActive && (nicknameInput.getText().toString().trim().isEmpty() || !consentCheck.isChecked())) {
             showSetup();pendingSetupSelection=selection;videoUrlInput.setText(selection.page);
-            ((Button)findViewById(R.id.openVideoButton)).setText("确认并创建房间");
-            setStatus("影片和集数已保留。填写昵称并勾选使用说明，再点击下方按钮建房。");return;
+            configureEntry(true);
+            setStatus("首次确认后即可开始观看，以后选好影片直接进入房间。");return;
         }
         if(!validateIdentity())return;
         if(sessionActive && ownerKey.isEmpty()){reportError("只有房主可以换片。");return;}
@@ -574,7 +611,6 @@ public final class MainActivity extends ComponentActivity {
         mediaCandidates.clear();protectedPage=false;sourcePageUrl=page;++videoPageGeneration;
         preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
         browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
-        findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);findViewById(R.id.playbackToolbar).setVisibility(View.VISIBLE);
         nativePlayerView.setVisibility(View.GONE);videoWebView.setVisibility(View.VISIBLE);showVideoTab();
         if(MediaSourcePolicy.isMedia(page))openNative(page,0);else videoWebView.loadUrl(page);
     }
@@ -596,7 +632,8 @@ public final class MainActivity extends ComponentActivity {
         exitNativeFullscreen();
         videoContainer.setVisibility(View.VISIBLE);
         roomContainer.setVisibility(finding?View.GONE:View.VISIBLE);
-        ((Button) findViewById(R.id.fullscreenButton)).setText("全屏视频");
+        ((Button) findViewById(R.id.fullscreenButton)).setText("全屏");
+        updateRoomControls();
     }
 
     private void showRoomTab() {
@@ -605,11 +642,12 @@ public final class MainActivity extends ComponentActivity {
         videoContainer.setVisibility(View.GONE);
         roomContainer.setVisibility(View.VISIBLE);
         setStatus("房间页：可聊天、调整音量和加入语音通话");
+        updateRoomControls();
     }
 
     private void showSetup() {
         pendingSetupSelection=null;
-        ((Button)findViewById(R.id.openVideoButton)).setText(R.string.open_video);
+        roomInput.setText("");videoUrlInput.setText("");
         exitNativeFullscreen();
         sessionActive = false;
         finding=false;requestBusy=false;++flowGeneration;
@@ -630,10 +668,36 @@ public final class MainActivity extends ComponentActivity {
         videoWebView.loadUrl("about:blank");
         roomWebView.loadUrl("about:blank");
         browserToolbar.setVisibility(View.GONE);
-        findViewById(R.id.playbackToolbar).setVisibility(View.GONE);
         statusText.setVisibility(View.GONE);
         setupPanel.setVisibility(View.VISIBLE);
         mainContent.setVisibility(View.GONE);
+        findViewById(R.id.moreButton).setVisibility(View.GONE);
+        configureEntry(false);
+    }
+
+    private void configureEntry(boolean selected) {
+        ((TextView)findViewById(R.id.setupTitle)).setText(selected?"开始一起看":"加入朋友房间");
+        ((TextView)findViewById(R.id.setupHint)).setText(selected?"首次确认一下，以后选好影片直接观看。":"粘贴邀请，自动打开朋友正在看的影片。");
+        ((TextView)findViewById(R.id.setupStatus)).setText("");
+        ((Button)findViewById(R.id.openVideoButton)).setText(selected?"开始观看":"加入房间");
+        roomInput.setVisibility(selected?View.GONE:View.VISIBLE);
+        findViewById(R.id.entryAdvancedButton).setVisibility(selected?View.GONE:View.VISIBLE);
+        setEntryAdvanced(false);
+        if(selected) {
+            nicknameInput.setVisibility(View.VISIBLE);consentCheck.setVisibility(View.VISIBLE);
+            findViewById(R.id.legalLinks).setVisibility(View.VISIBLE);
+        }
+    }
+
+    private void setEntryAdvanced(boolean expanded) {
+        boolean identityNeeded=!consentCheck.isChecked() || nicknameInput.getText().toString().trim().isEmpty();
+        nicknameInput.setVisibility(expanded || identityNeeded?View.VISIBLE:View.GONE);
+        consentCheck.setVisibility(expanded || identityNeeded?View.VISIBLE:View.GONE);
+        findViewById(R.id.legalLinks).setVisibility(expanded || identityNeeded?View.VISIBLE:View.GONE);
+        videoUrlInput.setVisibility(expanded?View.VISIBLE:View.GONE);
+        autoNativeCheck.setVisibility(expanded?View.VISIBLE:View.GONE);
+        findViewById(R.id.sampleButton).setVisibility(expanded?View.VISIBLE:View.GONE);
+        ((Button)findViewById(R.id.entryAdvancedButton)).setText(expanded?"收起选项":"昵称 / 手动链接");
     }
 
     private void showInputError(EditText input, String message) {
@@ -682,12 +746,12 @@ public final class MainActivity extends ComponentActivity {
         playerBridgeNotice="";
         if(finding || (programRevision>0 && programSelection==null)) {deliverSample(generation,page,new JSONObject(),-1);return;}
         if(programRevision>0 && !nativePlayer.isActive() && (!currentProgramPage() || videoLoading)) {
-            if(!videoLoading)setStatus("当前页面与房间片源不同，已停止同步。点「确认当前集数」返回房主片源。");
+            if(!videoLoading)setStatus("当前页面与房间片源不同。可在「更多」中核对当前集数并恢复同步。");
             deliverSample(generation,page,new JSONObject(),-1);return;
         }
         if(awaitingEpisode) {
-            if(!programSelection.exact()){setStatus("此来源需双方核对集数，再点「确认当前集数」开始同步。");deliverSample(generation,page,new JSONObject(),-1);return;}
-            if(System.currentTimeMillis()-episodeStarted>20000){setStatus("未确认所选集数，已停止自动选集。请完成原站登录或选集，再点「确认当前集数」重试。");deliverSample(generation,page,new JSONObject(),-1);return;}
+            if(!programSelection.exact()){setStatus("请双方核对同一集，再到「更多 → 核对当前集数」开始同步。");deliverSample(generation,page,new JSONObject(),-1);return;}
+            if(System.currentTimeMillis()-episodeStarted>20000){setStatus("尚未确认集数。请在原站选好后，到「更多 → 核对当前集数」重试。");deliverSample(generation,page,new JSONObject(),-1);return;}
             videoWebView.evaluateJavascript(catalogScript+";"+webSyncScript+";window.__twAndroidPage.confirm("+js(programSelection.source)+","+js(programSelection.episode)+")", confirmed->{
                 if(!bridgeCurrent(generation))return;
                 if(page!=videoPageGeneration){scheduleBridge(generation);return;}
@@ -750,7 +814,6 @@ public final class MainActivity extends ComponentActivity {
         if (url.isEmpty() || !MediaSourcePolicy.isMedia(url)) return;
         if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) return;
         mediaCandidates.put(url, details == null ? new JSONObject() : details);
-        ((Button) findViewById(R.id.sourceButton)).setText("播放方式 (" + mediaCandidates.size() + ")");
     }
 
     private void discoverMedia() {
@@ -874,6 +937,7 @@ public final class MainActivity extends ComponentActivity {
         setIntent(intent);
         showSetup();
         readSharedText(intent);
+        if(!videoUrlInput.getText().toString().isEmpty())setEntryAdvanced(true);
     }
 
     private final class FinderPageClient extends WebViewClient {
@@ -1211,7 +1275,7 @@ public final class MainActivity extends ComponentActivity {
             } catch (IOException error) {
                 mainHandler.post(() -> {
                     if (generation == videoPageGeneration && !destroyed && !nativePlayer.isActive())
-                        setStatus("同步助手下载失败，请点击播放方式重新识别");
+                        setStatus("同步助手下载失败，可在「更多 → 播放方式与故障处理」中重试");
                 });
             }
         });

@@ -1,7 +1,7 @@
 'use strict';
 // Real Windows client + Android's packaged JS adapter in a separate Chromium
 // view, with the real local room server. This is NOT a physical WebView test.
-const {BrowserWindow, net} = require('electron');
+const {BrowserWindow, net, dialog} = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -131,7 +131,11 @@ exports.run = async ({createDesktop,server,output,until}) => {
         }
         // Reverse the roles. Android finds the current episode on the original
         // page, creates the program via HTTP, and Windows enters just its ID.
-        await host.action('settings');
+        const originalDialog=dialog.showMessageBox;
+        try {
+            dialog.showMessageBox=async(_win,options)=>{assert.match(options.message,/离开/);return {response:1};};
+            await host.action('settings');
+        } finally {dialog.showMessageBox=originalDialog;}
         await phone.loadURL('https://www.kanju.ai/player/variant%3Acsp-fixture');
         await pv.executeJavaScript(catalog+';'+wrapper);
         const episode=await pv.executeJavaScript('window.__twAndroidPage.currentEpisode("kanju")');

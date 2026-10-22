@@ -59,6 +59,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     let micApproved = false, switching = false;
     let builtin = null, scanning = null, lastScan = 0, lastOriginalPause = 0, sourcePage = '';
     let draft = null, managed = null, finderMode = 'catalog', selecting = false;
+    let toolsExpanded = false;
     // Keep search context and the most recent original-site page, not a growing
     // collection of background tabs. Login state stays in videoPartition.
     const finderViews = new Map();
@@ -210,13 +211,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
 
     function layout() {
         if (win.isDestroyed()) return;
+        status({advanced:toolsExpanded,browsing,cinema});
         const [width, height] = win.getContentSize();
         if (!video || !roomView) {
             const top = finderMode === 'catalog' ? 72 : 200;
             layoutFinder({x:0,y:top,width,height:Math.max(1,height-top)}, browsing);
             return;
         }
-        const bounds = policy.panelBounds(width, height, full);
+        const bounds = policy.panelBounds(width, height, full, toolsExpanded);
         video.setBounds(bounds.video); roomView.setBounds(bounds.room);
         if (builtin) { builtin.setBounds(bounds.video); builtin.setVisible(!browsing || full); }
         layoutFinder(bounds.video, browsing && !full);
@@ -236,6 +238,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (input.type !== 'keyDown') return;
         if (input.key === 'F11') { _event.preventDefault(); toggleFullscreen(); }
         else if (input.key === 'Escape' && full) { _event.preventDefault(); toggleFullscreen(false); }
+        else if (input.key === 'Escape' && toolsExpanded) { _event.preventDefault(); toolsExpanded=false; layout(); }
         else if (input.key.toLowerCase() === 'z' && full && input.control) { _event.preventDefault(); crop = !crop; focusPlayer(full); }
         else if (input.key === 'BrowserBack' || (input.key === 'ArrowLeft' && input.alt)) { _event.preventDefault(); goBack().catch(() => {}); }
     }
@@ -277,6 +280,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     function closeViews(keepFinders = false) {
         keepFinders = keepFinders === true; // Window close passes an event, not a flag.
+        toolsExpanded=false;
         ++finderGeneration; metadataBrowser.cancelAll();
         closeBuiltin(); sourcePage = ''; resetMedia();
         ++generation; clearTimeout(timer); timer = null; selected = null; current = null; micApproved = false;
@@ -333,6 +337,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     async function navigateVideo(url, selection = null) {
         if (!sourceAllowed(url) || !video) return { ok: false, error: '请输入公开的 HTTPS 链接' };
+        toolsExpanded=false;
         closeBuiltin(); sourcePage = url; resetMedia();
         const navigation = ++videoGeneration;
         await toggleFullscreen(false);
@@ -367,7 +372,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             if (!descriptor) { status('请先选择具体集数；看剧 AI 请打开播放页后点“用当前页建房”。'); return; }
             if (!draft) {
                 await parkFinder(discoveryView); browsing = false; layout();
-                status({setup:true,pendingSource:url,message:'影片已选好，填写昵称并确认后创建房间。'});
+                status({setup:true,pendingSource:url,message:'正在准备所选影片…'});
                 return;
             }
             selecting = true;
@@ -418,6 +423,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             timeout(frame.executeJavaScript('document.querySelectorAll("video,audio").forEach(media=>media.pause())')).catch(() => {})));
     }
     async function showDiscovery(mode = 'catalog') {
+        toolsExpanded=false;
         const epoch = ++finderGeneration;
         await toggleFullscreen(false);
         if (epoch !== finderGeneration || win.isDestroyed()) return;
@@ -532,6 +538,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 message:'确认当前播放的是想看的那一集？', detail:'该站暂不支持邀请自动选集。兼容房间可尝试同步播放器，但朋友仍需各自打开同一播放页并完成原站验证。账号和验证凭据不会共享。',
                 buttons:['暂不建房','继续'], defaultId:0, cancelId:0});
             if (answer.response !== 1 || discoveryView !== view || wc.isDestroyed() || wc.getURL() !== url) return;
+            if (!current && !draft) {
+                await parkFinder(discoveryView); browsing=false; layout();
+                status({setup:true,pendingSource:url,message:'影片已确认，正在准备兼容房间…'});
+                return {ok:true,pending:true};
+            }
             return current ? navigateVideo(url) : start({...draft, source:url});
         } finally { selecting = false; }
     }
@@ -597,11 +608,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             if (!ready) throw new Error('mobile bridge unavailable');
             if (managed) await roomView.webContents.executeJavaScript(`window.TogetherWatchMobile.applyProgram(${managed.revision})`);
             timer = setTimeout(() => tick(epoch), 200);
-            status({joined:id, source:initialSource, host:!!managed?.owner,
+            status({joined:id, source:initialSource, host:!managed || !!managed.owner,
                 message:target && !target.exact ? '已打开同一页面：请核对集数，再点“重连同步”。此来源未提供稳定集数标识。' : managed ? '已打开房间所选播放页，加载后自动同步进度。' : '兼容房间：该链接尚不支持自动带出片源。'});
             return { ok: true, room: id };
         } catch {
-            if (epoch === generation) closeViews();
+            if (epoch === generation) closeViews(true);
             return { ok: false, error: '无法连接新版房间页面，请确认网站已更新并检查网络' };
         }
     }
@@ -682,7 +693,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                     const command = policy.playbackCommand(value, playerSession);
                     if (command) await timeout(selected.frame.executeJavaScript(`window.__twDesktopPlayer?.apply(${JSON.stringify(command)})`));
                 }
-                if (!browsing) status(sample.error || (full ? '全屏：Esc / F11 返回，Ctrl+Z 切换铺满' : builtin ? '内置播放 · 暂停、进度、倍速接入同一房间' : '已识别网页播放器 · 可点“识别视频”尝试内置播放'));
+                if (!browsing) status(sample.error || (full ? '全屏：Esc / F11 返回，Ctrl+Z 切换铺满' : builtin ? '内置播放 · 播放器已连接' : '网页播放 · 播放器已连接'));
             }
         } catch { if (stillCurrent()) { selected = null; status('播放页发生变化，正在重新连接播放器…'); } }
         finally { if (epoch === generation) timer = setTimeout(() => tick(epoch), selected ? 350 : 1200); }
@@ -694,12 +705,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         catch { return false; }
     }
     async function returnToPlayback() {
+        toolsExpanded=false;
         await parkFinder(discoveryView); browsing = false; layout();
         if (current) status({joined:current.room, source:sourcePage});
     }
     async function goBack() {
         if (switching || selecting) return;
         if (full) { await toggleFullscreen(false); return; }
+        if (toolsExpanded) { toolsExpanded=false; layout(); return; }
         if (browsing && discoveryView) {
             if (finderMode === 'catalog') {
                 if (await catalogNavigation('back')) return;
@@ -717,9 +730,20 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (!current) status({finder:true});
     }
     async function action(value) {
+        if (value?.type === 'tools' && current && typeof value.expanded === 'boolean') { toolsExpanded=value.expanded; layout(); return; }
         if (value && typeof value === 'object' && value.type === 'source') return chooseSource(value.source, policy.playSelection(value.source,server));
         if (value === 'terms' || value === 'privacy') { await shell.openExternal(policy.SERVER + '/' + value); return; }
-        if (value === 'settings') { closeViews(true); status({ setup: true, message: '可输入邀请或重新设置；返回会保留刚才的搜索。' }); return; }
+        if (value === 'settings' || value === 'leave') {
+            if (current) {
+                const room=current;
+                const answer=await dialog.showMessageBox(win,{type:'question',message:'离开当前房间？',detail:'将断开本机的同步和通话。之后可以输入邀请加入其他房间；刚才的搜索仍会保留。',buttons:['继续观看','离开房间'],defaultId:0,cancelId:0});
+                if(answer.response!==1 || current!==room)return;
+            }
+            closeViews(true);
+            if (value === 'leave') {await showDiscovery();status({finder:true,message:'已离开房间，选好影片即可再次开始。'});}
+            else status({setup:true,message:'粘贴朋友的邀请；自己的影片直接在首页选择。'});
+            return;
+        }
         if (value === 'back' || value === 'finder-back') return goBack();
         if (value === 'home') { await showDiscovery(); await catalogNavigation('home'); if (!current) status({finder:true}); return; }
         if (value === 'kanju' && (draft || current || browsing)) return showDiscovery('kanju');
@@ -739,7 +763,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (value?.type === 'play-media') return openBuiltin(value.id);
         if (value === 'scan-media') {
             const ok = await scanMedia();
-            reportMedia(!ok ? '正在识别，请稍后再试。' : catalog.reason || (catalog.items.size ? '请选择候选，再点“内置播放”。短片段可能是广告，请核对时长。' : '没有识别到可转移的视频。先在网页开始播放；失效源、blob、DASH 或受保护内容可能不支持。'));
+            reportMedia(!ok ? '正在识别，请稍后再试。' : catalog.reason || (catalog.items.size ? '请选择候选，再点“用内置播放器”。短片段可能是广告，请核对时长。' : '没有识别到可转移的视频。先在网页开始播放；失效源、blob、DASH 或受保护内容可能不支持。'));
         }
         else if (value === 'original') { await parkFinder(discoveryView); closeBuiltin(); browsing = false; layout(); status('已返回原网页，请按需点击播放。'); }
         else if (value === 'discover') await showDiscovery();

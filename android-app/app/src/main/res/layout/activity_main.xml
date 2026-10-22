@@ -12,9 +12,16 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <Button android:id="@+id/previousButton" android:layout_width="wrap_content"
-            android:layout_height="48dp" android:text="← 返回上一步" android:textAllCaps="false"
-            android:background="@android:color/transparent" android:textColor="@color/text_primary" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp"
+            android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="8dp">
+            <Button android:id="@+id/previousButton" android:layout_width="wrap_content"
+                android:layout_height="match_parent" android:text="← 返回" android:textAllCaps="false"
+                android:background="@android:color/transparent" android:textColor="@color/text_primary" />
+            <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+                android:text="一起看" android:gravity="center" android:textColor="@color/text_primary" android:textStyle="bold" />
+            <Button android:id="@+id/moreButton" android:layout_width="wrap_content" android:layout_height="match_parent"
+                android:text="更多 ···" android:background="@android:color/transparent" android:textColor="@color/text_primary" />
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/browserToolbar"
@@ -27,33 +34,37 @@
             android:visibility="gone">
 
             <Button
-                android:id="@+id/videoTabButton"
+                android:id="@+id/findAgainButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:background="@drawable/button_secondary"
-                android:text="@string/video_tab"
+                android:text="换片 / 选集"
+                android:textSize="13sp"
                 android:textAllCaps="false"
                 android:textColor="@color/text_primary" />
 
             <Button
-                android:id="@+id/roomTabButton"
+                android:id="@+id/inviteButton"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
-                android:layout_weight="1.35"
+                android:layout_weight="1"
                 android:background="@drawable/button_secondary"
-                android:text="@string/room_tab"
+                android:text="邀请朋友"
+                android:textSize="13sp"
                 android:textAllCaps="false"
                 android:textColor="@color/text_primary" />
 
             <Button
-                android:id="@+id/setupTabButton"
-                android:layout_width="wrap_content"
+                android:id="@+id/fullscreenButton"
+                android:layout_width="0dp"
+                android:layout_weight="1"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
                 android:background="@drawable/button_secondary"
-                android:text="@string/setup_tab"
+                android:text="全屏"
+                android:textSize="13sp"
                 android:textAllCaps="false"
                 android:textColor="@color/text_secondary" />
         </LinearLayout>
@@ -80,20 +91,8 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:visibility="gone">
-            <Button android:id="@+id/findAgainButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="找片 / 换片" />
-            <Button android:id="@+id/pickPageButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="确认当前集数" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:id="@+id/playbackToolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:visibility="gone"
-            android:padding="4dp">
-            <Button android:id="@+id/sourceButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="播放方式" />
-            <Button android:id="@+id/fullscreenButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="全屏视频" />
-            <Button android:id="@+id/inviteButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="邀请朋友" />
+            <Button android:id="@+id/finderCatalogButton" android:layout_width="wrap_content" android:layout_height="48dp" android:text="返回搜索" android:textSize="13sp" />
+            <Button android:id="@+id/pickPageButton" android:layout_width="0dp" android:layout_weight="1" android:layout_height="48dp" android:text="选好这集，开始一起看" android:textSize="13sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -110,8 +109,11 @@
     <ScrollView
         android:id="@+id/setupPanel"
         android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:fillViewport="true">
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="20dp"
+        android:background="@drawable/input_background"
+        android:visibility="gone">
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -119,28 +121,30 @@
             android:gravity="center_horizontal"
             android:orientation="vertical"
             android:paddingStart="24dp"
-            android:paddingTop="42dp"
+            android:paddingTop="16dp"
             android:paddingEnd="24dp"
-            android:paddingBottom="32dp">
+            android:paddingBottom="20dp">
 
             <Button android:id="@+id/setupBackButton" android:layout_width="wrap_content"
-                android:layout_height="48dp" android:layout_gravity="start" android:text="← 返回选片"
+                android:layout_height="48dp" android:layout_gravity="end" android:text="关闭"
                 android:background="@android:color/transparent" android:textColor="@color/text_primary" />
 
             <TextView
+                android:id="@+id/setupTitle"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="@string/setup_title"
+                android:text="加入朋友房间"
                 android:textColor="@color/text_primary"
-                android:textSize="28sp"
+                android:textSize="22sp"
                 android:textStyle="bold" />
 
             <TextView
+                android:id="@+id/setupHint"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="10dp"
                 android:gravity="center"
-                android:text="@string/setup_subtitle"
+                android:text="粘贴邀请，自动打开朋友正在看的影片。"
                 android:textColor="@color/text_secondary"
                 android:textSize="15sp" />
 
@@ -148,7 +152,7 @@
                 android:id="@+id/nicknameInput"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="30dp"
+                android:layout_marginTop="16dp"
                 android:background="@drawable/input_background"
                 android:hint="@string/nickname_hint"
                 android:inputType="textPersonName"
@@ -172,6 +176,7 @@
 
             <EditText
                 android:id="@+id/videoUrlInput"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -185,6 +190,7 @@
 
             <CheckBox
                 android:id="@+id/autoNativeCheck"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
@@ -195,6 +201,7 @@
 
             <Button
                 android:id="@+id/sampleButton"
+                android:visibility="gone"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="选择开放短片试播"
@@ -211,6 +218,7 @@
                 android:textSize="13sp" />
 
             <LinearLayout
+                android:id="@+id/legalLinks"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
@@ -237,19 +245,21 @@
             </LinearLayout>
 
             <Button
-                android:id="@+id/findButton"
+                android:id="@+id/entryAdvancedButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="先找片，选好再建房"
+                android:text="昵称 / 手动链接"
+                android:background="@android:color/transparent"
+                android:textColor="@color/text_secondary"
                 android:textAllCaps="false" />
 
             <Button
                 android:id="@+id/openVideoButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="22dp"
+                android:layout_marginTop="14dp"
                 android:background="@drawable/button_primary"
-                android:text="@string/open_video"
+                android:text="加入房间"
                 android:textAllCaps="false"
                 android:textColor="@color/text_primary"
                 android:textSize="17sp"
@@ -264,14 +274,6 @@
                 android:textColor="@color/text_secondary"
                 android:textSize="14sp" />
 
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:gravity="center"
-                android:text="视频由来源直接提供。内置播放器在本机识别和加载媒体地址，房间只同步播放状态；账号、Cookie 和识别出的媒体地址不会发送给其他成员。"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
         </LinearLayout>
     </ScrollView>
 

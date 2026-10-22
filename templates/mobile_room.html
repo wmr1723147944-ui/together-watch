@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>一起看 · 房间</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile-room.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/client-room-theme.css', v='20261017-ddys-ui') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client-room-theme.css', v='20261022-room-controls') }}">
 </head>
 <body>
     <input type="hidden" id="roomData" value="{{ room_id }}">
@@ -15,14 +15,16 @@
         <button id="joinCallBtn">加入语音</button>
     </header>
     <p id="mobilePlayerStatus" role="status">等待 APP 播放器</p>
-    <label id="videoVolumeControl">视频音量 <input id="mobileVideoVolume" type="range" min="0" max="100" value="100"><output id="mobileVideoVolumeValue">100%</output></label>
+    <details class="room-audio-options"><summary>视频音量</summary>
+        <label id="videoVolumeControl">本机音量 <input id="mobileVideoVolume" type="range" min="0" max="100" value="100"><output id="mobileVideoVolumeValue">100%</output></label>
+    </details>
     <section id="callDock" class="hidden">
         <span id="callStatus"></span> <span id="callCount"></span> <span id="callNetwork"></span>
         <button id="muteCallBtn">静音</button> <button id="leaveCallBtn">挂断</button>
         <label>通话音量 <input id="callVolumeSlider" type="range" min="0" max="100" value="100"><output id="callVolumeValue">100%</output></label>
         <div id="remoteAudioContainer" class="hidden"></div>
     </section>
-    <main id="chatContainer" aria-live="polite"><p>新版 Windows 邀请可自动带出片源；旧版或动态选集来源请核对同一集、同一版本。</p></main>
+    <main id="chatContainer" aria-live="polite"><p>和朋友聊聊吧。想开麦时，点击上方“加入语音”。</p></main>
     <form id="chatForm">
         <input id="chatInput" aria-label="聊天消息" placeholder="说点什么…" maxlength="500" autocomplete="off">
         <button id="sendBtn" type="button" disabled>发送</button>

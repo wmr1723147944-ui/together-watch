@@ -11,6 +11,10 @@ input { background: #232c3b; border-color: #3b4960; border-radius: 7px; }
 input::placeholder { color: #98a6bd; }
 input[type="range"] { accent-color: #41b6e5; }
 #videoVolumeControl { color: #b7c3d7; font-size: 12px; }
+.room-audio-options { flex-shrink:0; color:#a9b6ca; font-size:12px; }
+.room-audio-options summary { cursor:pointer; padding:8px 0; width:max-content; }
+.room-audio-options summary:focus-visible { outline:2px solid #6ccdf5; outline-offset:3px; }
+.room-audio-options[open] #videoVolumeControl { padding:4px 0 8px; }
 #chatContainer p { background: #242e3e; font-size: 13px; line-height: 1.7; padding: 10px 12px; }
 #callDock { background: #202e3c; padding: 12px; line-height: 1.8; }
 #chatForm { border-top: 1px solid #303b4b; padding-top: 12px; }
