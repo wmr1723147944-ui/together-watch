@@ -116,6 +116,10 @@ public final class MainActivity extends ComponentActivity {
     private FrameLayout fullscreenContainer;
 
     private WebView videoWebView;
+    // Keep the catalogue and at most one original-site finder separate from
+    // playback. Replacing a video must not discard search/episode history.
+    private WebView catalogWebView, originalFinderWebView;
+    private boolean originalFinderActive, backPending;
     private WebView roomWebView;
     private WebView companionWebView;
     private WebView routingPopup;
@@ -176,6 +180,12 @@ public final class MainActivity extends ComponentActivity {
         videoWebView.setWebViewClient(new VideoPageClient());
         videoWebView.setWebChromeClient(new VideoChromeClient());
 
+        catalogWebView = new WebView(this);
+        configureWebView(catalogWebView, true);
+        catalogWebView.setWebViewClient(new FinderPageClient(true));
+        catalogWebView.setWebChromeClient(new VideoChromeClient());
+        catalogWebView.setVisibility(View.GONE);
+
         roomWebView = new WebView(this);
         configureWebView(roomWebView, false);
         roomWebView.setWebViewClient(new RoomPageClient());
@@ -186,6 +196,7 @@ public final class MainActivity extends ComponentActivity {
             ViewGroup.LayoutParams.MATCH_PARENT
         );
         videoContainer.addView(videoWebView, match);
+        videoContainer.addView(catalogWebView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayerView = new PlayerView(this);
         nativePlayerView.setVisibility(View.GONE);
         nativePlayerView.setKeepScreenOn(true);
@@ -258,9 +269,11 @@ public final class MainActivity extends ComponentActivity {
         getOnBackPressedDispatcher().addCallback(this, navigationBack);
         findViewById(R.id.openVideoButton).setOnClickListener(view -> startSession());
         findViewById(R.id.videoTabButton).setOnClickListener(view -> {
-            if(finding && sessionActive && programSelection!=null)openProgramPage(programSelection.page);
+            if(finding && sessionActive)resumePlayback();
             else showVideoTab();
         });
+        findViewById(R.id.previousButton).setOnClickListener(view -> handleBackNavigation());
+        findViewById(R.id.setupBackButton).setOnClickListener(view -> showPreviousFinder());
         findViewById(R.id.roomTabButton).setOnClickListener(view -> showRoomTab());
         findViewById(R.id.setupTabButton).setOnClickListener(view -> showSetup());
         findViewById(R.id.termsButton).setOnClickListener(view -> openExternal(SERVER_ORIGIN + "/terms"));
@@ -387,21 +400,66 @@ public final class MainActivity extends ComponentActivity {
     private void reportError(String message) {setStatus(message);Toast.makeText(this,message,Toast.LENGTH_LONG).show();}
 
     private void showFinder() {
+        showFinder(false);
+    }
+
+    private void showPreviousFinder() {
+        showFinder(originalFinderActive && originalFinderWebView != null);
+    }
+
+    private void showFinder(boolean original) {
         if(requestBusy)return;
-        if(sessionActive && ownerKey.isEmpty()) {reportError("当前房间只有房主能换片；要自己选片请先返回设置。");return;}
         pendingSetupSelection=null;
+        originalFinderActive=original;
         finding=true;navigationBack.setEnabled(true);hideKeyboard();
         exitNativeFullscreen();hideFullscreenVideo();nativePlayer.pauseLocally();destroyCompanion();
         videoWebView.evaluateJavascript("window.__twAndroidPage?.pause();document.querySelectorAll('video,audio').forEach(v=>v.pause())",null);
-        nativePlayerView.setVisibility(View.GONE);videoWebView.setVisibility(View.VISIBLE);
+        nativePlayerView.setVisibility(View.GONE);videoWebView.setVisibility(View.GONE);
+        catalogWebView.setVisibility(original?View.GONE:View.VISIBLE);
+        if(originalFinderWebView!=null) {
+            originalFinderWebView.setVisibility(original?View.VISIBLE:View.GONE);
+            if(!original)pauseFinder(originalFinderWebView);
+        }
         setupPanel.setVisibility(View.GONE);mainContent.setVisibility(View.VISIBLE);browserToolbar.setVisibility(View.VISIBLE);
         findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);
         findViewById(R.id.playbackToolbar).setVisibility(View.GONE);
         videoContainer.setVisibility(View.VISIBLE);roomContainer.setVisibility(View.GONE);statusText.setVisibility(View.VISIBLE);
         setStatus("选择推荐影片，或搜索想看的片名。选好集数后再建房。");
-        browserToolbar.setVisibility(View.GONE);statusText.setVisibility(View.GONE);
-        findViewById(R.id.finderToolbar).setVisibility(View.GONE);
-        videoWebView.loadUrl(SERVER_ORIGIN+"/discover");
+        browserToolbar.setVisibility(original?View.VISIBLE:View.GONE);statusText.setVisibility(original?View.VISIBLE:View.GONE);
+        findViewById(R.id.finderToolbar).setVisibility(original?View.VISIBLE:View.GONE);
+        if(catalogWebView.getUrl()==null)catalogWebView.loadUrl(SERVER_ORIGIN+"/discover");
+    }
+
+    private void pauseFinder(WebView view) {
+        if(view!=null)view.evaluateJavascript("document.querySelectorAll('video,audio').forEach(v=>v.pause())",null);
+    }
+
+    private void hideFinders() {
+        catalogWebView.setVisibility(View.GONE);
+        if(originalFinderWebView!=null){pauseFinder(originalFinderWebView);originalFinderWebView.setVisibility(View.GONE);}
+    }
+
+    private void openFinderPage(String url) {
+        if(UrlPolicy.normalizeHttpsUrl(url).isEmpty())return;
+        if(originalFinderWebView==null) {
+            originalFinderWebView=new WebView(this);configureWebView(originalFinderWebView,true);
+            originalFinderWebView.setWebViewClient(new FinderPageClient(false));
+            originalFinderWebView.setWebChromeClient(new VideoChromeClient());
+            videoContainer.addView(originalFinderWebView,new FrameLayout.LayoutParams(-1,-1));
+        }
+        showFinder(true);originalFinderWebView.loadUrl(url);
+    }
+
+    private void resumePlayback() {
+        if(!sessionActive)return;
+        hideFinders();finding=false;
+        nativePlayerView.setVisibility(nativePlayer.isActive()?View.VISIBLE:View.GONE);
+        videoWebView.setVisibility(nativePlayer.isActive()?View.GONE:View.VISIBLE);
+        setupPanel.setVisibility(View.GONE);mainContent.setVisibility(View.VISIBLE);
+        browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
+        findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);
+        findViewById(R.id.playbackToolbar).setVisibility(View.VISIBLE);
+        showVideoTab();setStatus("已返回当前播放，房间保持连接。");
     }
 
     private void chooseCurrentPage() {
@@ -411,7 +469,9 @@ public final class MainActivity extends ComponentActivity {
             if(!currentProgramPage()) {openProgramPage(programSelection.page);return;}
             if(programSelection.exact()) {awaitingEpisode=programSelection.needsConfirmation();episodeStarted=System.currentTimeMillis();setStatus("正在重新确认所选集数…");return;}
         }
-        ProgramPolicy.Selection selection=ProgramPolicy.fromPage(videoWebView.getUrl());
+        final WebView pageView=finding && originalFinderActive?originalFinderWebView:videoWebView;
+        if(pageView==null)return;
+        ProgramPolicy.Selection selection=ProgramPolicy.fromPage(pageView.getUrl());
         if(selection==null){reportError("当前不是已适配的播放页，请回到目录点具体集数；不会把首页当成影片。");return;}
         if(!finding && programSelection!=null && !programSelection.exact()
             && !(selection.source.equals("kanju") && !ownerKey.isEmpty())) {
@@ -422,9 +482,9 @@ public final class MainActivity extends ComponentActivity {
         }
         if(selection.source.equals("kanju") && !selection.exact()) {
             // The original site can select an episode without putting it in the URL.
-            final String expectedUrl=videoWebView.getUrl();final int epoch=flowGeneration;
-            videoWebView.evaluateJavascript(catalogScript+";"+webSyncScript+";window.__twAndroidPage.currentEpisode('kanju')", result->{
-                if(destroyed || epoch!=flowGeneration || !expectedUrl.equals(videoWebView.getUrl()))return;
+            final String expectedUrl=pageView.getUrl();final int epoch=flowGeneration;
+            pageView.evaluateJavascript(catalogScript+";"+webSyncScript+";window.__twAndroidPage.currentEpisode('kanju')", result->{
+                if(destroyed || epoch!=flowGeneration || !expectedUrl.equals(pageView.getUrl()))return;
                 String episode="";try{episode=new JSONArray("["+result+"]").optString(0,"");}catch(Exception ignored){}
                 ProgramPolicy.Selection exact=ProgramPolicy.create(selection.source,selection.item,episode);
                 if(exact==null || !exact.exact()){reportError("还没确认当前集数。请先在原站点选一集，再点「确认当前集数」；未创建房间。");return;}
@@ -508,10 +568,12 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void openProgramPage(String page) {
+        hideFinders();
         finding=false;appliedProgramRevision=0;awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
         mediaCandidates.clear();protectedPage=false;sourcePageUrl=page;++videoPageGeneration;
         preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
+        browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
         findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);findViewById(R.id.playbackToolbar).setVisibility(View.VISIBLE);
         nativePlayerView.setVisibility(View.GONE);videoWebView.setVisibility(View.VISIBLE);showVideoTab();
         if(MediaSourcePolicy.isMedia(page))openNative(page,0);else videoWebView.loadUrl(page);
@@ -554,7 +616,8 @@ public final class MainActivity extends ComponentActivity {
         programRevision=0;appliedProgramRevision=0;programSelection=null;ownerKey="";awaitingEpisode=false;
         findViewById(R.id.openVideoButton).setEnabled(true);
         findViewById(R.id.finderToolbar).setVisibility(View.GONE);
-        navigationBack.setEnabled(false);
+        navigationBack.setEnabled(true);
+        hideFinders();
         cancelPendingMicrophone();
         closeRoutingPopup();
         ++bridgeGeneration;
@@ -813,6 +876,38 @@ public final class MainActivity extends ComponentActivity {
         readSharedText(intent);
     }
 
+    private final class FinderPageClient extends WebViewClient {
+        private final boolean catalogue;
+        FinderPageClient(boolean catalogue) {this.catalogue=catalogue;}
+        @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
+            if(!request.isForMainFrame())return !"https".equalsIgnoreCase(request.getUrl().getScheme());
+            String url=request.getUrl().toString();
+            if(catalogue) {
+                // Only explicit actions from our first-party catalogue may
+                // select a room source. No new native bridge is exposed.
+                if(!finding || !request.hasGesture() || !UrlPolicy.isTrustedServerUrl(view.getUrl(),SERVER_HOST))return true;
+                if(url.equals(SERVER_ORIGIN+"/#roomEntry")) {
+                    showSetup();roomInput.setText("");videoUrlInput.setText("");return true;
+                }
+                if(url.equals(SERVER_ORIGIN+"/") || url.equals(SERVER_ORIGIN+"/discover")) {
+                    view.evaluateJavascript("window.TogetherWatchCatalogNavigation?.home()",null);return true;
+                }
+                ProgramPolicy.Selection selection=ProgramPolicy.handoff(url,SERVER_ORIGIN);
+                if(selection!=null){chooseSelection(selection);return true;}
+                if(!UrlPolicy.normalizeHttpsUrl(url).isEmpty())openFinderPage(url);
+                return true;
+            }
+            return UrlPolicy.normalizeHttpsUrl(url).isEmpty();
+        }
+        @Override public void onPageFinished(WebView view,String url) {
+            if(!catalogue && finding && originalFinderActive && !pageLayoutScript.isEmpty())view.evaluateJavascript(pageLayoutScript,null);
+        }
+        @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error) {
+            if(finding && request.isForMainFrame())reportError("找片页面加载失败，可返回上一步或稍后重试。");
+        }
+        @Override public void onReceivedSslError(WebView view,SslErrorHandler handler,android.net.http.SslError error) {handler.cancel();}
+    }
+
     private final class VideoPageClient extends WebViewClient {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
@@ -856,13 +951,6 @@ public final class MainActivity extends ComponentActivity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
             if ("about:blank".equals(url)) return;
-            if(finding) {
-                boolean catalogue=UrlPolicy.isTrustedServerUrl(url,SERVER_HOST)
-                    && ("/discover".equals(Uri.parse(url).getPath()) || "/".equals(Uri.parse(url).getPath()));
-                browserToolbar.setVisibility(catalogue?View.GONE:View.VISIBLE);
-                statusText.setVisibility(catalogue?View.GONE:View.VISIBLE);
-                findViewById(R.id.finderToolbar).setVisibility(catalogue?View.GONE:View.VISIBLE);
-            }
             videoLoading=true;
             videoPageGeneration += 1;
             protectedPage = false;
@@ -871,7 +959,7 @@ public final class MainActivity extends ComponentActivity {
             activeCandidateCount = 0;
             if(!finding)sourcePageUrl = url;
             destroyCompanion();
-            setStatus("网页加载中…");
+            if(!finding)setStatus("网页加载中…");
         }
 
         @Override
@@ -880,7 +968,7 @@ public final class MainActivity extends ComponentActivity {
             if(!url.equals(view.getUrl()))return;
             videoLoading=false;
             if(!pageLayoutScript.isEmpty())view.evaluateJavascript(pageLayoutScript,null);
-            if(finding){setStatus("搜索影片，进入详情并点击具体集数。原站选好后也可点「确认当前集数」。");return;}
+            if(finding)return;
             if (!sessionActive || nativePlayer.isActive() || !UrlPolicy.isHttpsWebUrl(url)) return;
             int generation = videoPageGeneration;
             if(programRevision>0){
@@ -895,9 +983,8 @@ public final class MainActivity extends ComponentActivity {
         @Override
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
-            if (request.isForMainFrame()) {
+            if (!finding && request.isForMainFrame()) {
                 statusText.setVisibility(View.VISIBLE);
-                if(finding) {browserToolbar.setVisibility(View.VISIBLE);findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);}
                 setStatus("网页加载失败，可返回找片重试：" + error.getDescription());
             }
         }
@@ -905,8 +992,8 @@ public final class MainActivity extends ComponentActivity {
         @Override
         public void onReceivedSslError(WebView view, SslErrorHandler handler, android.net.http.SslError error) {
             handler.cancel();
+            if(finding)return;
             statusText.setVisibility(View.VISIBLE);
-            if(finding)browserToolbar.setVisibility(View.VISIBLE);
             setStatus("网页证书异常，已停止访问");
         }
     }
@@ -978,7 +1065,9 @@ public final class MainActivity extends ComponentActivity {
                         if(destroyed || routingPopup!=popup || popupGeneration!=videoPageGeneration){mainHandler.post(()->{if(routingPopup==popup)closeRoutingPopup();});return;}
                         ProgramPolicy.Selection selected=ProgramPolicy.handoff(url,SERVER_ORIGIN);
                         if(wasFinding && finding && trustedOrigin && selected!=null)chooseSelection(selected);
-                        else if(!UrlPolicy.normalizeHttpsUrl(url).isEmpty() && selected==null)videoWebView.loadUrl(url);
+                        else if(!UrlPolicy.normalizeHttpsUrl(url).isEmpty() && selected==null) {
+                            if(wasFinding && finding)openFinderPage(url);else if(!wasFinding)videoWebView.loadUrl(url);
+                        }
                         mainHandler.post(()->{if(routingPopup==popup)closeRoutingPopup();});
                     }
                     @Override public boolean shouldOverrideUrlLoading(WebView w,WebResourceRequest r){route(r.getUrl().toString());return true;}
@@ -1339,34 +1428,35 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void handleBackNavigation() {
+        if(requestBusy || backPending)return;
         if (nativeFullscreen) { showVideoTab(); return; }
         if (fullscreenView != null) {
             hideFullscreenVideo();
             return;
         }
+        if(setupPanel.getVisibility()==View.VISIBLE){showPreviousFinder();return;}
         if (videoContainer.getVisibility() != View.VISIBLE) {
             showVideoTab();
             return;
         }
-        if(finding && UrlPolicy.isTrustedServerUrl(videoWebView.getUrl(),SERVER_HOST)
-            && "/discover".equals(Uri.parse(videoWebView.getUrl()).getPath())) {
-            if(sessionActive && programSelection!=null)openProgramPage(programSelection.page);else showSetup();
+        if(finding && originalFinderActive && originalFinderWebView!=null) {
+            if(originalFinderWebView.canGoBack())originalFinderWebView.goBack();else showFinder();
             return;
         }
-        if (!finding && nativePlayer.isActive() && videoContainer.getVisibility() == View.VISIBLE) {
-            returnToWeb();
+        if(finding) {
+            backPending=true;
+            final int epoch=flowGeneration;
+            catalogWebView.evaluateJavascript("window.TogetherWatchCatalogNavigation?.back() === true", handled->{
+                backPending=false;
+                if(destroyed || epoch!=flowGeneration || !finding || originalFinderActive || "true".equals(handled))return;
+                if(sessionActive)resumePlayback();
+                else new AlertDialog.Builder(this).setTitle("退出一起看？")
+                    .setMessage("已经在推荐首页。退出后，本次搜索位置不会保留。")
+                    .setNegativeButton("继续找片",null).setPositiveButton("退出",(dialog,which)->finish()).show();
+            });
             return;
         }
-        if (setupPanel.getVisibility() != View.VISIBLE && videoWebView.canGoBack()) {
-            videoWebView.goBack();
-            return;
-        }
-        if (setupPanel.getVisibility() != View.VISIBLE) {
-            showSetup();
-            return;
-        }
-        navigationBack.setEnabled(false);
-        getOnBackPressedDispatcher().onBackPressed();
+        showPreviousFinder();
     }
 
     @Override
@@ -1377,6 +1467,7 @@ public final class MainActivity extends ComponentActivity {
         ++bridgeGeneration;
         if (nativePlayer != null) nativePlayer.pauseLocally();
         if(videoWebView!=null)videoWebView.evaluateJavascript("window.__twAndroidPage?.pause();document.querySelectorAll('video,audio').forEach(v=>v.pause())",null);
+        pauseFinder(originalFinderWebView);
         if (roomWebView != null && UrlPolicy.isTrustedServerUrl(roomWebView.getUrl(), SERVER_HOST)) {
             roomWebView.evaluateJavascript("window.TogetherWatchMobile?.suspend()", null);
         }
@@ -1404,6 +1495,8 @@ public final class MainActivity extends ComponentActivity {
         destroyCompanion();
         closeRoutingPopup();
         if (videoWebView != null) videoWebView.destroy();
+        if (catalogWebView != null) catalogWebView.destroy();
+        if (originalFinderWebView != null) originalFinderWebView.destroy();
         if (roomWebView != null) roomWebView.destroy();
         networkExecutor.shutdownNow();
         super.onDestroy();

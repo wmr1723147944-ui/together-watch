@@ -237,6 +237,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (input.key === 'F11') { _event.preventDefault(); toggleFullscreen(); }
         else if (input.key === 'Escape' && full) { _event.preventDefault(); toggleFullscreen(false); }
         else if (input.key.toLowerCase() === 'z' && full && input.control) { _event.preventDefault(); crop = !crop; focusPlayer(full); }
+        else if (input.key === 'BrowserBack' || (input.key === 'ArrowLeft' && input.alt)) { _event.preventDefault(); goBack().catch(() => {}); }
     }
     async function focusPlayer(enabled) {
         if (builtin && !builtin.webContents.isDestroyed()) {
@@ -274,18 +275,20 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         await focusPlayer(full || cinema);
         if (full) status('全屏：Esc / F11 返回，Ctrl+Z 切换完整画面和铺满裁边');
     }
-    function closeViews() {
+    function closeViews(keepFinders = false) {
+        keepFinders = keepFinders === true; // Window close passes an event, not a flag.
         ++finderGeneration; metadataBrowser.cancelAll();
         closeBuiltin(); sourcePage = ''; resetMedia();
         ++generation; clearTimeout(timer); timer = null; selected = null; current = null; micApproved = false;
         full = false;
         if (!win.isDestroyed()) win.setFullScreen(false);
-        for (const view of new Set([video, roomView, ...finderViews.values()])) if (view) {
+        for (const view of new Set([video, roomView, ...(keepFinders ? [] : finderViews.values())])) if (view) {
             if (!win.isDestroyed()) win.contentView.removeChildView(view);
             if (!view.webContents.isDestroyed()) view.webContents.close();
         }
-        finderViews.clear();
-        video = roomView = discoveryView = null;
+        if (keepFinders) { for (const view of finderViews.values()) parkFinder(view).catch(() => {}); }
+        else { finderViews.clear(); discoveryView = null; }
+        video = roomView = null;
         browsing = false; pendingEpisode = null; selectionFailed = false;
         draft = managed = null;
     }
@@ -542,7 +545,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     async function startImpl(data) {
         if (!data || data.consent !== true || typeof data.nickname !== 'string' || !data.nickname.trim()) return { ok: false, error: '请填写昵称并同意使用说明' };
         if (!data.room && !data.source) {
-            closeViews(); draft = {nickname:data.nickname,consent:true};
+            closeViews(true); draft = {nickname:data.nickname,consent:true};
             await showDiscovery(); status({finder:true});
             return {ok:true,browsing:true};
         }
@@ -567,7 +570,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             ownedRooms.set(server + '/' + id, roomProgram.owner);
             while (ownedRooms.size > 100) ownedRooms.delete(ownedRooms.keys().next().value);
         }
-        closeViews();
+        closeViews(true);
         current = { room: id, nickname: data.nickname.trim().slice(0, 32) };
         managed = roomProgram ? {owner:roomProgram.owner || ownedRooms.get(server + '/' + id) || '', revision:roomProgram.revision} : null;
         sourcePage = initialSource; resetMedia();
@@ -684,15 +687,44 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         } catch { if (stillCurrent()) { selected = null; status('播放页发生变化，正在重新连接播放器…'); } }
         finally { if (epoch === generation) timer = setTimeout(() => tick(epoch), selected ? 350 : 1200); }
     }
+    async function catalogNavigation(method) {
+        const wc = discoveryView?.webContents;
+        if (finderMode !== 'catalog' || !wc || wc.isDestroyed() || !policy.isDiscoveryUrl(wc.getURL(), server)) return false;
+        try { return await timeout(wc.executeJavaScript(`window.TogetherWatchCatalogNavigation?.${method}() === true`)); }
+        catch { return false; }
+    }
+    async function returnToPlayback() {
+        await parkFinder(discoveryView); browsing = false; layout();
+        if (current) status({joined:current.room, source:sourcePage});
+    }
+    async function goBack() {
+        if (switching || selecting) return;
+        if (full) { await toggleFullscreen(false); return; }
+        if (browsing && discoveryView) {
+            if (finderMode === 'catalog') {
+                if (await catalogNavigation('back')) return;
+                if (current) await returnToPlayback();
+                else status('已经在推荐首页；搜索或选择一部影片开始。');
+            } else if (discoveryView.webContents.navigationHistory.canGoBack()) discoveryView.webContents.navigationHistory.goBack();
+            else await showDiscovery();
+            return;
+        }
+        if (builtin) { closeBuiltin(); layout(); status('已返回原网页；再点返回可回到选片位置。'); return; }
+        if (video?.webContents.navigationHistory.canGoBack()) { video.webContents.navigationHistory.goBack(); return; }
+        // Includes the confirmation form: cancel selection without losing the
+        // already loaded results, open detail dialog or original-site history.
+        await showDiscovery(finderMode);
+        if (!current) status({finder:true});
+    }
     async function action(value) {
         if (value && typeof value === 'object' && value.type === 'source') return chooseSource(value.source, policy.playSelection(value.source,server));
         if (value === 'terms' || value === 'privacy') { await shell.openExternal(policy.SERVER + '/' + value); return; }
-        if (value === 'settings') { closeViews(); status({ setup: true, message: '已退出房间，可以重新设置' }); return; }
-        if (value === 'home') { closeViews(); await showDiscovery(); status({finder:true}); return; }
+        if (value === 'settings') { closeViews(true); status({ setup: true, message: '可输入邀请或重新设置；返回会保留刚才的搜索。' }); return; }
+        if (value === 'back' || value === 'finder-back') return goBack();
+        if (value === 'home') { await showDiscovery(); await catalogNavigation('home'); if (!current) status({finder:true}); return; }
         if (value === 'kanju' && (draft || current || browsing)) return showDiscovery('kanju');
-        if (['finder-back','finder-reload','finder-browser'].includes(value) && discoveryView) {
+        if (['finder-reload','finder-browser'].includes(value) && discoveryView) {
             const wc = discoveryView.webContents;
-            if (value === 'finder-back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
             if (value === 'finder-reload') wc.reload();
             if (value === 'finder-browser' && policy.publicHttps(wc.getURL())) await shell.openExternal(wc.getURL());
             return;
@@ -711,14 +743,13 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         }
         else if (value === 'original') { await parkFinder(discoveryView); closeBuiltin(); browsing = false; layout(); status('已返回原网页，请按需点击播放。'); }
         else if (value === 'discover') await showDiscovery();
-        else if (value === 'return-video') { await parkFinder(discoveryView); browsing = false; layout(); }
+        else if (value === 'return-video') await returnToPlayback();
         else if (value === 'cinema') { await parkFinder(discoveryView); browsing = false; cinema = !cinema; layout(); await focusPlayer(full || cinema); status(cinema ? '影院模式：只显示视频，可用原生控制条' : '网页模式：可在原站登录、选集或调整设置'); }
         else if (value === 'invite') { clipboard.writeText(`${server}/room/${encodeURIComponent(current.room)}`); status(managed ? '邀请已复制。朋友在新版 Windows 客户端粘贴即可打开同一片源并同步；不需要再填视频链接。' : '邀请已复制。此兼容房间尚未记录片源，朋友仍需打开同一集。'); }
         else if (value === 'copy-room') { clipboard.writeText(current.room); status('房间号已复制；朋友粘贴后点击加入，不要再单独创建新房间。'); }
         else if (value === 'fullscreen') await toggleFullscreen();
         else if (value === 'detect') { await focusPlayer(false); selected = null; selectionFailed = false; pendingEpisode = null; searchingSince = Date.now(); status('正在重新识别播放器'); }
         else if (value === 'reload') { if (browsing && discoveryView) discoveryView.webContents.reload(); else { closeBuiltin(); selected = null; video.webContents.reload(); layout(); } }
-        else if (value === 'back') { const wc = browsing && discoveryView ? discoveryView.webContents : video.webContents; if (wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack(); }
     }
     const senderIsShell = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
         && event.senderFrame.url === policy.APP_ORIGIN + '/index.html';

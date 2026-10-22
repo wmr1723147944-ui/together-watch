@@ -51,6 +51,13 @@
             live.setAttribute('aria-busy', 'false'); query.focus();
             feed?.setVisible(true);
         }
+        // Native clients keep this document alive while a film is playing.
+        // Back dismisses one layer; it must never start another search.
+        function back() {
+            if ($('discoveryDetail')?.open) { details.close(); return true; }
+            if (activeQuery) { home(); return true; }
+            return false;
+        }
         function openGroup(group, trigger, fromFeed = false) {
             const otherSources = $('catalogFindOtherSources');
             if (otherSources) {
@@ -194,7 +201,9 @@
             img.addEventListener('error', failed); if (img.complete && !img.naturalWidth) failed();
         }
         if (shared.normalizeQuery(query.value)) run(); else feed?.setVisible(true);
-        return { run, home, cancel: stop };
+        const navigation = { back, home };
+        if (doc.defaultView) doc.defaultView.TogetherWatchCatalogNavigation = navigation;
+        return { run, home, back, cancel: stop };
     }
     if (typeof module === 'object' && module.exports) module.exports = { groupResults, createBrowser };
     else document.addEventListener('DOMContentLoaded', () => createBrowser(document));

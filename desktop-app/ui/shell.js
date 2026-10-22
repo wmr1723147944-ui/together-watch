@@ -9,6 +9,7 @@ $('roomLabel').onclick = () => window.desktop.action('copy-room');
 function finder() { document.body.classList.toggle('catalog-home',finderMode==='catalog'); $('setup').hidden = true; $('tools').hidden = true; $('finderTools').hidden = finderMode==='catalog'; $('placeholder').hidden = true; }
 function joined(id) { document.body.classList.remove('catalog-home'); room = id; $('roomLabel').textContent = `房间 ${room}`; $('setup').hidden = true; $('tools').hidden = false; $('finderTools').hidden = true; $('placeholder').hidden = false; }
 $('home').onclick = () => window.desktop.action('home');
+$('previous').onclick = () => window.desktop.action('back');
 $('finder-catalog').onclick = () => window.desktop.action('discover');
 $('finder-kanju').onclick = () => window.desktop.action('kanju');
 $('finder-pick').onclick = () => window.desktop.action('pick-current');

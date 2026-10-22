@@ -59,6 +59,21 @@ test('late replies after returning home or a new query cannot overwrite the curr
     assert.equal(f.elements.get('discoveryLiveResults').children.length,1);
     assert.equal(f.elements.get('discoveryLiveResults').children[0].children[1].textContent,'新片');
 });
+test('native back dismisses details before clearing search; no requery and retained result nodes',async()=>{
+    const f=fixture(['ddys']);let calls=0;
+    f.doc.defaultView={};
+    for(const id of ['discoveryDetail','discoveryDetailClose','discoveryEpisodeFilter','discoveryEpisodeMore'])f.elements.set(id,f.doc.createElement('div'));
+    const panel=f.elements.get('discoveryDetail');panel.close=function(){this.open=false;};
+    const browser=createBrowser(f.doc,async()=>{calls++;return {ok:true,json:async()=>({source_id:'ddys',status:'ok',results:[row()]})};});
+    f.elements.get('discoveryQuery').value='开端';await browser.run();
+    const cards=f.elements.get('discoveryLiveResults').children;
+    panel.open=true;
+    assert.equal(browser.back(),true);assert.equal(panel.open,false);
+    assert.equal(f.elements.get('discoveryQuery').value,'开端');
+    assert.equal(f.elements.get('discoveryLiveResults').children,cards);assert.equal(calls,1);
+    assert.equal(f.doc.defaultView.TogetherWatchCatalogNavigation.back(),true);
+    assert.equal(f.elements.get('discoveryWelcome').hidden,false);assert.equal(browser.back(),false);
+});
 test('no enabled sources and empty input do not issue network queries',async()=>{
     const f=fixture([]);let calls=0;const browser=createBrowser(f.doc,()=>{calls++;throw Error('unexpected');});
     await browser.run();assert.equal(calls,0);

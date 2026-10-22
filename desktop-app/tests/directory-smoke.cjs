@@ -27,12 +27,11 @@ exports.run = async ({createDesktop,server,output,until}) => {
             if (url.pathname === '/watch') return new Response('<video controls muted preload="auto" src="/sample.mp4"></video>',{headers:{'content-type':'text/html'}});
             return new Response('<h1>Manual verification fixture</h1><input id="fixtureInput"><button id="verify">User continues</button><script>window.verified=document.cookie.includes("tw_fixture_verified=1");if(window.verified)location.replace("/watch");document.getElementById("verify").onclick=()=>{document.cookie="tw_fixture_verified=1; Max-Age=3600; Path=/; Secure; SameSite=Lax";window.verified=true;location.href="/watch";};</script>',{headers:{'content-type':'text/html'}});
         });
-        await until('catalog ready',()=>catalog.executeJavaScript('!!document.querySelector("#recommendedSites")'));
-        assert.equal(await catalog.executeJavaScript('document.querySelectorAll("[data-directory-site]").length'),9);
+        await until('catalog ready',()=>catalog.executeJavaScript('!!document.getElementById("discoveryQuery")'));
         assert.equal(pageLoads,0,'rendering directory must not contact source sites');
         assert.equal(client.state().current,null);
         await catalog.executeJavaScript('document.getElementById("discoveryQuery").value="retained search"');
-        await catalog.executeJavaScript('document.querySelector("[data-directory-site=aafun] a").click()');
+        await client.action({type:'source',source:server+'/discover/site/aafun'});
         await until('site opened inside client',()=>client.state().discoveryView.webContents.getURL()==='https://www.aafun.cc/');
         const wc = client.state().discoveryView.webContents;
         await until('verification fixture ready',()=>wc.executeJavaScript('!!document.getElementById("verify")'));
@@ -47,7 +46,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         assert.equal(client.state().discoveryView.webContents,catalog,'returning must retain catalogue DOM');
         assert.equal(await catalog.executeJavaScript('document.getElementById("discoveryQuery").value'),'retained search');
         assert.equal(wc.isAudioMuted(),true,'hidden original must be muted');
-        await catalog.executeJavaScript('document.querySelector("[data-directory-site=aafun] a").click()');
+        await client.action({type:'source',source:server+'/discover/site/aafun'});
         await until('resume the original without reloading',()=>client.state().discoveryView?.webContents===wc);
         assert.equal(pageLoads,firstLoads,'switching back must not reload the original');
         assert.equal(await wc.executeJavaScript('document.getElementById("fixtureInput").value'),'unfinished form');
@@ -64,7 +63,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await wc.executeJavaScript('document.querySelector("video").play()',true);
         await client.action('discover');
         assert.equal(await wc.executeJavaScript('document.querySelector("video").paused'),true,'hidden media must pause');
-        await catalog.executeJavaScript('document.querySelector("[data-directory-site=aafun] a").click()');
+        await client.action({type:'source',source:server+'/discover/site/aafun'});
         await until('resume playback page, not homepage',()=>client.state().discoveryView?.webContents===wc);
         assert.equal(wc.getURL(),'https://www.aafun.cc/watch');
         dialog.showMessageBox = async (_win,options) => {
@@ -79,35 +78,40 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await until('compatibility player detected',()=>!!client.state().selected);
         await client.action('discover');
         assert.equal(client.state().current.room,joined.room,'browsing cannot replace current room');
-        await until('return to directory',()=>client.state().discoveryView.webContents.executeJavaScript('!!document.querySelector("#recommendedSites")'));
-        await client.state().discoveryView.webContents.executeJavaScript('document.querySelector("[data-directory-site=aafun] a").click()');
+        await until('return to catalogue',()=>client.state().discoveryView.webContents.executeJavaScript('!!document.getElementById("discoveryQuery")'));
+        await client.action({type:'source',source:server+'/discover/site/aafun'});
         await until('local source session reused after returning to finder',()=>client.state().discoveryView.webContents.getURL()==='https://www.aafun.cc/watch');
         assert.equal(client.state().current.room,joined.room,'reusing original session must not change room');
         assert.equal(await client.state().discoveryView.webContents.executeJavaScript('typeof window.twSourceMetadata'),'undefined');
         const resumedOriginal = client.state().discoveryView.webContents;
         await client.action('discover');
         const resumedCatalog = client.state().discoveryView.webContents;
-        await resumedCatalog.executeJavaScript('document.querySelector("[data-directory-site=noxx] a").click()');
+        await client.action({type:'source',source:server+'/discover/site/noxx'});
         await until('opening another original evicts previous original',()=>resumedOriginal.isDestroyed());
         assert.equal(resumedCatalog.isDestroyed(),false,'bounded original cache must retain catalogue');
         const nextOriginal = client.state().discoveryView.webContents;
         await client.action('settings');
-        await until('setup closes both cached views',()=>resumedCatalog.isDestroyed() && nextOriginal.isDestroyed());
+        assert.equal(resumedCatalog.isDestroyed(),false,'setup must retain search');
+        assert.equal(nextOriginal.isDestroyed(),false,'setup must retain original-site history');
+        await client.action('back');
+        assert.equal(client.state().discoveryView.webContents,nextOriginal);
+        client.close();
+        await until('window close releases both cached views',()=>resumedCatalog.isDestroyed() && nextOriginal.isDestroyed());
 
         preview = new BrowserWindow({show:false,width:1380,height:1000,webPreferences:{offscreen:true,sandbox:true,contextIsolation:true,nodeIntegration:false}});
         await preview.loadURL(server+'/discover');
-        await preview.webContents.executeJavaScript('document.getElementById("recommendedSites").open=true;document.getElementById("recommendedSites").scrollIntoView()');
+        await preview.webContents.executeJavaScript('document.getElementById("sourceDiscovery").scrollIntoView()');
         await delay(700);
         fs.writeFileSync(path.join(output,'site-directory-desktop.png'),(await preview.webContents.capturePage()).toPNG());
         preview.setSize(390,844);
         await delay(400);
-        await preview.webContents.executeJavaScript('document.getElementById("recommendedSites").scrollIntoView()');
+        await preview.webContents.executeJavaScript('document.getElementById("sourceDiscovery").scrollIntoView()');
         assert.ok(await preview.webContents.executeJavaScript('document.documentElement.scrollWidth <= innerWidth + 1'),'directory must not overflow mobile');
         fs.writeFileSync(path.join(output,'site-directory-mobile.png'),(await preview.webContents.capturePage()).toPNG());
-        console.log('DIRECTORY PASS: 9 entries, no eager third-party requests, manual verification untouched, retained search/forms/current page, paused hidden media, inactive IPC rejected, bounded view cleanup, local session reuse, isolated original-site view, retry/navigation, compatibility-room confirmation, player detection, preserved room, desktop/mobile layout.');
+        console.log('ORIGINAL NAVIGATION PASS: manual verification untouched, retained search/forms/current page, paused hidden media, inactive IPC rejected, bounded view cleanup, local session reuse, isolated original-site view, retry/navigation, compatibility-room confirmation, player detection, preserved room, desktop/mobile layout.');
     } finally {
         dialog.showMessageBox = originalDialog;
         if (preview && !preview.isDestroyed()) preview.close();
-        client.close();
+        if(!client.win.isDestroyed())client.close();
     }
 };

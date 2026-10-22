@@ -8,6 +8,26 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_back_preserves_catalogue_original_finder_and_room(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        finder = activity.split('private void showFinder(boolean original)', 1)[1].split('private void pauseFinder', 1)[0]
+        self.assertIn('if(catalogWebView.getUrl()==null)catalogWebView.loadUrl', finder)
+        self.assertNotIn('videoWebView.loadUrl', finder)
+        resume = activity.split('private void resumePlayback()', 1)[1].split('private void chooseCurrentPage', 1)[0]
+        self.assertNotIn('.loadUrl(', resume)
+        self.assertNotIn('startResolved', resume)
+        back = activity.split('private void handleBackNavigation()', 1)[1].split('protected void onStop', 1)[0]
+        self.assertIn('TogetherWatchCatalogNavigation?.back()', back)
+        self.assertIn('originalFinderWebView.goBack()', back)
+        self.assertIn('showPreviousFinder()', back)
+        self.assertNotIn('showSetup()', back)
+        self.assertNotIn('openProgramPage(', back)
+        for view in ('catalogWebView', 'originalFinderWebView'):
+            self.assertIn(view + '.destroy()', activity)
+        layout = (ANDROID / 'app/src/main/res/layout/activity_main.xml').read_text(encoding='utf-8')
+        for control in ('previousButton', 'setupBackButton'):
+            self.assertIn('@+id/' + control, layout)
+
     def test_home_browses_before_identity_but_selected_episode_waits_for_consent(self):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
         startup = activity.split('protected void onCreate', 1)[1].split('private void bindViews', 1)[0]

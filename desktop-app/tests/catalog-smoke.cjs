@@ -96,6 +96,18 @@ exports.run=async({createDesktop,server,output,until})=>{
             await finder.executeJavaScript('document.querySelector("#discoveryEpisodes a").click()');
             await until('selection creates room and detects player',()=>!!a.state().current && !!a.state().selected);
             const id=a.state().current.room;
+            const roomView=a.state().roomView;
+            await a.action('back');
+            assert.equal(a.state().discoveryView.webContents,finder,'playback back restores the same search document');
+            assert.ok(a.state().browsing);
+            assert.equal(await finder.executeJavaScript('document.getElementById("discoveryDetail").open'),true);
+            assert.equal(await finder.executeJavaScript('document.getElementById("discoveryQuery").value'),'测试');
+            assert.equal(await finder.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length'),2);
+            await a.action('back');
+            assert.equal(await finder.executeJavaScript('document.getElementById("discoveryDetail").open'),false);
+            assert.ok(await finder.executeJavaScript('!!document.querySelector(".discovery-title-card button")'));
+            assert.equal(a.state().current.room,id);assert.equal(a.state().roomView,roomView);
+            await a.action('return-video');
             const room=await(await fetch(server+'/api/watch-rooms/'+id+'/program')).json();
             assert.equal(room.program.source,source);assert.equal(room.program.episode,episode(1));assert.equal(room.owner,undefined);
             await until('host sync connected',()=>a.state().roomView.webContents.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent.includes("同步已连接")'));

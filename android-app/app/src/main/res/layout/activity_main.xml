@@ -12,6 +12,10 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
+        <Button android:id="@+id/previousButton" android:layout_width="wrap_content"
+            android:layout_height="48dp" android:text="← 返回上一步" android:textAllCaps="false"
+            android:background="@android:color/transparent" android:textColor="@color/text_primary" />
+
         <LinearLayout
             android:id="@+id/browserToolbar"
             android:layout_width="match_parent"
@@ -118,6 +122,10 @@
             android:paddingTop="42dp"
             android:paddingEnd="24dp"
             android:paddingBottom="32dp">
+
+            <Button android:id="@+id/setupBackButton" android:layout_width="wrap_content"
+                android:layout_height="48dp" android:layout_gravity="start" android:text="← 返回选片"
+                android:background="@android:color/transparent" android:textColor="@color/text_primary" />
 
             <TextView
                 android:layout_width="wrap_content"
