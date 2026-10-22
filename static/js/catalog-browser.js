@@ -115,23 +115,25 @@
             const id = source.dataset.liveSource, name = source.dataset.sourceName || id;
             const controller = new AbortController(); controllers.add(controller);
             const timer = setTimeout(() => controller.abort(), interactive ? 185000 : 12000);
-            function note(message, canRetry = false, allowOriginal = false) {
+            function note(message, retryMode = null, allowOriginal = false) {
                 const row = notice || el('div', null, 'catalog-query-note'); row.replaceChildren();
                 row.append(el('span', name + '：' + message));
-                if (canRetry) {
-                    const button = el('button', '在原站完成验证后继续'); button.type = 'button'; retries.add(button);
+                if (retryMode) {
+                    const button = el('button', retryMode==='verify'?'打开原站，手动验证':retryMode==='inspect'?'打开原站并重试':'重试此来源'); button.type = 'button'; retries.add(button);
                     button.disabled = pending > 0;
                     button.addEventListener('click', async () => {
                         if (current !== generation || pending) return;
+                        retries.delete(button);
                         pending++; completed--; progress();
-                        row.replaceChildren(el('span', name + '：请在打开的原站完成验证…'));
-                        await searchSource(source, current, true, row);
+                        row.replaceChildren(el('span', name + (retryMode==='verify'?'：请在原站手动完成验证；若验证码不显示或无法通过，可关闭窗口并换来源。':retryMode==='inspect'?'：正在打开原站查询，完成后结果会回到这里…':'：正在重试…')));
+                        await searchSource(source, current, retryMode!=='retry', row);
                     }); row.append(button);
-                } else if (allowOriginal) {
-                    const request = adapters?.request('search', { source: id, q: activeQuery });
-                    if (request) {
+                }
+                if (allowOriginal && !shared.nativeMetadata(id)) {
+                    const url = shared.originalSearch(id, activeQuery);
+                    if (url) {
                         const link = el('a', '在原站继续搜索');
-                        link.href = request.url; link.target = '_self'; link.rel = 'noreferrer';
+                        link.href = url; link.target = '_self'; link.rel = 'noreferrer';
                         row.append(link);
                     }
                 }
@@ -145,7 +147,9 @@
                 const data = await response.json();
                 if (current !== generation) return;
                 if (data.source_id !== id) throw new Error('invalid');
-                if (data.status === 'verification_required') { note('原站要求验证，其他结果不受影响。', shared.nativeMetadata(id), true); return; }
+                if (data.status === 'verification_required') { note('原站要求手动验证；若验证码无法显示或通过，请换一个来源。', shared.nativeMetadata(id)?'verify':null, true); return; }
+                if (data.status === 'access_blocked') { note('原站拒绝了本次访问，不是普通验证码；请换一个来源。'); return; }
+                if (data.status === 'cancelled') { note('已取消原站查询，其他结果不受影响。', 'retry', true); return; }
                 if (data.status === 'client_required') { note('当前环境尚不支持此项查询，其他结果不受影响。', false, true); return; }
                 if (data.status !== 'ok' || !Array.isArray(data.results)) throw new Error('unavailable');
                 records = records.filter(item => item.source !== id);
@@ -153,7 +157,8 @@
                 if (notice) notice.replaceChildren(el('span', name + '：已完成，结果已合入上方影片。'));
                 render();
             } catch (error) {
-                if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '暂未取得结果（网络或页面不兼容），没有判定为需验证。');
+                if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '暂未取得结果（网络或页面不兼容），不代表没有这部影片。',
+                    error.message!=='rate' && shared.nativeMetadata(id)?'inspect':'retry', true);
             } finally {
                 clearTimeout(timer); controllers.delete(controller);
                 if (current === generation) { pending--; completed++; progress(); }

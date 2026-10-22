@@ -85,3 +85,30 @@ test('unsupported and verification queries offer only code-owned original search
     assert.equal(f.elements.get('catalogSearchNotes').open,false);
     assert.equal(f.elements.get('discoveryLiveResults').children.length,0);
 });
+
+test('failed server search offers a bounded single-source retry and an original search with the same title',async()=>{
+    const f=fixture(['huarw']);let count=0;
+    const browser=createBrowser(f.doc,async()=>({ok:true,json:async()=>({source_id:'huarw',status:++count===1?'unavailable':'ok',results:[row('测试',2022,'https://huarw.com/movie/123')]})}));
+    f.elements.get('discoveryQuery').value='测试';await browser.run();
+    const note=f.elements.get('catalogSearchNotesBody').children[0];
+    const retry=note.children.find(n=>n.tagName==='button'),link=note.children.find(n=>n.tagName==='a');
+    assert.equal(retry.disabled,false);assert.equal(link.href,'https://huarw.com/search?wd='+encodeURIComponent('测试'));
+    await retry.handlers.click();assert.equal(count,2);
+    assert.equal(f.elements.get('discoveryLiveResults').children.length,1);
+    assert.match(note.children[0].textContent,/已完成/);
+});
+
+test('verification and access-blocked failures give different actions and never auto-open original windows',async()=>{
+    const saved=global.twSourceMetadata;const calls=[];
+    global.twSourceMetadata={supportedSources:['pkavi','huarw'],request:async(id,kind,payload,interactive)=>{
+        calls.push(interactive);return {source_id:payload.source,status:payload.source==='pkavi'?'verification_required':'access_blocked'};
+    },cancel(){}};
+    try {
+        const f=fixture(['pkavi','huarw']),browser=createBrowser(f.doc,()=>{throw Error('must use client');});
+        f.elements.get('discoveryQuery').value='测试';await browser.run();
+        assert.deepEqual(calls,[false,false]);
+        const notes=f.elements.get('catalogSearchNotesBody').children;
+        assert.ok(notes[0].children.some(n=>n.tagName==='button' && /手动验证/.test(n.textContent)));
+        assert.match(notes[1].children[0].textContent,/拒绝/);assert.equal(notes[1].children.length,1);
+    } finally {global.twSourceMetadata=saved;}
+});

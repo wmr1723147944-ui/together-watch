@@ -61,6 +61,7 @@ class Metadata(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.links, self.anchor, self.title, self.description = [], None, [], ''
         self.ignored, self.in_title, self.empty = 0, False, False
+        self.blocked_text = False
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -78,6 +79,7 @@ class Metadata(HTMLParser):
         if self.in_title: self.title.append(data)
         if self.anchor is not None: self.anchor['text'].append(data)
         if any(s in data for s in ('没有找到', '暂无数据', '没有相关', '暂无相关')): self.empty = True
+        if re.search(r'sorry, you have been blocked|you are unable to access|access denied|访问被拒绝', data, re.I): self.blocked_text = True
 
     def handle_endtag(self, tag):
         if tag in ('script', 'style'): self.ignored = max(0, self.ignored - 1)
@@ -88,12 +90,17 @@ class Metadata(HTMLParser):
             self.anchor = None
 
     @property
+    def blocked(self):
+        return self.blocked_text and bool(re.search(r'attention required|access denied|访问被拒绝', ''.join(self.title), re.I))
+
+    @property
     def challenge(self):
         return bool(re.search(r'系统安全验证|安全检查|just a moment|security check|attention required', ''.join(self.title), re.I))
 
 
 def search_rows(source, body, query):
     p = Metadata(); p.feed(body)
+    if p.blocked: return 'access_blocked', []
     if p.challenge: return 'verification_required', []
     rows, seen, recognized = [], set(), False
     # A poster anchor and a title anchor may be separate links to the same film.
@@ -120,6 +127,7 @@ def search_rows(source, body, query):
 def detail_rows(source, item, body):
     p = Metadata(); p.feed(body)
     result = dict(title=clean(''.join(p.title)), description=p.description, episodes=[], status='no_episodes')
+    if p.blocked: return {**result, 'status': 'access_blocked'}
     if p.challenge: return {**result, 'status': 'verification_required'}
     seen = set()
     for a in p.links:

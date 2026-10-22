@@ -7,6 +7,9 @@ POSTER_DOMAINS = (
     'img.ddys.io', 'video.blender.org', 'huarw.com', 'cupfox.in',
     'yhdmoe.com', 'fcma.cc', '233dm.com', 'pkavi.com', 'kanju.ai',
     'doubanio.com', 'image.tmdb.org',
+    # Observed on public Huarw / FCMA cards; images only, not playback hosts.
+    'www.lufys.com', 'img.ffzy888.com', 'www.mdzypic.com', 'img.lzipic.com',
+    'snzypic.vip', 'p.bfvp26.com', 'img.picbf.com', 'pps.vodfeiss.com', 'img.liangzipic.com',
 )
 POSTER_QUERY_KEYS = {'w', 'h', 'width', 'height', 'q', 'quality', 'format', 'fit', 'auto', 'size', 'v'}
 

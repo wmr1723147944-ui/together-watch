@@ -73,6 +73,20 @@ class PosterMetadataTests(unittest.TestCase):
         self.assertNotIn('img.ddys.io', csp.split('connect-src ')[1].split(';')[0])
         self.assertIn('catalog-cinema.css', page.text)
 
+    def test_new_public_cover_cdns_are_image_only(self):
+        csp = application.app.test_client().get('/discover').headers['Content-Security-Policy']
+        hosts = ('www.lufys.com', 'img.ffzy888.com', 'www.mdzypic.com', 'img.lzipic.com',
+                 'snzypic.vip', 'p.bfvp26.com', 'img.picbf.com', 'pps.vodfeiss.com', 'img.liangzipic.com')
+        for host in hosts:
+            url = 'https://' + host + '/upload/vod/a.webp'
+            self.assertEqual(poster_url(url, 'https://www.fcma.cc'), url)
+            self.assertIn('https://' + host, csp.split('img-src ')[1].split(';')[0])
+            for directive in ('script-src ', 'media-src ', 'connect-src '):
+                self.assertNotIn(host, csp.split(directive)[1].split(';')[0])
+        body = '<div class="module-card-items"><div class="module-card-item"><a href="/v/9102/229"><img data-src="https://img.picbf.com/a.jpg"></a><div class="module-card-item-title"><a href="/v/9102/229">海贼王</a></div></div></div>'
+        rows = source_search.parse_results(source_search.PROVIDERS['fcma'], body, '海贼王')
+        self.assertEqual(rows[0]['poster_url'], 'https://img.picbf.com/a.jpg')
+
 
 if __name__ == '__main__':
     unittest.main()

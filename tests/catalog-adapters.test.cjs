@@ -42,3 +42,58 @@ test('native metadata cancellation is forwarded without exposing raw cookies',as
     try {await assert.rejects(ui.metadataRequest('search',{source:'pkavi',q:'测试'},()=>{throw Error('no server fetch');},controller.signal));assert.match(cancelled,/^catalog-/);}
     finally {global.twSourceMetadata=saved;}
 });
+
+test('Huarw native search preserves existing public episode and invitation identities',()=>{
+    const req=a.request('search',{source:'huarw',q:'海贼王'});
+    assert.equal(req.url,'https://huarw.com/search?wd='+encodeURIComponent('海贼王'));
+    assert.ok(a.expectedPage(req,req.url));
+    for(const wrong of ['https://huarw.com/','https://huarw.com/search?wd=other','https://huarw.com.evil.test/search'])assert.equal(a.expectedPage(req,wrong),false);
+    const s=a.selection('huarw','179144','179144-1');
+    assert.equal(s.page,'https://huarw.com/play/179144-1');
+    assert.equal(ui.safeLaunchPath('huarw','179144',s.episode,s.path),s.path);
+    assert.deepEqual(a.fromPage(s.page),s);
+    assert.equal(policy.playSelection(policy.SERVER+s.path).page,s.page);
+    assert.deepEqual(policy.programSelection(s.page),{source:'huarw',item:'179144',episode:'179144-1'});
+    for(const bad of ['123-1','179144-1?sid=2','179144-1/other','179144-999999']) assert.equal(a.selection('huarw','179144',bad),null);
+    for(const bad of ['https://huarw.com/movie/1?cookie=x','https://user@huarw.com/movie/1','https://huarw.com:444/movie/1'])assert.equal(a.detail('huarw',bad),null);
+});
+
+test('Huarw card badge is not mistaken for title and covers and years stay with their film',()=>{
+    const req=a.request('search',{source:'huarw',q:'海贼王'});
+    const anchor=(href,label,heading,poster,year)=>({textContent:label,
+        getAttribute:k=>k==='href'?href:null,
+        querySelectorAll:()=>poster?[{getAttribute:k=>k==='data-src'?poster:null}]:[],
+        closest:selector=>selector==='h3'?(heading?{}:null):{querySelector:()=>({textContent:year})}});
+    const links=[anchor('/movie/179144','更新至1180集',false,'https://www.lufys.com/a.jpg','1999'),
+        anchor('/movie/179144','海贼王',true,null,'1999'),anchor('/movie/179144','播放正片',false),
+        anchor('/movie/365817','海贼王剧场版',true,null,'2006')];
+    const doc={title:'搜索结果',body:{textContent:''},querySelectorAll:()=>links};
+    const data=a.readDocument(doc,req);
+    assert.deepEqual(data.results.map(r=>[r.title,r.year,r.poster_url]),[
+        ['海贼王','1999','https://www.lufys.com/a.jpg'],['海贼王剧场版','2006',null]]);
+    const detail=a.normalizeResult(a.request('detail',{source:'huarw',page_url:'https://huarw.com/movie/179144'}),
+        {status:'ok',episodes:[{id:'179144-1',title:'第1集'},{id:'123-1',title:'其他影片'}]});
+    assert.equal(detail.episodes.length,1);assert.equal(detail.episodes[0].line,'原站默认线路');
+});
+
+test('new client adapters require advertised capability and old clients retain server search',async()=>{
+    const saved=global.twSourceMetadata;let calls=0;
+    try {
+        global.twSourceMetadata={supportedSources:['233dm','pkavi','kanju'],request:()=>{throw Error('old client must not receive Huarw');}};
+        assert.equal(ui.nativeMetadata('huarw'),false);
+        await ui.metadataRequest('search',{source:'huarw',q:'测试'},async()=>{calls++;return {ok:true};},new AbortController().signal);
+        assert.equal(calls,1);
+        global.twSourceMetadata.supportedSources.push('huarw');assert.equal(ui.nativeMetadata('huarw'),true);
+        global.twSourceMetadata.supportedSources=[];assert.equal(ui.nativeMetadata('pkavi'),false);
+        delete global.twSourceMetadata.supportedSources;assert.equal(ui.nativeMetadata('pkavi'),true);assert.equal(ui.nativeMetadata('huarw'),false);
+    } finally {global.twSourceMetadata=saved;}
+});
+
+test('explicit access denial is not presented as a solvable captcha',()=>{
+    const req=a.request('search',{source:'pkavi',q:'测试'});
+    const doc={title:'Attention Required! | Cloudflare',body:{textContent:'Sorry, you have been blocked. You are unable to access pkavi.com'}};
+    assert.equal(a.readDocument(doc,req).status,'access_blocked');
+    assert.equal(a.normalizeResult(req,a.readDocument(doc,req)).status,'access_blocked');
+    doc.title='系统安全验证';doc.body.textContent='请输入验证码';
+    assert.equal(a.readDocument(doc,req).status,'verification_required');
+});

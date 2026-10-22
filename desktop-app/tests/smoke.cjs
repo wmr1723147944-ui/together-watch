@@ -87,6 +87,10 @@ if os.environ.get('TW_SMOKE_INVITE_ONLY') == '1':
     module.load_detail = title_detail
 if os.environ.get('TW_SMOKE_CATALOG_ONLY') == '1':
     import app as module
+    import catalog_recommendations
+    def empty_feed(source, category, page):
+        return dict(source_id=source,category=category,page=page,status='ok',results=[],has_more=False,next_page=None)
+    catalog_recommendations.load_page=empty_feed
     original_search, original_detail = module.search_provider, module.load_detail
     def visual_search(source, query):
         if source == 'pkavi' and query == '视觉测试':

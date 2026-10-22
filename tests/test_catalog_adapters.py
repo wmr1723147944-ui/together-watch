@@ -49,6 +49,12 @@ class CatalogAdaptersTests(unittest.TestCase):
                 self.assertEqual(search.load_detail(source,page)['status'],'verification_required')
             self.assertEqual(adapters.search_rows(source,'<p>没有找到</p>','测试'),('ok',[]))
             self.assertEqual(adapters.search_rows(source,'<title>新版未知布局</title>','测试'),('unavailable',[]))
+            blocked='<title>Attention Required! | Cloudflare</title><h1>Sorry, you have been blocked</h1>'
+            self.assertEqual(adapters.search_rows(source,blocked,'测试'),('access_blocked',[]))
+            self.assertEqual(adapters.detail_rows(source,item,blocked)['status'],'access_blocked')
+            search._cache.clear()
+            with patch.object(search,'_fetch',return_value=blocked):
+                self.assertEqual(search.search_provider(source,'测试')['status'],'access_blocked')
 
     def test_url_contract_disabled_sources_and_input_bounds(self):
         for source,item,page,play in CASES:

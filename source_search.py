@@ -19,7 +19,7 @@ import catalog_sources
 from poster_policy import poster_url
 
 
-SEARCH_VERSION = "20261021-live-catalog"
+SEARCH_VERSION = "20261022-source-recovery"
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",
@@ -325,7 +325,7 @@ def search_provider(source_id, query):
         remote_query = _provider_query(provider, query)
         result["results"] = parse_results(provider, _fetch(provider, remote_query), remote_query)
     except SearchFailure as exc:
-        result['status'] = 'verification_required' if str(exc) == 'verification_required' else 'unavailable'
+        result['status'] = str(exc) if str(exc) in {'verification_required', 'access_blocked'} else 'unavailable'
     except (urllib3.exceptions.HTTPError, OSError, ValueError, TypeError, RecursionError):
         # Don't expose exception text, response HTML, request URLs or user queries in logs.
         result["status"] = "unavailable"

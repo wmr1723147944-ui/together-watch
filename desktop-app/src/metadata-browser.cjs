@@ -16,7 +16,7 @@ function createMetadataBrowser(parent,session,{hidden=false}={}) {
             const wc=window.webContents;
             window.setMenu(null);
             wc.setAudioMuted(true);
-            let done=false, timer=null, readTimer=null, reading=false, emptySince=0;
+            let done=false, timer=null, readTimer=null, reading=false, emptySince=0, lastStatus='unavailable';
             const deadline=Date.now()+(interactive?180000:10000);
             function finish(result) {
                 if(done) return; done=true; clearTimeout(timer); clearTimeout(readTimer); active.delete(id);
@@ -33,21 +33,40 @@ function createMetadataBrowser(parent,session,{hidden=false}={}) {
             wc.on('render-process-gone',()=>finish({status:'unavailable'}));
             wc.on('did-fail-load',(_e,code,_d,_u,main)=>{if(main && code!==-3)finish({status:'unavailable'});});
             window.on('closed',()=>finish({status:'cancelled'}));
+            async function readMetadata(at) {
+                // WebContents.executeJavaScript* waits for the load event,
+                // including stalled covers. CDP can read a DOM-ready main frame
+                // in a separate world without exposing IPC or universal access.
+                if(!wc.debugger.isAttached()) wc.debugger.attach('1.3');
+                const {frameTree}=await wc.debugger.sendCommand('Page.getFrameTree');
+                if(done || frameTree?.frame.url!==at || !allowed(at)) return {status:'unavailable'};
+                const {executionContextId}=await wc.debugger.sendCommand('Page.createIsolatedWorld',{
+                    frameId:frameTree.frame.id,worldName:'TogetherWatchMetadata',grantUniveralAccess:false,
+                });
+                const result=await wc.debugger.sendCommand('Runtime.evaluate',{
+                    contextId:executionContextId,returnByValue:true,timeout:1500,
+                    expression:'(()=>{'+script+';return location.href !== '+JSON.stringify(at)
+                        +' || document.readyState === "loading" ? {status:"unavailable"} : TogetherWatchCatalogAdapters.readDocument(document,'+JSON.stringify(req)+');})()',
+                });
+                return result.exceptionDetails?{status:'unavailable'}:result.result?.value;
+            }
             async function poll() {
                 if(done || reading) return;
-                if(Date.now()>deadline){finish({status:'unavailable'});return;}
+                if(Date.now()>deadline){finish({status:lastStatus});return;}
                 reading=true;
                 try {
-                    if(!wc.isLoadingMainFrame() && allowed(wc.getURL())) {
+                    // Covers/ads can keep the load event pending after the
+                    // catalogue DOM is ready. Do not let them block results.
+                    if(allowed(wc.getURL())) {
                         const at=wc.getURL();
-                        // A dedicated isolated world: page scripts cannot replace
-                        // our parser or gain access to the desktop bridge.
                         const raw=await Promise.race([
-                            wc.executeJavaScriptInIsolatedWorld(991,[{code:script+';TogetherWatchCatalogAdapters.readDocument(document,'+JSON.stringify(req)+')'}]),
+                            readMetadata(at),
                             new Promise((_,reject)=>{readTimer=setTimeout(()=>reject(new Error('timeout')),2000);}),
                         ]).finally(()=>clearTimeout(readTimer));
                         if(done) return;
                         if(wc.getURL()===at && allowed(at)) {
+                            lastStatus=raw?.status==='verification_required'?'verification_required':'unavailable';
+                            if(raw?.status==='access_blocked') {finish(raw);return;}
                             if(raw?.status==='verification_required' && !interactive) {finish(raw);return;}
                             const expected=api.expectedPage(req,at);
                             // Give delayed client rendering a brief chance before

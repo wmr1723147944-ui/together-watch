@@ -20,7 +20,17 @@
         img.src=url; container.append(img);
     }
     function nativeMetadata(source) { return hasAdapter(source) && typeof globalThis.twSourceMetadata?.request==='function'
-        && (source!=='kanju' || globalThis.twSourceMetadata.supportedSources?.includes('kanju')); }
+        && (Array.isArray(globalThis.twSourceMetadata.supportedSources)
+            ? globalThis.twSourceMetadata.supportedSources.includes(source)
+            : ['233dm','pkavi'].includes(source)); }
+    function originalSearch(source, query) {
+        const q=normalizeQuery(query); if(!q) return null;
+        const request=adapters?.request('search',{source,q}); if(request) return request.url;
+        const rules={fcma:['https://www.fcma.cc/search/index.html','keyword'],
+            cupfox:['https://www.cupfox.in/search','q'],yhdmoe:['https://yhdmoe.com/search','q']};
+        if(typeof source!=='string' || !Object.hasOwn(rules,source)) return null;
+        const [base,param]=rules[source],url=new URL(base);url.searchParams.set(param,q);return url.href;
+    }
     async function metadataRequest(kind,payload,fetcher,signal,interactive=false) {
         if (!nativeMetadata(payload.source)) return fetcher('/api/discover/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal});
@@ -131,7 +141,8 @@
                 if (!response.ok) throw new Error('unavailable');
                 const data = await response.json();
                 if (generation !== current) return;
-                if((data.status==='verification_required' || source==='kanju' && data.status==='unavailable') && nativeMetadata(source)) {
+                if(data.status==='access_blocked') {status.textContent='原站拒绝了本次访问，不能通过普通重试或验证码保证恢复。请换一个来源；没有切换当前影片。';return;}
+                if((data.status==='verification_required' || data.status==='unavailable') && nativeMetadata(source)) {
                     status.textContent=data.status==='verification_required' ? '原站实际要求登录或验证；在软件内完成后，会继续显示选集。'
                         : '原站尚未加载出集数，不代表需要验证。可打开原站检查网络或展开选集后继续。';
                     const retry=doc.createElement('button'); retry.type='button'; retry.textContent='打开原站并继续读取集数';
@@ -150,7 +161,7 @@
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
-                status.textContent = found ? `${found} 个选集 · Windows ${source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'}${source==='kanju'?'':' / 安卓 0.3.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
+                status.textContent = found ? `${found} 个选集 · Windows ${source==='huarw'?'0.6.4':source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'}${source==='kanju'?'':' / 安卓 0.3.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
                     : data.status === 'client_required' ? '看剧 AI 的统一选集需要 Windows 0.6.0；网页、安卓和旧版请改用原站选集。'
                     : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
                     : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';
@@ -241,7 +252,11 @@
                         if(req){const link=element('a','在原站搜索这个片名 ↗');link.href=req.url;link.target='_blank';link.rel='noopener noreferrer';list.append(link);}
                         return;
                     }
-                    if((data.status==='verification_required' || sourceId==='kanju' && data.status==='unavailable') && data.source_id===sourceId) {
+                    if(data.status==='access_blocked' && data.source_id===sourceId) {
+                        block.dataset.state='notice';failures++;
+                        state.textContent='原站拒绝了本次访问，不是普通验证码；请换一个来源。';return;
+                    }
+                    if((data.status==='verification_required' || nativeMetadata(sourceId) && data.status==='unavailable') && data.source_id===sourceId) {
                         block.dataset.state='notice';
                         failures++;
                         if(nativeMetadata(sourceId)) {
@@ -461,7 +476,7 @@
         }
         render();
     }
-    const api = { addPoster, metadataRequest, nativeMetadata, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    const api = { addPoster, metadataRequest, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else globalThis.TogetherWatchDiscovery = api;
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));

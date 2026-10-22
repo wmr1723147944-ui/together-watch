@@ -11,28 +11,33 @@ exports.run=async({createDesktop,server,output,until})=>{
         assert.ok((await c.start({nickname:name,consent:true})).browsing);
         let verified=source!=='233dm',verifications=0;
         const host=api.sources[source].host;
-        const detail=source==='kanju'?`/player/${encodeURIComponent(item)}`:source==='233dm'?`/anime/${item}.html`:`/mv/${item}.html`;
+        const detail=source==='huarw'?`/movie/${item}`:source==='kanju'?`/player/${encodeURIComponent(item)}`:source==='233dm'?`/anime/${item}.html`:`/mv/${item}.html`;
         await c.state().discoveryView.webContents.session.protocol.handle('https',async req=>{
             const u=new URL(req.url);
             if(u.hostname!==host)return new Response('fixture blocked',{status:404});
+            // The search DOM is ready while its image is still pending. The
+            // metadata reader must not wait for the whole page's load event.
+            if(source==='huarw' && u.pathname==='/covers/fixture.jpg') {
+                await delay(14000);return new Response('',{headers:{'content-type':'image/jpeg'}});
+            }
             if(u.pathname==='/sample.mp4'){
                 const r=await net.fetch(server+'/test-media.mp4',{headers:req.headers.has('range')?{range:req.headers.get('range')}:{}});
                 return new Response(r.body,{status:r.status,headers:r.headers});
             }
             let html;
-            if(u.pathname.startsWith('/search/') || u.pathname.startsWith('/vs/') || u.pathname==='/collections/browse') {
+            if(u.pathname==='/search' || u.pathname.startsWith('/search/') || u.pathname.startsWith('/vs/') || u.pathname==='/collections/browse') {
                 if(u.pathname.endsWith('/fixture-verified')){verified=true;verifications++;}
                 // Local mock only. The test supplies the human action; production
                 // never clicks or solves verification controls.
                 html=!verified?`<title>系统安全验证</title><button id="verify" onclick="location.href='/search/fixture-verified?wd=测试'">Mock human continue</button>`
                     : source==='kanju' ? `<title>看剧 AI</title><div id="results"></div><script>setTimeout(()=>document.getElementById('results').innerHTML='<a href="${detail}?from=collection" aria-label="打开播放器：测试动画"><img src="/covers/fixture.jpg">封面</a>',600)</script>`
-                    : `<title>搜索结果</title><a href="${detail}" title="测试动画"><img src="/covers/fixture.jpg">测试动画</a>`;
+                    : `<title>搜索结果</title><div class="search-box"><h3><a href="${detail}" title="测试动画"><img src="/covers/fixture.jpg">测试动画</a></h3></div>`;
             } else if(u.pathname===detail) {
                 html=source==='kanju' ? `<title>测试动画 · 看剧 AI</title><h1>测试动画</h1><div id="episodes"></div>`
                     + (u.searchParams.has('episode')?'<style>body{margin:0}video{width:100%;height:90vh}</style><video controls muted preload="auto" src="/sample.mp4"></video>':'')
                     + `<script>setTimeout(()=>{document.getElementById('episodes').innerHTML=[1,2].map(n=>'<button data-directory-episode="episode:'+n+'" title="第'+n+'集" class="'+(new URL(location.href).searchParams.get('episode')==='episode:'+n?'movie-button-primary':'movie-button-secondary')+'">第'+n+'集</button>').join('')},1200)</script>`
                     : `<title>测试动画</title><h1>测试动画</h1><meta name="description" content="本地测试目录">`
-                    +[1,2].map(n=>`<a href="${api.selection(source,item,'3-'+n).page}">第${n}集</a>`).join('');
+                    +[1,2].map(n=>`<a href="${api.selection(source,item,source==='huarw'?item+'-'+n:'3-'+n).page}">第${n}集</a>`).join('');
             } else if(api.fromPage(req.url)) {
                 html='<style>body{margin:0}video{width:100%;height:95vh}</style><video controls muted preload="auto" src="/sample.mp4"></video>';
             } else return new Response('fixture not found',{status:404});
@@ -49,8 +54,8 @@ exports.run=async({createDesktop,server,output,until})=>{
         await wc.debugger.sendCommand('Input.dispatchKeyEvent',{type:'keyUp',key:'q',code:'KeyQ',windowsVirtualKeyCode:81});
     }
     try {
-        for(const [source,item] of [['233dm','251f681f349a5832bcb61768'],['pkavi','514960'],['kanju','variant:test-123']]) {
-            const episode=n=>source==='kanju'?'ep-episode:'+n:'3-'+n;
+        for(const [source,item] of [['huarw','179144'],['233dm','251f681f349a5832bcb61768'],['pkavi','514960'],['kanju','variant:test-123']]) {
+            const episode=n=>source==='huarw'?item+'-'+n:source==='kanju'?'ep-episode:'+n:'3-'+n;
             const host=await client('host-'+source,source,item),a=host.c;
             const finder=a.state().discoveryView.webContents;
             await until('native catalogue bridge ready',()=>finder.executeJavaScript('!!window.twSourceMetadata && !!document.getElementById("discoveryQuery")'));
@@ -81,7 +86,7 @@ exports.run=async({createDesktop,server,output,until})=>{
                 await manual.webContents.executeJavaScript('document.getElementById("verify").click()',true);
             }
             await until('unified search result',()=>finder.executeJavaScript('!!document.querySelector(".discovery-title-card button")'));
-            assert.equal(await finder.executeJavaScript('document.querySelector(".discovery-poster-image")?.src'),`https://${api.sources[source].host}/covers/fixture.jpg`);
+            assert.equal(await finder.executeJavaScript('document.querySelector("#discoveryLiveResults .discovery-poster-image")?.src'),`https://${api.sources[source].host}/covers/fixture.jpg`);
             assert.equal(a.state().current,null);
             await finder.executeJavaScript('document.querySelector(".discovery-title-card button").click()');
             await until('unified episodes',()=>finder.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===2'));

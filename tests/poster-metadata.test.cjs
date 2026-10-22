@@ -13,6 +13,13 @@ test('poster URLs accept known image CDNs only, not video, credentials, proxy qu
     }
 });
 
+test('observed Huarw and FCMA image CDNs do not grant arbitrary image or media access',()=>{
+    for(const host of ['www.lufys.com','img.ffzy888.com','www.mdzypic.com','img.lzipic.com','snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com']) {
+        assert.equal(a.safePosterUrl('https://'+host+'/upload/vod/a.webp'),'https://'+host+'/upload/vod/a.webp');
+        for(const url of ['https://'+host+'.evil.test/a.jpg','https://'+host+'/a.mp4','https://'+host+'/a.jpg?token=secret'])assert.equal(a.safePosterUrl(url),null);
+    }
+});
+
 test('native metadata keeps validated cover but drops private fields',()=>{
     const req=a.request('search',{source:'kanju',q:'测试'});
     const result=a.normalizeResult(req,{status:'ok',results:[{title:'测试',page_url:'https://www.kanju.ai/player/abc',
