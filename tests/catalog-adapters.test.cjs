@@ -96,4 +96,6 @@ test('explicit access denial is not presented as a solvable captcha',()=>{
     assert.equal(a.normalizeResult(req,a.readDocument(doc,req)).status,'access_blocked');
     doc.title='系统安全验证';doc.body.textContent='请输入验证码';
     assert.equal(a.readDocument(doc,req).status,'verification_required');
+    doc.title='请稍候…';doc.body.textContent='正在进行安全验证。验证您不是自动程序。';
+    assert.equal(a.readDocument(doc,req).status,'verification_required');
 });

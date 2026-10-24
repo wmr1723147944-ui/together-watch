@@ -1,6 +1,8 @@
+import os
 import unittest
 from unittest.mock import patch
 
+import app as application
 import source_search as search
 from source_discovery import is_search_page
 
@@ -79,6 +81,34 @@ class AnimeSourcesTests(unittest.TestCase):
         self.assertIsNone(search.selection_path('fcma', '123/229', '1'))
         self.assertTrue(is_search_page('https://yhdmoe.com/search?q=x'))
         self.assertTrue(is_search_page('https://www.fcma.cc/search/index.html?keyword=x'))
+
+    def test_fengche_is_retired_from_all_public_entry_points(self):
+        application.rate_buckets.clear()
+        client = application.app.test_client()
+        with patch.dict(os.environ, {'DISCOVERY_DISABLED_SEARCH_SOURCES': ''}), \
+                patch.object(application, 'search_provider') as upstream_search, \
+                patch.object(application, 'load_detail') as upstream_detail, \
+                patch('catalog_recommendations.load_page') as upstream_feed:
+            sources = {p['id'] for p in client.get('/api/discover/sources').json['sources']}
+            self.assertNotIn('fcma', sources)
+            self.assertNotIn('ddys', sources)
+            self.assertTrue({'pkavi', 'kanju', 'cupfox', 'yhdmoe'} <= sources)
+            for path in ('/', '/discover', '/room/test-retired-anime'):
+                page = client.get(path)
+                self.assertEqual(page.status_code, 200)
+                self.assertNotIn('data-live-source="fcma"', page.text)
+                self.assertNotIn('data-feed-source="fcma"', page.text)
+                self.assertNotIn('风车动漫', page.text)
+            response = client.post('/api/discover/search', json={'source': 'fcma', 'q': '测试'})
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json['error'], '该搜索来源未启用')
+            self.assertEqual(client.post('/api/discover/detail', json={'source': 'fcma', 'page_url': 'https://www.fcma.cc/v/9102/229'}).status_code, 400)
+            self.assertEqual(client.get('/api/discover/feed?source=fcma&category=all&page=1').status_code, 400)
+            self.assertEqual(client.get('/discover/play/fcma/9102-229/1048459').status_code, 404)
+            self.assertEqual(client.post('/api/watch-rooms', json={'selection': {'source': 'fcma', 'item': '9102-229', 'episode': '1048459'}}).status_code, 400)
+            upstream_search.assert_not_called()
+            upstream_detail.assert_not_called()
+            upstream_feed.assert_not_called()
 
 
 if __name__ == '__main__':

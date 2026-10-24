@@ -83,16 +83,35 @@ class DdysSourceTests(unittest.TestCase):
             self.assertEqual(result["status"], status)
             self.assertEqual(result["episodes"], [])
 
-    def test_handoff_is_fixed_and_administrator_can_disable_it(self):
+    def test_legacy_identity_is_readable_but_new_discovery_is_retired(self):
         self.assertEqual(search.selection_page("ddys", "interstellar", "page"), "https://ddys.io/movie/interstellar")
         for item, episode in [("interstellar", "1"), ("other?url=evil", "page"), ("/evil", "page")]:
             self.assertIsNone(search.selection_path("ddys", item, episode))
         self.assertTrue(is_search_page("https://ddys.io/search?q=test"))
-        self.assertEqual(self.client.get("/discover/play/ddys/interstellar/page").status_code, 200)
+        self.assertEqual(self.client.get("/discover/play/ddys/interstellar/page").status_code, 404)
         with patch.dict(os.environ, {"DISCOVERY_DISABLED_SEARCH_SOURCES": "ddys"}):
             self.assertNotIn('data-live-source="ddys"', self.client.get("/discover").text)
             self.assertEqual(self.client.get("/discover/play/ddys/interstellar/page").status_code, 404)
             self.assertEqual(self.client.post("/api/discover/search", json={"source": "ddys", "q": "test"}).status_code, 400)
+
+    def test_retirement_covers_all_public_entry_points_without_upstream_requests(self):
+        # An empty deployment exclusion setting must not resurrect a retired source.
+        with patch.dict(os.environ, {"DISCOVERY_DISABLED_SEARCH_SOURCES": ""}), \
+                patch.object(search, '_fetch_path', side_effect=AssertionError('retired source requested')):
+            sources = self.client.get('/api/discover/sources').json['sources']
+            self.assertNotIn('ddys', {p['id'] for p in sources})
+            self.assertTrue({'pkavi', 'kanju', 'cupfox', 'yhdmoe'} <= {p['id'] for p in sources})
+            for path in ('/', '/discover', '/room/test-retired-source'):
+                page = self.client.get(path)
+                self.assertEqual(page.status_code, 200)
+                self.assertNotIn('data-live-source="ddys"', page.text)
+                self.assertNotIn('data-feed-source="ddys"', page.text)
+                self.assertNotIn('https://img.ddys.io', page.text)
+            self.assertEqual(self.client.post('/api/discover/search', json={'source': 'ddys', 'q': '测试'}).status_code, 400)
+            self.assertEqual(self.client.post('/api/discover/detail', json={'source': 'ddys', 'page_url': 'https://ddys.io/movie/interstellar'}).status_code, 400)
+            self.assertEqual(self.client.get('/api/discover/feed?source=ddys&category=all&page=1').status_code, 400)
+            self.assertEqual(self.client.get('/discover/play/ddys/interstellar/page').status_code, 404)
+            self.assertEqual(self.client.post('/api/watch-rooms', json={'selection': {'source': 'ddys', 'item': 'interstellar', 'episode': 'page'}}).status_code, 400)
 
 
 if __name__ == "__main__":

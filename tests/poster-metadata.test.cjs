@@ -2,6 +2,24 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const a=require('../static/js/catalog-adapters.js');
 const {addPoster}=require('../static/js/source-discovery.js');
+const observed=require('./poster-source-fixture.json');
+
+test('PKAVI and Kanju public covers survive validation and rendering; wrapper is not an open proxy',()=>{
+    for(const url of Object.values(observed))assert.equal(a.safePosterUrl(url),url);
+    const wrapper=observed.kanju;
+    for(const url of [wrapper+'?token=secret',wrapper+'#x',wrapper.replace('https:','http:'),
+        wrapper.replace('gimg0.baidu.com','gimg0.baidu.com.evil.test'),wrapper.replace('gimg0.baidu.com','sub.gimg0.baidu.com'),
+        wrapper.replace('img.baipiaozhe.com','127.0.0.1'),wrapper.replace('img.baipiaozhe.com','evil.test'),
+        wrapper.replace('img.baipiaozhe.com','img.baipiaozhe.com.evil.test'),wrapper.replace('.webp','.mp4'),
+        wrapper.replace('/assets/images/','/private/'),wrapper.replace('src=img.','src=https://img.'),
+        wrapper.replace('src=img.','src=user@img.'),wrapper.replace('&n=0','&n=0&url=http://localhost'),
+        wrapper.replace('gimg0.baidu.com','user@gimg0.baidu.com')])assert.equal(a.safePosterUrl(url),null,url);
+    for(const source of ['pkavi','kanju']) {
+        const req=a.request('search',{source,q:'测试'}), page=source==='pkavi'?'https://www.pkavi.com/mv/123.html':'https://www.kanju.ai/player/abc';
+        const result=a.normalizeResult(req,{status:'ok',results:[{title:'测试',page_url:page,poster_url:observed[source]}]});
+        assert.equal(result.results[0].poster_url,observed[source]);
+    }
+});
 
 test('poster URLs accept known image CDNs only, not video, credentials, proxy queries or local networks',()=>{
     assert.equal(a.safePosterUrl('/movies/reset.webp','https://img.ddys.io'),'https://img.ddys.io/movies/reset.webp');

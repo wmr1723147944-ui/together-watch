@@ -19,7 +19,10 @@ import catalog_sources
 from poster_policy import poster_url
 
 
-SEARCH_VERSION = "20261022-source-recovery"
+SEARCH_VERSION = "20261024-source-cleanup"
+# Withdrawn from discovery and new room selection. Keep old identity parsers
+# readable so existing room records do not become corrupt or change source.
+RETIRED_PROVIDERS = frozenset({"ddys", "fcma"})
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",
@@ -59,7 +62,7 @@ class SearchFailure(Exception):
 
 def provider_choices(disabled=()):
     return [{k: p[k] for k in ("id", "name", "kind", "note")}
-            for p in PROVIDERS.values() if p["id"] not in disabled]
+            for p in PROVIDERS.values() if p["id"] not in disabled and p["id"] not in RETIRED_PROVIDERS]
 
 
 def _text(value, limit=160):

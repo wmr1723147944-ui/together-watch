@@ -62,6 +62,7 @@ class Metadata(HTMLParser):
         self.links, self.anchor, self.title, self.description = [], None, [], ''
         self.ignored, self.in_title, self.empty = 0, False, False
         self.blocked_text = False
+        self.challenge_text = False
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
@@ -80,6 +81,7 @@ class Metadata(HTMLParser):
         if self.anchor is not None: self.anchor['text'].append(data)
         if any(s in data for s in ('没有找到', '暂无数据', '没有相关', '暂无相关')): self.empty = True
         if re.search(r'sorry, you have been blocked|you are unable to access|access denied|访问被拒绝', data, re.I): self.blocked_text = True
+        if re.search(r'正在进行安全验证|验证您不是自动程序', data): self.challenge_text = True
 
     def handle_endtag(self, tag):
         if tag in ('script', 'style'): self.ignored = max(0, self.ignored - 1)
@@ -95,7 +97,9 @@ class Metadata(HTMLParser):
 
     @property
     def challenge(self):
-        return bool(re.search(r'系统安全验证|安全检查|just a moment|security check|attention required', ''.join(self.title), re.I))
+        title = ''.join(self.title)
+        return bool(re.search(r'系统安全验证|安全检查|just a moment|security check|attention required', title, re.I)
+                    or self.challenge_text and '请稍候' in title)
 
 
 def search_rows(source, body, query):

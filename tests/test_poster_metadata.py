@@ -10,6 +10,38 @@ from poster_policy import POSTER_DOMAINS, poster_url
 
 
 class PosterMetadataTests(unittest.TestCase):
+    def test_observed_pkavi_and_kanju_cover_formats(self):
+        samples = json.loads((Path(__file__).with_name('poster-source-fixture.json')).read_text(encoding='utf8'))
+        for value in samples.values():
+            self.assertEqual(poster_url(value, 'https://www.kanju.ai'), value)
+        value = samples['kanju']
+        for bad in (value + '?token=secret', value + '#x', value.replace('https:', 'http:'),
+                    value.replace('gimg0.baidu.com', 'gimg0.baidu.com.evil.test'),
+                    value.replace('gimg0.baidu.com', 'sub.gimg0.baidu.com'),
+                    value.replace('gimg0.baidu.com', 'user@gimg0.baidu.com'),
+                    value.replace('img.baipiaozhe.com', '127.0.0.1'),
+                    value.replace('img.baipiaozhe.com', 'evil.test'),
+                    value.replace('img.baipiaozhe.com', 'img.baipiaozhe.com.evil.test'),
+                    value.replace('.webp', '.mp4'), value.replace('/assets/images/', '/private/'),
+                    value.replace('src=img.', 'src=https://img.'),
+                    value.replace('src=img.', 'src=user@img.'),
+                    value.replace('&n=0', '&n=0&url=http://localhost')):
+            self.assertIsNone(poster_url(bad, 'https://www.kanju.ai'), bad)
+        body = f'<a href="/mv/123.html"><img data-original="{samples["pkavi"]}" alt="测试"></a>'
+        self.assertEqual(catalog_sources.search_rows('pkavi', body, '测试')[1][0]['poster_url'], samples['pkavi'])
+        csp = application.app.test_client().get('/discover').headers['Content-Security-Policy']
+        for host in ('i1.vvmp4.com', 'gimg0.baidu.com'):
+            self.assertIn('https://' + host, csp.split('img-src ')[1].split(';')[0])
+            for directive in ('script-src ', 'media-src ', 'connect-src '):
+                self.assertNotIn(host, csp.split(directive)[1].split(';')[0])
+        self.assertNotIn('https://*.gimg0.baidu.com', csp)
+
+    def test_chinese_security_check_is_not_an_empty_catalog(self):
+        html = '<title>请稍候…</title><p>正在进行安全验证。验证您不是自动程序。</p>'
+        self.assertEqual(catalog_sources.search_rows('pkavi', html, '测试')[0], 'verification_required')
+        self.assertEqual(catalog_sources.detail_rows('pkavi', '123', html)['status'], 'verification_required')
+        self.assertFalse(catalog_sources.Metadata().challenge)
+
     def test_feed_covers_follow_the_same_policy_without_playback_claims(self):
         from catalog_recommendations import parse_page
         rows, _ = parse_page('ddys', 'all', 1, '''<article class="movie-card">

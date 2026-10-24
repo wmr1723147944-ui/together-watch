@@ -7,13 +7,15 @@
     const posterDomains = ['img.ddys.io','video.blender.org','huarw.com','cupfox.in','yhdmoe.com','fcma.cc',
         '233dm.com','pkavi.com','kanju.ai','doubanio.com','image.tmdb.org',
         'www.lufys.com','img.ffzy888.com','www.mdzypic.com','img.lzipic.com',
-        'snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com'];
+        'snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com','i1.vvmp4.com'];
     function safePosterUrl(value, base) {
         if (typeof value!=='string' || !value || value.length>2048 || /[\s\\\x00-\x1f\x7f]/.test(value)) return null;
         try {
             const u=new URL(value,base);
-            if(u.protocol!=='https:' || u.username || u.password || u.port || u.hash
-                || !posterDomains.some(d=>u.hostname===d || u.hostname.endsWith('.'+d))
+            if(u.protocol!=='https:' || u.username || u.password || u.port || u.hash) return null;
+            // Only the observed public cover format, never a general image proxy.
+            if(u.hostname==='gimg0.baidu.com') return !u.search && /^\/gimg\/app=2001&n=0&g=0n&fmt=webp&src=img\.baipiaozhe\.com\/assets\/images\/[a-f0-9]{2}\/[a-f0-9]{64}\.webp$/.test(u.pathname) ? u.href : null;
+            if(!posterDomains.some(d=>u.hostname===d || u.hostname.endsWith('.'+d))
                 || !/\.(?:jpe?g|png|webp|avif|gif)$/i.test(u.pathname)
                 || /placeholder|loading|favicon|spacer/i.test(u.pathname)
                 || Array.from(u.searchParams.keys()).some(k=>!['w','h','width','height','q','quality','format','fit','auto','size','v'].includes(k))) return null;
@@ -138,7 +140,8 @@
     function readDocument(doc, req) {
         if (/attention required|access denied|访问被拒绝/i.test(doc.title)
             && /sorry, you have been blocked|you are unable to access|access denied|访问被拒绝/i.test((doc.body?.textContent||'').slice(0,6000))) return {status:'access_blocked'};
-        if (/系统安全验证|安全检查|just a moment|security check|attention required/i.test(doc.title)) return {status:'verification_required'};
+        if (/系统安全验证|安全检查|just a moment|security check|attention required/i.test(doc.title)
+            || /请稍候/.test(doc.title) && /正在进行安全验证|验证您不是自动程序/.test((doc.body?.textContent||'').slice(0,6000))) return {status:'verification_required'};
         if(req.source==='kanju' && doc.querySelector('input[type="password"]')) return {status:'verification_required'};
         const links=Array.from(doc.querySelectorAll('a[href]')).slice(0,15000);
         if (req.kind==='search') {

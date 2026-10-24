@@ -17,25 +17,31 @@ from pathlib import Path
 import app as module
 import source_search
 import catalog_recommendations
-rows = source_search.parse_results(source_search.PROVIDERS['ddys'], Path('tests/poster-search-fixture.json').read_text(encoding='utf8'), '星')
+# Reuse local poster metadata with active-source identities; never re-enable a
+# retired provider just to make the UI test pass.
+posters = source_search.parse_results(source_search.PROVIDERS['ddys'], Path('tests/poster-search-fixture.json').read_text(encoding='utf8'), '星')
+rows = [dict(row, page_url=f'https://yhdmoe.com/watch/{1000+i}') for i, row in enumerate(posters)]
 def search(source, query):
-    matching = rows if source == 'ddys' else [dict(title='绿色星球',year='2022',page_url='https://www.cupfox.in/vod-detail/1234.html')] if source == 'cupfox' else []
+    matching = rows if source == 'yhdmoe' else [dict(title='绿色星球',year='2022',page_url='https://www.cupfox.in/vod-detail/1234.html')] if source == 'cupfox' else []
     return dict(source_id=source, status='unavailable' if source == 'huarw' else 'ok', results=matching, cached=False)
 def detail(source, page):
     if source == 'cupfox':
         return dict(source_id=source,page_url=page,item_id='1234',status='ok',description='本地第二来源测试',episodes=[dict(id='ep1',title='第 1 集',launch_path='/discover/play/cupfox/1234/ep1')])
-    return dict(source_id=source, page_url=page, item_id='the-green-planet', status='ok', title='绿色星球', description='本地界面测试：公开目录样例，不代表已验证可播。', episodes=[dict(id='page',title='在原站选集',launch_path='/discover/play/ddys/the-green-planet/page')])
+    item = page.rsplit('/',1)[-1]
+    return dict(source_id=source, page_url=page, item_id=item, status='ok', title='绿色星球', description='本地界面测试：公开目录样例，不代表已验证可播。', episodes=[dict(id='EP1',title='第 1 集',launch_path=f'/discover/play/yhdmoe/{item}/EP1')])
 module.search_provider=search
 module.load_detail=detail
 def feed(source, category, page):
     matching = []
-    if source == 'ddys':
+    if source == 'yhdmoe':
         for batch in range(3):
-            for r in rows:
+            for i, r in enumerate(rows):
                 matching.append(r if page == 1 and batch == 0 else dict(r,
-                    title=f'分页测试 {page}-{batch} · ' + r['title'], page_url=r['page_url'] + f'-test-{page}-{batch}'))
+                    title=f'分页测试 {page}-{batch} · ' + r['title'], page_url=f'https://yhdmoe.com/watch/{page * 10000 + batch * 100 + i}'))
+    elif source == 'cupfox' and category in ('movie', 'series'):
+        matching = [dict(r, page_url=f'https://www.cupfox.in/vod-detail/{1000+i}.html') for i, r in enumerate(rows)]
     return dict(source_id=source, category=category, page=page, status='ok', results=matching,
-                has_more=source == 'ddys' and page == 1, next_page=2 if source == 'ddys' and page == 1 else None)
+                has_more=source == 'yhdmoe' and page == 1, next_page=2 if source == 'yhdmoe' and page == 1 else None)
 catalog_recommendations.load_page=feed
 module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
 `],{cwd:root,windowsHide:true,stdio:['ignore','pipe','pipe'],env:{...process.env,APP_ENV:'development',SECRET_KEY:'catalog-ui-test-only'}});
@@ -55,6 +61,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     async function noOverflow(){assert.ok(await js('document.documentElement.scrollWidth <= innerWidth + 1'),'horizontal overflow');}
     await win.loadURL(server+'/discover');
     assert.equal(wc.getURL(),server+'/discover');assert.match(wc.getTitle(),/一起看|影片|Together/i);
+    assert.equal(await js('document.querySelectorAll("[data-live-source=ddys], [data-feed-source=ddys], [data-live-source=fcma], [data-feed-source=fcma]").length'),0,'retired sources must stay hidden');
     await until('initial catalogue',()=>js('document.querySelectorAll(".catalog-feed-film").length===24'));
     assert.ok(await js('!document.querySelector("vite-error-overlay, #webpack-dev-server-client-overlay, nextjs-portal")'));
     await until('visible recommendation images',()=>js('Array.from(document.querySelectorAll("#catalogFeedGrid img")).slice(0,8).every(i=>i.complete)'),30000);
@@ -68,7 +75,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await until('feed detail',()=>js('document.getElementById("discoveryDetail").open'));
     assert.ok(await js('!document.getElementById("catalogFindOtherSources").hidden'));
     await js('document.getElementById("discoveryDetailClose").click()');
-    await js(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['ddys','huarw','blender','cupfox'].includes(c.dataset.liveSource);document.getElementById('discoveryQuery').value='星';document.getElementById('discoveryForm').requestSubmit();`);
+    await js(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['yhdmoe','huarw','blender','cupfox'].includes(c.dataset.liveSource);document.getElementById('discoveryQuery').value='星';document.getElementById('discoveryForm').requestSubmit();`);
     await until('eight poster results',()=>js('document.querySelectorAll(".discovery-title-card").length===8'));
     await until('loaded cover',()=>js('Array.from(document.querySelectorAll(".discovery-poster-image")).filter(i=>i.complete && i.naturalWidth>0).length>=6'),30000);
     await until('completed query',()=>js('document.getElementById("discoveryLive").getAttribute("aria-busy")==="false"'));
@@ -78,8 +85,8 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await js(`document.querySelector('.discovery-title-art').click()`);
     await until('detail dialog',()=>js('document.getElementById("discoveryDetail").open && document.querySelectorAll(".discovery-episode").length===1'));
     assert.equal(await js('document.querySelectorAll("#catalogSourceChoices button").length'),2);
-    await js('document.querySelector("#catalogSourceChoices [data-source=ddys]").click()');
-    await until('switch to DDYS',()=>js('document.querySelector(".discovery-episode")?.getAttribute("href").startsWith("/discover/play/ddys/")'));
+    await js('document.querySelector("#catalogSourceChoices [data-source=yhdmoe]").click()');
+    await until('switch to YHDMOE',()=>js('document.querySelector(".discovery-episode")?.getAttribute("href").startsWith("/discover/play/yhdmoe/")'));
     await js('document.querySelector("#catalogSourceChoices [data-source=cupfox]").click()');
     await until('switch to cupfox',()=>js('document.querySelector(".discovery-episode")?.getAttribute("href")==="/discover/play/cupfox/1234/ep1"'));
     await shot('desktop-detail');await js('document.getElementById("discoveryDetailClose").click()');

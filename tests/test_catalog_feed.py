@@ -105,15 +105,15 @@ class CatalogFeedTests(unittest.TestCase):
             self.assertFalse(feed._cache)
 
     def test_api_validates_allowlist_origin_and_all_parameters_before_network(self):
-        valid = '/api/discover/feed?source=ddys&category=all&page=1'
+        valid = '/api/discover/feed?source=yhdmoe&category=all&page=1'
         with patch.object(feed, 'load_page', return_value={'status': 'ok', 'results': []}) as load:
             response = self.client.get(valid)
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers['Cache-Control'], 'no-store')
-            load.assert_called_once_with('ddys', 'all', 1)
+            load.assert_called_once_with('yhdmoe', 'all', 1)
             load.reset_mock()
             for url in [valid + '&page=2', valid + '&url=https://evil.test', valid.replace('page=1', 'page=1001'),
-                        valid.replace('page=1', 'page=-1'), valid.replace('ddys', 'kanju'),
+                        valid.replace('page=1', 'page=-1'), valid.replace('yhdmoe', 'kanju'), valid.replace('yhdmoe', 'ddys'),
                         valid.replace('category=all', 'category=unknown')]:
                 self.assertEqual(self.client.get(url).status_code, 400, url)
             for headers in [{'Origin': 'https://evil.test'}, {'Sec-Fetch-Site': 'cross-site'}]:
@@ -128,7 +128,8 @@ class CatalogFeedTests(unittest.TestCase):
                 response = self.client.get(path)
                 self.assertEqual(response.status_code, 200)
                 self.assertIn('id="catalogFeedMore"', response.text)
-                self.assertIn('data-feed-source="ddys"', response.text)
+                self.assertIn('data-feed-source="yhdmoe"', response.text)
+                self.assertNotIn('data-feed-source="ddys"', response.text)
 
 
 if __name__ == '__main__':
