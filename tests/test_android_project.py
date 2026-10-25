@@ -8,6 +8,48 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_launcher_icons_adapt_to_round_masks_and_android_themed_icons(self):
+        res = ANDROID / 'app/src/main/res'
+        ns = '{http://schemas.android.com/apk/res/android}'
+        manifest = ET.parse(ANDROID / 'app/src/main/AndroidManifest.xml').getroot().find('application')
+        self.assertEqual(manifest.get(ns+'icon'), '@mipmap/ic_launcher')
+        self.assertEqual(manifest.get(ns+'roundIcon'), '@mipmap/ic_launcher')
+        for version in ('v26', 'v33'):
+            tree = ET.parse(res / f'mipmap-anydpi-{version}/ic_launcher.xml').getroot()
+            self.assertEqual(tree.tag, 'adaptive-icon')
+            self.assertEqual(tree.find('foreground').get(ns+'drawable'), '@drawable/ic_launcher_foreground')
+            self.assertEqual(tree.find('background').get(ns+'drawable'), '@color/launcher_background')
+            if version == 'v33':
+                self.assertEqual(tree.find('monochrome').get(ns+'drawable'), '@drawable/ic_launcher_monochrome')
+        svg = ET.parse(ROOT / 'static/favicon.svg').getroot()
+        paths = [p.get('d') for p in svg.iter('{http://www.w3.org/2000/svg}path')]
+        vector = ET.parse(res / 'drawable/ic_launcher_foreground.xml').getroot()
+        self.assertEqual([p.get(ns+'pathData') for p in vector.iter('path')], paths)
+        group = vector.find('group')
+        self.assertIsNotNone(group)
+        self.assertEqual(group.get(ns+'scaleX'), '0.65')
+        self.assertEqual(group.get(ns+'scaleY'), '0.65')
+        self.assertEqual(group.get(ns+'pivotX'), '54')
+        self.assertEqual(group.get(ns+'pivotY'), '54')
+        monochrome = ET.parse(res / 'drawable/ic_launcher_monochrome.xml').getroot()
+        mono_path = next(monochrome.iter('path'))
+        self.assertEqual(mono_path.get(ns+'fillType'), 'evenOdd')
+        self.assertEqual(mono_path.get(ns+'pathData'), ' '.join(paths))
+
+    def test_catalogue_hides_duplicate_header_but_retains_room_and_original_site_navigation(self):
+        activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
+        chrome = activity.split('private void updateCatalogChrome()', 1)[1].split('private void startSession()', 1)[0]
+        self.assertIn('catalogue=finding && !originalFinderActive', chrome)
+        self.assertIn('catalogue && !sessionActive?View.GONE:View.VISIBLE', chrome)
+        self.assertIn('setAppearanceLightStatusBars(catalogue)', chrome)
+        self.assertIn('setAppearanceLightNavigationBars(catalogue)', chrome)
+        setup = activity.split('private void showSetup()', 1)[1].split('private void configureEntry', 1)[0]
+        self.assertLess(setup.index('finding=false'), setup.index('updateCatalogChrome()'))
+        controls = activity.split('private void updateRoomControls()', 1)[1].split('private void updateCatalogChrome()', 1)[0]
+        self.assertIn('updateCatalogChrome()', controls)
+        layout = (ANDROID / 'app/src/main/res/layout/activity_main.xml').read_text(encoding='utf-8')
+        self.assertIn('@+id/navigationToolbar', layout)
+
     def test_room_actions_are_contextual_and_exit_requires_confirmation(self):
         activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
         layout = (ANDROID / 'app/src/main/res/layout/activity_main.xml').read_text(encoding='utf-8')

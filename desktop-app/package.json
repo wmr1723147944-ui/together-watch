@@ -1,7 +1,7 @@
 {
   "name": "together-watch-desktop",
   "productName": "Together Watch",
-  "version": "0.6.8",
+  "version": "0.6.10",
   "private": true,
   "description": "Together Watch Windows desktop client",
   "main": "src/main.cjs",
@@ -11,7 +11,7 @@
     "test": "node --test tests/*.test.cjs",
     "smoke": "electron . --smoke-test",
     "prepackage:win": "node scripts/prepare-player.cjs",
-    "package:win": "electron-packager . TogetherWatch --platform=win32 --arch=x64 --out=dist --asar --ignore=\"^/(tests|dist|README.md)\""
+    "package:win": "electron-packager . TogetherWatch --platform=win32 --arch=x64 --out=dist --asar --icon=assets/app.ico --ignore=\"^/(tests|dist|README.md)\""
   },
   "devDependencies": {
     "@electron/packager": "20.3.0",

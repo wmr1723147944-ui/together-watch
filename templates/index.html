@@ -2,15 +2,15 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>一起看同步工具 - Together Watch</title>
-    <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v='20261025-companion-v2') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261021-posters') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/site-directory.css', v='20261019-sites') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-cinema.css', v='20261021-posters') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser.css', v='20261021-live-catalog') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser-light.css', v='20261024-light-catalog') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-mobile.css', v='20261024-mobile-app') }}">
 </head>
 <body class="media-app catalog-cinema">
     {% include "_site_nav.html" %}
@@ -62,11 +62,13 @@
             {% include "_site_footer.html" %}
         </div>
     </main>
+    {% include "_catalog_mobile_nav.html" %}
 
     <script src="{{ url_for('static', filename='js/index.js', v='20261021-film-first') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261024-source-cleanup') }}" defer></script>
     <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261022-source-recovery') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261021-live-catalog') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261022-navigation') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261024-light-catalog') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261024-mobile-app') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-mobile.js', v='20261024-mobile-app') }}" defer></script>
 </body>
 </html>

@@ -12,7 +12,7 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <LinearLayout android:layout_width="match_parent" android:layout_height="48dp"
+        <LinearLayout android:id="@+id/navigationToolbar" android:layout_width="match_parent" android:layout_height="48dp"
             android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="8dp">
             <Button android:id="@+id/previousButton" android:layout_width="wrap_content"
                 android:layout_height="match_parent" android:text="← 返回" android:textAllCaps="false"

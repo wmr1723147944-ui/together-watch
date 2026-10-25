@@ -45,10 +45,10 @@
             for (const controller of controllers) controller.abort();
             controllers.clear(); retries.clear(); details.close();
         }
-        function home() {
+        function home(focusQuery = true) {
             stop(); query.value = ''; activeQuery = ''; records = []; cards.clear(); results.replaceChildren();
             welcome.hidden = false; live.hidden = true; $('discoveryClear').hidden = true;
-            live.setAttribute('aria-busy', 'false'); query.focus();
+            live.setAttribute('aria-busy', 'false'); if (focusQuery) query.focus();
             feed?.setVisible(true);
         }
         // Native clients keep this document alive while a film is playing.

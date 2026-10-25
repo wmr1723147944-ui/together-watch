@@ -48,7 +48,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     backend.stdout.on('data',d=>log=(log+d).slice(-5000));backend.stderr.on('data',d=>log=(log+d).slice(-5000));
     backend.on('error',e=>{log+=e.message;});
     await until('backend',async()=>{try{return (await fetch(server+'/health')).ok;}catch{return false;}});
-    win=new BrowserWindow({show:false,width:1440,height:1100,useContentSize:true,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,partition:'catalog-layout-test'}});
+    win=new BrowserWindow({show:false,width:1440,height:900,useContentSize:true,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,nodeIntegration:false,partition:'catalog-layout-test'}});
     const wc=win.webContents,js=s=>wc.executeJavaScript(s);
     const errors=[];
     wc.on('console-message',(_event,details,message)=>{
@@ -66,6 +66,22 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     assert.ok(await js('!document.querySelector("vite-error-overlay, #webpack-dev-server-client-overlay, nextjs-portal")'));
     await until('visible recommendation images',()=>js('Array.from(document.querySelectorAll("#catalogFeedGrid img")).slice(0,8).every(i=>i.complete)'),30000);
     await noOverflow();await shot('desktop-welcome');
+    assert.equal(await js('document.querySelectorAll(".catalog-spotlight-film").length'),4);
+    assert.equal(await js('getComputedStyle(document.body).backgroundColor'),'rgb(255, 255, 255)');
+    assert.ok(await js('document.querySelector(".site-nav #discoveryForm") !== null'));
+    assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).display'),'none','desktop must not gain mobile navigation');
+    assert.ok(await js(`(()=>{
+        const rgb=s=>s.match(/[0-9.]+/g).slice(0,3).map(Number);
+        const lum=c=>c.map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
+        const contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
+        return ['.nav-room-link','.catalog-primary','#catalogFeedStatus','.catalog-feed-film > p'].every(selector=>{
+            const s=getComputedStyle(document.querySelector(selector)),bg=s.backgroundColor==='rgba(0, 0, 0, 0)'?[255,255,255]:rgb(s.backgroundColor);
+            return contrast(rgb(s.color),bg)>=4.5;
+        });
+    })()`),'key catalogue text has readable contrast');
+    await js('document.querySelector("#catalogSpotlightGrid .catalog-film-poster").click()');
+    await until('spotlight opens real detail',()=>js('document.getElementById("discoveryDetail").open'));
+    await js('document.getElementById("discoveryDetailClose").click()');
     assert.equal(await js('document.querySelectorAll(".catalog-feed-film").length'),24,'next page must wait for scroll');
     await js('document.getElementById("catalogFeedSentinel").scrollIntoView();dispatchEvent(new Event("scroll"))');
     await until('scroll appends second page',()=>js('document.querySelectorAll(".catalog-feed-film").length===48'));
@@ -90,10 +106,18 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await js('document.querySelector("#catalogSourceChoices [data-source=cupfox]").click()');
     await until('switch to cupfox',()=>js('document.querySelector(".discovery-episode")?.getAttribute("href")==="/discover/play/cupfox/1234/ep1"'));
     await shot('desktop-detail');await js('document.getElementById("discoveryDetailClose").click()');
-    for(const width of [390,320]){
+    for(const width of [1920,1024,768,390,320]){
         win.setContentSize(width,1000);await delay(400);await noOverflow();
         const cols=await js(`getComputedStyle(document.querySelector('#discoveryLiveResults')).gridTemplateColumns.split(' ').length`);
-        assert.equal(cols,2);if(width===390)await shot('mobile-results');
+        assert.equal(cols,width>1190?6:width>900?5:width>680?4:2);
+        assert.ok(await js('(()=>{const r=document.getElementById("discoveryForm").getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.width>150})()'),'search remains within viewport');
+        if(width<=390) {
+            assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).position'),'fixed');
+            assert.ok(await js('document.querySelector(".site-nav").getBoundingClientRect().height<=66'),'mobile header is a single compact row');
+            assert.ok(await js('(()=>{const r=document.querySelector(".catalog-mobile-nav").getBoundingClientRect();return r.bottom<=innerHeight+1 && r.top>=innerHeight-90})()'));
+            assert.equal(await js('document.getElementById("catalogMobileSearch").getAttribute("aria-current")'),'page');
+        }
+        if(width===390)await shot('mobile-results');
     }
     await js(`const i=document.querySelector('#discoveryLiveResults .discovery-poster-image');i.dispatchEvent(new Event('error'));`);
     assert.ok(await js(`!document.querySelector('#discoveryLiveResults .discovery-poster-fallback').hidden && document.querySelector('#discoveryLiveResults .discovery-poster-image').hidden`));
@@ -110,11 +134,28 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await js('document.querySelector("[data-catalog-category=all]").click();scrollTo(0,0)');
     await until('mobile feed ready',()=>js('document.querySelectorAll(".catalog-feed-film").length===24'));
     win.setContentSize(320,1000);await delay(250);await noOverflow();
-    win.setContentSize(390,1000);await shot('mobile-welcome');
+    win.setContentSize(390,844);await delay(350);
+    console.log('Mobile viewport:',await js('({width:innerWidth,height:innerHeight,visualHeight:visualViewport.height})'));
+    await until('mobile viewport height',()=>js('Math.abs(innerHeight-844)<=2'));
+    await js('document.getElementById("catalogMobileHome").click()');
+    assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).display'),'flex','bottom tabs restore after input blur / viewport shrink');
+    await shot('mobile-welcome');
+    assert.equal(await js('getComputedStyle(document.getElementById("catalogSpotlightGrid")).display'),'none','mobile avoids duplicate preview cards');
+    assert.ok(await js('document.getElementById("catalogHero").getBoundingClientRect().height<=170'),'compact app banner');
+    await js('document.getElementById("catalogMobileSearch").click()');
+    assert.equal(await js('document.activeElement.id'),'discoveryQuery');
+    assert.equal(await js('document.querySelectorAll(".catalog-feed-film").length'),24,'search tab must not reset or query the feed');
+    await js('document.getElementById("catalogMobileHome").click()');
+    assert.notEqual(await js('document.activeElement.id'),'discoveryQuery','home must not summon the keyboard');
+    assert.equal(await js('document.getElementById("catalogMobileHome").getAttribute("aria-current")'),'page');
+    await js('document.querySelector("#catalogFeedGrid .catalog-film-poster").click()');
+    await until('mobile detail sheet',()=>js('document.getElementById("discoveryDetail").open'));
+    assert.ok(await js('(()=>{const r=document.getElementById("discoveryDetail").getBoundingClientRect();return Math.abs(r.bottom-innerHeight)<2 && r.width<=innerWidth && r.top>=0})()'));
+    await shot('mobile-detail');await js('document.getElementById("discoveryDetailClose").click()');
     await win.loadURL(server+'/');await delay(500);await noOverflow();await shot('mobile-home');
     assert.equal(await js('document.getElementById("roomEntry").open'),false);
     assert.equal(await js('document.querySelectorAll(".discovery-live-source, .recommended-sites, .discovery-search-options").length'),0);
-    await js('document.querySelector(".nav-room-link").click()');
+    await js('document.querySelector(".catalog-mobile-nav a").click()');
     assert.ok(await js('document.getElementById("roomEntry").open'));await noOverflow();await shot('mobile-join');
     await js('document.getElementById("roomEntryClose").click()');
     await win.loadURL(server+'/?room=4ccfa3f3db24a52c2b5c68bc');

@@ -103,7 +103,7 @@ class PosterMetadataTests(unittest.TestCase):
         self.assertEqual(csp.split('script-src ')[1].split(';')[0], "'self'")
         self.assertNotIn('img.ddys.io', csp.split('media-src ')[1].split(';')[0])
         self.assertNotIn('img.ddys.io', csp.split('connect-src ')[1].split(';')[0])
-        self.assertIn('catalog-cinema.css', page.text)
+        self.assertIn('catalog-browser-light.css', page.text)
 
     def test_new_public_cover_cdns_are_image_only(self):
         csp = application.app.test_client().get('/discover').headers['Content-Security-Policy']

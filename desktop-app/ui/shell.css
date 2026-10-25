@@ -5,7 +5,7 @@ body { margin: 0; }
    Keep these heights aligned with policy.panelBounds (128 / 328). */
 header { height: 72px; display: flex; align-items: center; gap: 24px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e1e6ee; }
 .brand { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 750; white-space: nowrap; }
-.mark { display: grid; place-items: center; width: 42px; height: 42px; background: #e7f7ff; color: #0785b3; border-radius: 11px; font-size: 21px; }
+.mark { display: block; width: 42px; height: 42px; flex-shrink: 0; }
 .brand small { display: block; font-size: 9px; letter-spacing: 1.5px; color: #8995a6; margin-top: 3px; }
 #status { flex: 1; min-width:0; color: #6a788c; font-size: 13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 header button { flex-shrink:0; white-space:nowrap; }

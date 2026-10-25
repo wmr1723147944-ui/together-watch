@@ -1,9 +1,10 @@
 <a class="skip-link" href="#mainContent">跳到主要内容</a>
-<header class="site-nav">
-    <a class="site-brand" href="/" aria-label="一起看首页"><img src="{{ url_for('static', filename='favicon.svg') }}" width="32" height="32" alt=""><strong>一起看<span>TOGETHER WATCH</span></strong></a>
+<header class="site-nav{% if request.endpoint in ('index', 'discover') %} site-nav-catalog{% endif %}">
+    <a class="site-brand" href="/" aria-label="一起看首页"><img src="{{ url_for('static', filename='favicon.svg', v='20261025-companion-v2') }}" width="32" height="32" alt=""><strong>一起看<span>TOGETHER WATCH</span></strong></a>
     <nav aria-label="主导航">
         <a href="/" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>首页</a>
         <a href="/discover" {% if request.endpoint == 'discover' %}aria-current="page"{% endif %}>发现</a>
     </nav>
+    {% if request.endpoint in ('index', 'discover') %}{% include "_catalog_search.html" %}{% endif %}
     <a class="nav-room-link" href="/#roomEntry">加入房间 <span aria-hidden="true">↗</span></a>
 </header>

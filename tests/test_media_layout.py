@@ -83,6 +83,37 @@ class MediaLayoutTests(unittest.TestCase):
         self.assertIn("client-room-theme.css", room)
         self.assertIn('<details class="room-audio-options">', room)
 
+    def test_light_catalog_keeps_one_navigation_search_and_does_not_retheme_playback(self):
+        for path in ('/', '/discover?q=测试'):
+            html = self.client.get(path).text
+            self.assertEqual(html.count('id="discoveryForm"'), 1)
+            self.assertEqual(html.count('id="discoveryQuery"'), 1)
+            self.assertLess(html.index('id="discoveryForm"'), html.index('<main'))
+            self.assertIn('catalog-browser-light.css', html)
+            self.assertNotIn('catalog-cinema.css', html)
+            self.assertIn('id="catalogSpotlightGrid"', html)
+            self.assertIn('aria-label="筛选推荐片单"', html)
+            self.assertNotIn('data-live-source="fcma"', html)
+            self.assertNotIn('data-live-source="ddys"', html)
+        room = self.client.get('/room/layout-light-isolation').text
+        self.assertNotIn('catalog-browser-light.css', room)
+
+    def test_mobile_catalog_has_three_working_entries_not_fake_social_tabs(self):
+        for path in ('/', '/discover'):
+            html = self.client.get(path).text
+            self.assertIn('catalog-mobile.css', html)
+            self.assertIn('catalog-mobile.js', html)
+            self.assertEqual(html.count('id="catalogMobileHome"'), 1)
+            self.assertEqual(html.count('id="catalogMobileSearch"'), 1)
+            self.assertIn('aria-label="一起看，加入朋友的房间"', html)
+            self.assertIn('viewport-fit=cover', html)
+            self.assertNotIn('>投稿<', html)
+            self.assertNotIn('>动态<', html)
+        for path in ('/room/mobile-ui-isolation', '/mobile-room/mobile-ui-isolation'):
+            html = self.client.get(path).text
+            self.assertNotIn('catalog-mobile.css', html)
+            self.assertNotIn('catalogMobileHome', html)
+
 
 if __name__ == "__main__":
     unittest.main()

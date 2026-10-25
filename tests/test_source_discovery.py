@@ -112,7 +112,7 @@ class SourceDiscoveryTests(unittest.TestCase):
             html = self.client.get('/discover?q=sintel').get_data(as_text=True)
         self.assertIn('value="sintel"', html)
         self.assertIn('请启用 JavaScript 以搜索影片和查看集数', html)
-        self.assertIn('公开片单 · 按来源目录更新', html)
+        self.assertIn('来自公开片单', html)
         self.assertNotIn('本地目录匹配', html)
         self.assertIn('target="_self"', html)
 

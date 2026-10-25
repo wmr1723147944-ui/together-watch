@@ -8,6 +8,7 @@
 .github
 android-app
 desktop-app
+design
 __pycache__
 *.pyc
 tests

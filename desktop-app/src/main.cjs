@@ -32,7 +32,7 @@ const timeout = (promise, ms = 2500) => {
     return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); })]).finally(() => clearTimeout(timer));
 };
 function installAssets(ses) {
-    const assets = new Map(['index.html','shell.css','shell.js','player.html','player.css','player.js']
+    const assets = new Map(['index.html','shell.css','shell.js','player.html','player.css','player.js','app-icon.svg']
         .map(name => ['/' + name, path.join(__dirname, '..', 'ui', name)]));
     const bundledHls = path.join(__dirname, '..', 'ui', 'hls.min.js');
     assets.set('/hls.min.js', fs.existsSync(bundledHls) ? bundledHls : path.join(__dirname, '../../static/vendor/hls-1.5.18.min.js'));
@@ -46,7 +46,7 @@ function installAssets(ses) {
 async function createDesktop({ server = policy.SERVER, testSource = '', visible = true } = {}) {
     if (!SMOKE && server !== policy.SERVER) throw new Error('Untrusted server');
     const win = new BrowserWindow({ title: '一起看 · Windows', width: 1360, height: 850, minWidth: 980, minHeight: 680,
-        backgroundColor: '#111020', show: visible, autoHideMenuBar: true,
+        backgroundColor: '#111020', show: visible, autoHideMenuBar: true, icon: path.join(__dirname, '../assets/app.ico'),
         webPreferences: securePreferences({ preload: path.join(__dirname, 'preload.cjs') }) });
     win.setMenu(null);
     // Retain host rights when returning to setup in this window session. Never
@@ -821,6 +821,8 @@ app.whenReady().then(async () => {
             const client = await createDesktop({ visible: false });
             const ready = await client.win.webContents.executeJavaScript('typeof window.desktop?.start === "function" && !!document.getElementById("startForm")');
             if (!ready) throw new Error('packaged shell unavailable');
+            const iconReady = await client.win.webContents.executeJavaScript('document.querySelector(".brand img")?.naturalWidth > 0');
+            if (!iconReady || !fs.existsSync(path.join(__dirname, '../assets/app.ico'))) throw new Error('packaged app icon unavailable');
             const player = new WebContentsView({ webPreferences: securePreferences({session:client.state().mediaSession}) });
             await player.webContents.loadURL(PLAYER_URL);
             const playerReady = await player.webContents.executeJavaScript('typeof Hls === "function" && typeof window.__twBuiltin?.load === "function" && typeof window.desktop === "undefined"');
@@ -834,7 +836,7 @@ app.whenReady().then(async () => {
             const rejected=await discovery.webContents.executeJavaScript('window.twSourceMetadata.request("package-test","search",{source:"pkavi",q:"test"})');
             discovery.webContents.close();
             if(!bridgeReady || rejected.status!=='unavailable') throw new Error('packaged metadata bridge or sender guard unavailable');
-            console.log('PACKAGE CHECK PASS: shell, preload, independent player, HLS, catalogue rules and metadata IPC sender guard.');
+            console.log('PACKAGE CHECK PASS: shell, branded icon, preload, independent player, HLS, catalogue rules and metadata IPC sender guard.');
             app.exit(0);
         } catch (error) { console.error(error); app.exit(1); }
     } else await createDesktop();

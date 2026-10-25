@@ -334,6 +334,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void updateRoomControls() {
+        updateCatalogChrome();
         boolean watching=sessionActive && !finding;
         browserToolbar.setVisibility(watching?View.VISIBLE:View.GONE);
         findViewById(R.id.finderToolbar).setVisibility(finding && originalFinderActive?View.VISIBLE:View.GONE);
@@ -343,6 +344,27 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.findAgainButton).setTooltipText(canChoose?"保留房间，选择影片或集数":"由房主换片，你会自动跟随");
         findViewById(R.id.pickPageButton).setEnabled(canChoose);
         ((Button)findViewById(R.id.pickPageButton)).setText(sessionActive?"确认并切换到这一集":"选好这集，开始一起看");
+    }
+
+    @SuppressWarnings("deprecation")
+    private void updateCatalogChrome() {
+        boolean catalogue=finding && !originalFinderActive;
+        // The web catalogue owns its compact search/header and bottom tabs.
+        // Keep native Back / More while changing films in an existing room.
+        findViewById(R.id.navigationToolbar).setVisibility(catalogue && !sessionActive?View.GONE:View.VISIBLE);
+        int background=catalogue?0xFFFFFFFF:getColor(R.color.background);
+        int text=catalogue?0xFF424956:getColor(R.color.text_primary);
+        findViewById(R.id.root).setBackgroundColor(background);
+        ((Button)findViewById(R.id.previousButton)).setTextColor(text);
+        ((Button)findViewById(R.id.moreButton)).setTextColor(text);
+        ViewGroup header=findViewById(R.id.navigationToolbar);
+        for(int i=0;i<header.getChildCount();i++) if(header.getChildAt(i) instanceof TextView)
+            ((TextView)header.getChildAt(i)).setTextColor(text);
+        getWindow().setStatusBarColor(background);
+        getWindow().setNavigationBarColor(background);
+        WindowInsetsControllerCompat bars=WindowCompat.getInsetsController(getWindow(),getWindow().getDecorView());
+        bars.setAppearanceLightStatusBars(catalogue);
+        bars.setAppearanceLightNavigationBars(catalogue);
     }
 
     private void startSession() {
@@ -651,6 +673,7 @@ public final class MainActivity extends ComponentActivity {
         exitNativeFullscreen();
         sessionActive = false;
         finding=false;requestBusy=false;++flowGeneration;
+        updateCatalogChrome();
         programRevision=0;appliedProgramRevision=0;programSelection=null;ownerKey="";awaitingEpisode=false;
         findViewById(R.id.openVideoButton).setEnabled(true);
         findViewById(R.id.finderToolbar).setVisibility(View.GONE);

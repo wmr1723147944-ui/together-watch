@@ -1,34 +1,34 @@
 <section id="sourceDiscovery" class="source-discovery catalog-browser" data-catalog-mode="films" aria-label="发现影片">
-    <form id="discoveryForm" class="catalog-search" action="/discover" method="get" role="search">
-        <label class="sr-only" for="discoveryQuery">搜索电影、剧集或动漫</label>
-        <span class="search-symbol" aria-hidden="true">⌕</span>
-        <input id="discoveryQuery" name="q" type="search" maxlength="80" value="{{ discovery_query }}" placeholder="搜索电影、剧集、动漫…" autocomplete="off">
-        <button id="discoveryClear" type="button" hidden aria-label="清空搜索，返回推荐">×</button>
-        <button class="catalog-search-submit" type="submit">搜索</button>
-    </form>
     {# Client metadata IPC reads this allowlist; it is not a source directory. #}
     <div hidden aria-hidden="true">
         {% for source in discovery_search_sources %}<input type="checkbox" data-live-source="{{ source.id }}" data-source-name="{{ source.name }}" checked tabindex="-1">{% endfor %}
         {% for source in discovery_feed_sources %}<span data-feed-source="{{ source.id }}" data-source-name="{{ source.name }}" data-categories="{{ source.categories|join(',') }}"></span>{% endfor %}
     </div>
     <section id="discoveryWelcome" aria-label="推荐片单">
+        <div class="catalog-channel-bar">
+            <div class="channel-heading"><span class="channel-mark" aria-hidden="true">▶</span><div><strong>发现好片</strong><small>一起看，更有意思</small></div></div>
+            <div class="catalog-channels" role="group" aria-label="筛选推荐片单">
+                {% for key, label in [('all','推荐'),('movie','电影'),('series','剧集'),('animation','动漫'),('documentary','纪录片')] %}
+                <button type="button" data-catalog-category="{{ key }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>
+                {% endfor %}
+            </div>
+            <span class="channel-tip">选一部，邀请朋友一起看</span>
+        </div>
+        <div class="catalog-spotlight">
         <div class="catalog-hero" id="catalogHero">
             <img class="catalog-hero-image" id="catalogHeroImage" alt="" referrerpolicy="no-referrer" hidden>
             <div class="catalog-hero-copy">
-                <span class="catalog-eyebrow">今晚，一起看</span>
-                <h1 id="catalogHeroTitle">下一部好片，在这里</h1>
-                <p class="hero-tagline" id="catalogHeroTagline">从各站片单发现故事，选好再一起看。</p>
+                <span class="catalog-eyebrow">片单速览</span>
+                <h1 id="catalogHeroTitle">今天，想看点什么？</h1>
+                <p class="hero-tagline" id="catalogHeroTagline">找一部喜欢的，留个位置给朋友。</p>
                 <p class="hero-facts" id="catalogHeroFacts">电影 · 剧集 · 动漫 · 纪录片</p>
-                <button type="button" class="catalog-primary" id="catalogHeroOpen" hidden>查看影片 <span aria-hidden="true">→</span></button>
+                <button type="button" class="catalog-primary" id="catalogHeroOpen" hidden>查看详情 <span aria-hidden="true">→</span></button>
             </div>
-            <span class="hero-caption">公开片单 · 按来源目录更新</span>
+            <span class="hero-caption">来自公开片单</span>
         </div>
-        <div class="catalog-channels" role="group" aria-label="筛选推荐片单">
-            {% for key, label in [('all','为你推荐'),('movie','电影'),('series','剧集'),('animation','动漫'),('documentary','纪录片')] %}
-            <button type="button" data-catalog-category="{{ key }}" aria-pressed="{{ 'true' if loop.first else 'false' }}">{{ label }}</button>
-            {% endfor %}
+        <div id="catalogSpotlightGrid" class="catalog-spotlight-grid" aria-label="片单速览中的其他影片" hidden></div>
         </div>
-        <header class="catalog-section-title"><div><span class="catalog-eyebrow">KEEP EXPLORING</span><h2 id="recommendationTitle">发现更多好片</h2></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh">刷新片单 ↻</button></header>
+        <header class="catalog-section-title"><div><h2 id="recommendationTitle">发现更多好片</h2><span class="section-description">好故事，慢慢挑</span></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh"><span aria-hidden="true">↻</span> 刷新片单</button></header>
         <p id="catalogFeedStatus" class="catalog-feed-status" role="status" aria-live="polite">正在读取公开片单…</p>
         <div id="catalogFeedGrid" class="catalog-grid catalog-recommendations" aria-busy="true"></div>
         <div id="catalogFeedSkeleton" class="catalog-grid" aria-hidden="true">{% for i in range(8) %}<div class="catalog-skeleton"></div>{% endfor %}</div>

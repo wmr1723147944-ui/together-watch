@@ -23,6 +23,7 @@
             generation++; for (const c of controllers) c.abort(); controllers.clear(); busy = false;
         }
         function renderStatus() {
+            renderSpotlight();
             const available = states.some(s => !s.done && !s.error), failed = states.filter(s => s.error);
             grid.setAttribute('aria-busy', String(busy));
             $('catalogFeedSkeleton').hidden = !busy || entries.size > 0;
@@ -38,10 +39,40 @@
             for (const s of failed) notes.append(el('p', `${s.name}：${s.error}`, 'catalog-query-note'));
             $('catalogFeedNotes').hidden = !failed.length;
         }
+        // A bounded, real-metadata preview. No invented rankings or extra queries.
+        const spotlightCards = new Map();
+        function renderSpotlight() {
+            const preview = $('catalogSpotlightGrid');
+            if (!preview) return;
+            const groups = [...entries.values()].map(entry => entry.group).filter(group => group !== featured).slice(0, 4);
+            const keep = new Set(groups.map(group => group.key));
+            for (const [key, item] of spotlightCards) if (!keep.has(key)) { item.card.remove(); spotlightCards.delete(key); }
+            for (const group of groups) {
+                let item = spotlightCards.get(group.key);
+                if (!item) {
+                    const card = el('article', null, 'catalog-film catalog-spotlight-film');
+                    const cover = el('button', null, 'catalog-film-poster'); cover.type = 'button';
+                    cover.setAttribute('aria-label', '查看 ' + group.title + ' 的来源和集数');
+                    const title = el('button', group.title, 'catalog-title'); title.type = 'button';
+                    card.append(cover, title); preview.append(card);
+                    item = { card, cover, group, poster: null }; spotlightCards.set(group.key, item);
+                    cover.addEventListener('click', () => openGroup(item.group, cover, true));
+                    title.addEventListener('click', () => openGroup(item.group, title, true));
+                }
+                item.group = group;
+                if (item.poster !== group.poster) {
+                    item.cover.replaceChildren();
+                    addPoster(doc, item.cover, group.poster, group.choices[0].row.page_url, group.title);
+                    item.cover.append(el('span', group.year || '查看详情', 'catalog-film-badge'));
+                    item.poster = group.poster;
+                }
+            }
+            preview.hidden = groups.length === 0;
+        }
         function setHero(group) {
             featured = group;
             $('catalogHeroTitle').textContent = group.title;
-            $('catalogHeroTagline').textContent = '来自公开片单 · 选好这一部，邀请朋友一起看';
+            $('catalogHeroTagline').textContent = '选好这一部，邀请朋友一起看';
             $('catalogHeroFacts').textContent = [group.year, group.choices[0].row.genre].filter(Boolean).join(' · ') || '年份与版本请在详情中核对';
             const img = $('catalogHeroImage'); img.hidden = !group.poster;
             if (group.poster) img.src = group.poster; else img.removeAttribute('src');
@@ -144,8 +175,8 @@
             cancel(); category = nextCategory; started = true; autoPaused = false; total = 0; trimMessage = '';
             entries.clear(); seen.clear(); grid.replaceChildren(); featured = null;
             $('catalogHeroImage').hidden = true; $('catalogHeroOpen').hidden = true;
-            $('catalogHeroTitle').textContent = '下一部好片，在这里';
-            $('catalogHeroTagline').textContent = '从各站片单发现故事，选好再一起看。';
+            $('catalogHeroTitle').textContent = '今天，想看点什么？';
+            $('catalogHeroTagline').textContent = '找一部喜欢的，留个位置给朋友。';
             $('catalogHeroFacts').textContent = '电影 · 剧集 · 动漫 · 纪录片';
             states = configs.filter(s => s.categories.includes(category)).map(s => ({ ...s, page: 1, done: false, error: '', emptyRounds: 0 }));
             renderStatus(); return load();
