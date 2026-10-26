@@ -153,6 +153,8 @@ final class CatalogMetadataController {
         Runnable watchdog;
         boolean done,resumed;
         long emptySince;
+        long posterSince;
+        JSONObject partial;
         String lastStatus="unavailable";
         Job(String id,String token,int epoch,JSONObject req,Page page,boolean interactive) {
             this.id=id;this.token=token;this.epoch=epoch;this.req=req;this.page=page;this.interactive=interactive;
@@ -193,7 +195,7 @@ final class CatalogMetadataController {
     private boolean current(Job job) {return !closed && !job.done && job.epoch==generation && documentToken.equals(job.token) && trusted() && enabled.getAsBoolean();}
     private void read(Job job) {
         if(!current(job)){finish(job,status("cancelled"),true);return;}
-        if(SystemClock.elapsedRealtime()>job.deadline){finish(job,status(job.lastStatus),true);return;}
+        if(SystemClock.elapsedRealtime()>job.deadline){finish(job,job.partial!=null?job.partial:status(job.lastStatus),true);return;}
         Page page=job.page;String at=page.view.getUrl();final int navigation=page.navigation;
         if(!CatalogMetadataPolicy.allowed(page.source,at)){handler.postDelayed(job.poll,500);return;}
         // Never export page HTML, scripts, cookies or a login form. Only the
@@ -202,7 +204,7 @@ final class CatalogMetadataController {
             +adapters+";const a=window.TogetherWatchCatalogAdapters,r="+job.req+";return {expected:a.expectedPage(r,location.href),data:a.readDocument(document,r)};})()";
         // WebView callbacks can be lost on renderer failure. Keep a deadline
         // watchdog, independent of the JavaScript callback.
-        job.watchdog=()->finish(job,status(job.lastStatus),true);
+        job.watchdog=()->finish(job,job.partial!=null?job.partial:status(job.lastStatus),true);
         handler.postDelayed(job.watchdog,Math.max(1,job.deadline-SystemClock.elapsedRealtime()));
         page.view.evaluateJavascript(code,raw->{
             if(job.watchdog!=null)handler.removeCallbacks(job.watchdog);
@@ -215,10 +217,20 @@ final class CatalogMetadataController {
                 if(state.equals("access_blocked") || state.equals("verification_required") && !job.interactive){finish(job,result,true);return;}
                 if(envelope.optBoolean("expected") && (state.equals("ok") || state.equals("no_episodes"))) {
                     boolean empty=state.equals("no_episodes") || job.req.optString("kind").equals("search") && result.optJSONArray("results")!=null && result.optJSONArray("results").length()==0;
-                    if(!empty){finish(job,result,true);return;}
+                    if(!empty){
+                        job.partial=result;
+                        JSONArray rows=result.optJSONArray("results");boolean missing=false;
+                        if(job.req.optString("kind").equals("search") && rows!=null)for(int i=0;i<rows.length();i++) {
+                            JSONObject row=rows.optJSONObject(i);
+                            if(row!=null && (row.isNull("poster_url") || row.optString("poster_url").isEmpty()))missing=true;
+                        }
+                        long now=SystemClock.elapsedRealtime();
+                        if(job.posterSince==0)job.posterSince=now;
+                        if(!missing || now-job.posterSince>=1500 || job.deadline-now<600){finish(job,result,true);return;}
+                    }
                     if(job.emptySince==0)job.emptySince=SystemClock.elapsedRealtime();
-                    if(SystemClock.elapsedRealtime()-job.emptySince>2000){finish(job,result,true);return;}
-                } else job.emptySince=0;
+                    if(empty && SystemClock.elapsedRealtime()-job.emptySince>2000){finish(job,result,true);return;}
+                } else {job.emptySince=0;job.posterSince=0;job.partial=null;}
                 if(job.interactive && !job.resumed && !envelope.optBoolean("expected") && state.equals("ok")) {
                     job.resumed=true;page.view.loadUrl(job.req.optString("url"));
                 }

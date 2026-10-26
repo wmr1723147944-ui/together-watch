@@ -2,7 +2,7 @@
 import re
 from html.parser import HTMLParser
 from urllib.parse import quote, unquote, urljoin, urlsplit
-from poster_policy import poster_url, poster_attributes
+from poster_policy import poster_candidates, poster_attribute_candidates
 
 PROVIDERS = {
     'kanju': dict(id='kanju', name='看剧 AI', host='www.kanju.ai', path='/collections/browse', param='q',
@@ -74,7 +74,7 @@ class Metadata(HTMLParser):
         if tag == 'a': self.anchor = dict(href=attrs.get('href', ''), title=attrs.get('title', ''), text=[], images=[])
         if self.anchor is not None:
             # Background links may have no child img at all.
-            self.anchor['images'].append(poster_attributes(attrs, self.origin))
+            self.anchor['images'] = poster_candidates(self.anchor['images'] + poster_attribute_candidates(attrs, self.origin), self.origin)
         if tag == 'img' and self.anchor is not None:
             if not self.anchor['title']: self.anchor['title'] = attrs.get('alt', '')
 
@@ -114,8 +114,8 @@ def search_rows(source, body, query):
     covers = {}
     for a in p.links:
         item = detail_item(source, a['href'])
-        cover = next((url for v in a['images'] if (url := poster_url(v, 'https://' + PROVIDERS[source]['host']))), None)
-        if item and cover: covers.setdefault(item, cover)
+        if item and a['images']:
+            covers[item] = poster_candidates(covers.get(item, []) + a['images'], 'https://' + PROVIDERS[source]['host'])
     for a in p.links:
         item = detail_item(source, a['href'])
         if not item: continue
@@ -126,7 +126,7 @@ def search_rows(source, body, query):
         rows.append(dict(title=title, page_url='https://' + PROVIDERS[source]['host'] + public_path(source, a['href']),
                          source_id=source, source_name=PROVIDERS[source]['name'], playback_verified=False,
                          synchronization_verified=False, quality='未核实', access='以原站为准', kind='third_party_index',
-                         poster_url=covers.get(item)))
+                         poster_url=next(iter(covers.get(item, [])), None), poster_candidates=covers.get(item, [])))
         if len(rows) >= 12: break
     return ('ok' if recognized or p.empty else 'unavailable'), rows
 

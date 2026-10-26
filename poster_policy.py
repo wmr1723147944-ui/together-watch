@@ -14,6 +14,9 @@ POSTER_DOMAINS = (
     'i1.vvmp4.com',
     # Observed on 233dm's public lazy-background film anchors.
     'as.cfhls.top',
+    # Observed Huarw search card image hosts, 2026-10-27 (images only).
+    'www.moduzytuuu.com', 'dbzy3.com', 'dbzy5.com', 'pic3.yzzyimg.online',
+    'pic.youkupic.com', 'pic3.yzzyimages.com',
 )
 # Kanju's public cards use this exact image wrapper. Do not allow arbitrary
 # proxy targets (localhost, signed media, or user-supplied URLs).
@@ -48,11 +51,28 @@ def image_csp_sources():
     return ' '.join(f'https://{d} https://*.{d}' for d in POSTER_DOMAINS) + f' https://{POSTER_WRAPPER_HOST}'
 
 
-def poster_attributes(attrs, base):
-    """Read inert public image metadata, including lazy background anchors."""
-    values = [attrs.get(k) for k in ('data-original', 'data-src', 'data-lazy-src', 'data-background', 'src')]
-    values.extend(part.strip().split()[0] for part in (attrs.get('srcset') or '').split(',') if part.strip())
+def poster_candidates(values, base):
+    return list(dict.fromkeys(url for value in values[:48] if (url := poster_url(value, base))))[:6]
+
+
+def poster_attribute_candidates(attrs, base):
+    """Select declared responsive covers near 640px/2x; retain safe fallbacks."""
+    responsive = []
+    for attr in ('data-srcset', 'data-lazy-srcset', 'srcset'):
+        for part in (attrs.get(attr) or '').split(',')[:24]:
+            m = re.fullmatch(r'\s*(\S+)\s+(\d+(?:\.\d+)?)(w|x)\s*', part)
+            if m and poster_url(m[1], base):
+                size = float(m[2]) * (320 if m[3] == 'x' else 1)
+                if 0 < size <= 20000:
+                    responsive.append((size, m[1]))
+    responsive.sort(key=lambda v: (0, v[0]) if v[0] >= 640 else (1, -v[0]))
+    values = [v[1] for v in responsive]
+    values.extend(attrs.get(k) for k in ('data-original', 'data-src', 'data-lazy-src', 'data-background', 'src'))
     match = re.search(r'''(?:background-image|background)\s*:\s*url\(\s*['"]?([^'"\s)]+)['"]?\s*\)''', attrs.get('style') or '', re.I)
     if match:
         values.append(match[1])
-    return next((url for value in values if (url := poster_url(value, base))), None)
+    return poster_candidates(values, base)
+
+
+def poster_attributes(attrs, base):
+    return next(iter(poster_attribute_candidates(attrs, base)), None)

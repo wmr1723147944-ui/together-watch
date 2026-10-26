@@ -16,7 +16,7 @@ import urllib3
 
 from source_discovery import OPEN_FILMS, normalize_query
 import catalog_sources
-from poster_policy import poster_url, poster_attributes
+from poster_policy import poster_candidates, poster_attribute_candidates
 
 
 SEARCH_VERSION = "20261024-source-cleanup"
@@ -177,9 +177,10 @@ class _Cards(HTMLParser):
                    "yhdmoe": "card" in classes and any(a.get("id") == "search_list" for _, a in self.stack),
                    "fcma": "module-card-item" in classes}.get(source, False)
         if self.card is None and is_card:
-            self.card = {"depth": len(self.stack), "title": [], "year": [], "episode": [], "links": [], "poster": None}
-        if self.card is not None and not self.card["poster"]:
-            self.card["poster"] = poster_attributes(attrs, 'https://' + self.provider['host'])
+            self.card = {"depth": len(self.stack), "title": [], "year": [], "episode": [], "links": [], "poster": []}
+        if self.card is not None:
+            base = 'https://' + self.provider['host']
+            self.card["poster"] = poster_candidates(self.card['poster'] + poster_attribute_candidates(attrs, base), base)
         if self.card is not None and tag == "a":
             link = detail_url(self.provider, attrs.get("href", ""))
             if link:
@@ -215,11 +216,12 @@ class _Cards(HTMLParser):
 
 
 def _row(provider, title, url, year=None, episode="", duration=None, poster=None):
+    posters = poster_candidates(poster if isinstance(poster, list) else [poster], 'https://' + provider['host'])
     return {"title": title, "page_url": url, "year": year, "episode_label": episode,
             "duration_seconds": duration, "source_id": provider["id"], "source_name": provider["name"],
             "playback_verified": False, "synchronization_verified": False,
             "quality": "未核实", "access": "以原站为准", "kind": provider["kind"],
-            "poster_url": poster_url(poster, 'https://' + provider['host'])}
+            "poster_url": next(iter(posters), None), "poster_candidates": posters}
 
 
 def parse_results(provider, body, query):

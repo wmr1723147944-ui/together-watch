@@ -4,7 +4,9 @@
     let metadataSerial=0;
     const hasAdapter = source => typeof source==='string' && !!adapters && Object.hasOwn(adapters.sources,source);
     const posterPools=new WeakMap(), posterBindings=new WeakMap();
-    const posterTitle=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'').slice(0,160);
+    // Older installed clients may inject their bundled adapter before the page.
+    const safePosters=(values,base)=>[...new Set(values.slice(0,48).map(v=>adapters.safePosterUrl(v,base)).filter(Boolean))].slice(0,6);
+    const posterTitle=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/[\s\u200b-\u200d\ufeff]/g,'').slice(0,160);
     const posterYear=value=>/^(19|20)\d{2}$/.test(String(value))?String(value):'';
     function createPosterPool() {
         // Page-local metadata only; no extra searches, storage or image proxy.
@@ -17,7 +19,7 @@
                 const row=choice.row;
                 if(!row || !safeResultUrl(choice.source,row.page_url) || !posterTitle(row.title))continue;
                 const entry={title:posterTitle(row.title),year:posterYear(row.year),page:row.page_url,source:choice.source,
-                    name:String(choice.name||choice.source).slice(0,40),url:adapters.safePosterUrl(row.poster_url,row.page_url)||''};
+                    name:String(choice.name||choice.source).slice(0,40),urls:safePosters([row.poster_url,...(Array.isArray(row.poster_candidates)?row.poster_candidates:[])],row.page_url)};
                 const key=entry.source+':'+entry.page;
                 if(JSON.stringify(rows.get(key))===JSON.stringify(entry))continue;
                 rows.delete(key);rows.set(key,entry);changed=true;
@@ -35,8 +37,8 @@
             // Missing years may use a clearly labelled same-title reference,
             // but not when known remakes disagree about the year.
             for(const row of peers) {
-                if(!row.url || (wantedYear && row.year ? wantedYear!==row.year : years.size>1))continue;
-                result.push({...row,borrowed:row.page!==page});
+                if(row.page!==page && (wantedYear && row.year ? wantedYear!==row.year : years.size>1))continue;
+                for(const url of row.urls)result.push({...row,url,borrowed:row.page!==page});
             }
             const seen=new Set();
             return result.filter(row=>{
@@ -45,12 +47,12 @@
             }).sort((a,b)=>Number(b.url===own)-Number(a.url===own)
                 || Number(!!health.get(b.url)?.ok)-Number(!!health.get(a.url)?.ok)).slice(0,8);
         }
-        function mark(url,ok) {
-            health.delete(url);health.set(url,{ok,failedUntil:ok?0:Date.now()+60000});
+        function mark(url,ok,width=0,height=0) {
+            health.delete(url);health.set(url,{ok,width,height,failedUntil:ok?0:Date.now()+60000});
             while(health.size>1500)health.delete(health.keys().next().value);
             notify();
         }
-        return {register,candidates,mark,subscribe(fn){listeners.add(fn);return ()=>listeners.delete(fn);}};
+        return {register,candidates,mark,info:url=>health.get(url),subscribe(fn){listeners.add(fn);return ()=>listeners.delete(fn);}};
     }
     function posterPool(doc) {
         if(!posterPools.has(doc))posterPools.set(doc,createPosterPool());
@@ -64,42 +66,77 @@
         const name=doc.createElement('strong'); name.textContent=title.slice(0,40);
         const hint=doc.createElement('small'); hint.textContent='暂无封面';
         fallback.append(name,hint); container.append(fallback);
-        let current=null,img=null,timer=null,observer=null,disposed=false,loaded=false,unsubscribe=()=>{};
-        let meta=metadata,primary=value;const attempted=new Set();
+        let display=null,pending=null,timer=null,observer=null,disposed=false,unsubscribe=()=>{};
+        let mounting=container.isConnected===false, meta=metadata;
+        const attempted=new Set(),recovered=new Set();
         const credit=doc.createElement('span');credit.className='discovery-poster-credit';credit.hidden=true;
         function clear(){clearTimeout(timer);timer=null;observer?.disconnect();observer=null;}
         function dispose(){disposed=true;clear();unsubscribe();}
+        function density(info){
+            if(!info?.width || !info?.height)return 0;
+            const rect=container.getBoundingClientRect?.(),dpr=Math.min(3,doc.defaultView?.devicePixelRatio||1);
+            const w=(rect?.width||300)*dpr,h=(rect?.height||190)*dpr;
+            // Portrait artwork is contained, not enlarged and cropped to a landscape.
+            return info.height>info.width*1.15?Math.max(info.width/w,info.height/h):Math.min(info.width/w,info.height/h);
+        }
         function fail(node,url){
-            if(disposed || node!==img)return;
-            clear();node.hidden=true;current=null;loaded=false;credit.hidden=true;fallback.hidden=false;
+            if(disposed || node!==pending?.node && node!==display?.node)return;
+            clear();node.hidden=true;node.remove?.();
+            if(node===pending?.node)pending=null;
+            if(node===display?.node)display=null;
+            credit.hidden=!display || !display.choice.borrowed;fallback.hidden=!!display;
             hint.textContent='封面暂不可用';pool.mark(url,false);refresh();
         }
         function refresh(){
-            if(disposed)return;
+            if(disposed || mounting)return;
             if(container.isConnected===false){dispose();return;}
-            const choices=pool.candidates(primary,page,title,meta.year);
-            if(current && (loaded?pool.candidates(primary,page,title,meta.year,true):choices).some(c=>c.url===current.url))return;
+            const choices=pool.candidates(value,page,title,meta.year);
+            const allowed=pool.candidates(value,page,title,meta.year,true);
             // A later source can reveal a remake conflict. Withdraw its borrowed
             // cover rather than leave a now-ambiguous reference on screen.
-            clear();if(img)img.hidden=true;current=null;loaded=false;credit.hidden=true;fallback.hidden=false;
-            const next=attempted.size<4?choices.find(c=>!attempted.has(c.url)):null;
-            if(!next){hint.textContent=attempted.size?'封面暂不可用':'暂无封面';return;}
-            current=next;attempted.add(next.url);hint.textContent='正在加载封面…';
-            img?.remove?.();img=doc.createElement('img');const node=img,url=next.url;
+            if(display && !allowed.some(c=>c.url===display.choice.url)){display.node.hidden=true;display=null;credit.hidden=true;}
+            fallback.hidden=!!display;
+            if(pending){
+                if(allowed.some(c=>c.url===pending.choice.url))return;
+                clear();pending.node.remove?.();pending=null;
+            }
+            let next=null;
+            if(attempted.size<4) {
+                const remaining=choices.filter(c=>!attempted.has(c.url));
+                if(display){
+                    const currentDensity=density(display);
+                    if(currentDensity<1)next=remaining.find(c=>density(pool.info(c.url))>currentDensity*1.2)
+                        || remaining.find(c=>!pool.info(c.url)?.ok);
+                } else next=remaining[0];
+            }
+            // One bounded second chance when another card actually loaded a URL
+            // which previously failed here. A timeout is not proof of a dead URL.
+            if(!next && !display && recovered.size===0)next=choices.find(c=>attempted.has(c.url) && pool.info(c.url)?.ok);
+            if(!next){if(!display)hint.textContent=attempted.size?'封面暂不可用':'暂无封面';return;}
+            if(attempted.has(next.url))recovered.add(next.url);
+            attempted.add(next.url);if(!display)hint.textContent='正在加载封面…';
+            const node=doc.createElement('img'),url=next.url;
+            pending={node,choice:next};
             node.className='discovery-poster-image';node.alt='';node.loading='lazy';node.decoding='async';node.referrerPolicy='no-referrer';
             node.hidden=false;node.dataset.loading='true';
             node.addEventListener('load',()=>{
-                if(disposed || node!==img || current?.url!==url)return;
+                if(disposed || node!==pending?.node)return;
                 if(typeof node.naturalWidth==='number' && node.naturalWidth<2){fail(node,url);return;}
-                clear();loaded=true;node.dataset.loading='false';node.hidden=false;fallback.hidden=true;
-                credit.hidden=!next.borrowed;credit.textContent='参考封面 · '+next.name;
-                node.title=next.borrowed?'同名作品参考封面，来自 '+next.name+'；播放来源未改变':'';
-                if(next.borrowed && !credit.parentNode)container.append(credit);
-                pool.mark(url,true);
+                clear();pending=null;
+                const candidate={node,choice:next,width:node.naturalWidth||0,height:node.naturalHeight||0};
+                if(!display || density(candidate)>density(display)*1.15){
+                    display?.node.remove?.();display=candidate;
+                    node.dataset.loading='false';node.dataset.portrait=String(candidate.height>candidate.width*1.15);
+                    node.hidden=false;fallback.hidden=true;
+                    credit.hidden=!next.borrowed;credit.textContent='参考封面 · '+next.name;
+                    node.title=next.borrowed?'同名作品参考封面，来自 '+next.name+'；播放来源未改变':'';
+                    if(next.borrowed && !credit.parentNode)container.append(credit);
+                } else {node.hidden=true;node.remove?.();}
+                pool.mark(url,true,candidate.width,candidate.height);
             });
             node.addEventListener('error',()=>fail(node,url));
             node.src=url;container.append(node);
-            const timeout=()=>{if(timer || loaded || disposed)return;timer=setTimeout(()=>fail(node,url),9000);timer.unref?.();};
+            const timeout=()=>{if(timer || node!==pending?.node || disposed)return;timer=setTimeout(()=>fail(node,url),9000);timer.unref?.();};
             const Observer=doc.defaultView?.IntersectionObserver;
             // Lazy off-screen images must not time out before they are requested.
             if(Observer){observer=new Observer(entries=>{if(entries.some(e=>e.isIntersecting))timeout();});observer.observe(node);}
@@ -107,10 +144,9 @@
         }
         // Initial creation often happens before appendChild. Only subsequent
         // notifications should prune detached cards.
-        const originalConnected=container.isConnected;
-        if(originalConnected===false) {
+        if(mounting) {
             // The caller will append this card synchronously; start in a microtask.
-            queueMicrotask(refresh);
+            queueMicrotask(()=>{mounting=false;refresh();});
         } else refresh();
         unsubscribe=pool.subscribe(refresh);
         const binding={dispose,update(next){meta=next||meta;pool.register(meta);refresh();}};

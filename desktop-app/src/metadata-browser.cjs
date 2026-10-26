@@ -50,7 +50,7 @@ function createMetadataBrowser(parent,session,{hidden=false}={}) {
         if (active.size>=2 || active.has(id) || pages.get(req.source)?.job) return Promise.resolve(api.normalizeResult(req,{status:'busy'}));
         return new Promise(resolve=>{
             const page=getPage(req),{window,wc,allowed}=page;
-            let done=false, timer=null, readTimer=null, reading=false, resumed=false, emptySince=0, lastStatus='unavailable';
+            let done=false, timer=null, readTimer=null, reading=false, resumed=false, emptySince=0, posterSince=0, partial=null, lastStatus='unavailable';
             const deadline=Date.now()+(interactive?180000:10000);
             function finish(result) {
                 if(done) return; done=true; clearTimeout(timer); clearTimeout(readTimer); active.delete(id);
@@ -92,7 +92,7 @@ function createMetadataBrowser(parent,session,{hidden=false}={}) {
             }
             async function poll() {
                 if(done || reading) return;
-                if(Date.now()>deadline){finish({status:lastStatus});return;}
+                if(Date.now()>deadline){finish(partial||{status:lastStatus});return;}
                 reading=true;
                 try {
                     // Covers/ads can keep the load event pending after the
@@ -113,10 +113,17 @@ function createMetadataBrowser(parent,session,{hidden=false}={}) {
                             // concluding that the catalogue has no matching rows.
                             const empty=raw?.status==='no_episodes' || (raw?.status==='ok' && req.kind==='search' && !raw.results?.length);
                             if(expected && ['ok','no_episodes'].includes(raw?.status)) {
-                                if(!empty){finish(raw);return;}
+                                if(!empty){
+                                    // Some SPAs render titles before lazy poster attributes.
+                                    // Wait for metadata only, never for image downloads.
+                                    partial=raw;
+                                    const missing=req.kind==='search' && raw.results?.some(row=>!row.poster_url);
+                                    if(!posterSince)posterSince=Date.now();
+                                    if(!missing || Date.now()-posterSince>=1500 || deadline-Date.now()<600){finish(raw);return;}
+                                }
                                 if(!emptySince) emptySince=Date.now();
-                                if(Date.now()-emptySince>=2000){finish(raw);return;}
-                            } else emptySince=0;
+                                if(empty && Date.now()-emptySince>=2000){finish(raw);return;}
+                            } else {emptySince=0;posterSince=0;partial=null;}
                             if(interactive && !resumed && !expected && raw?.status==='ok') {
                                 resumed=true;navigate();
                             }

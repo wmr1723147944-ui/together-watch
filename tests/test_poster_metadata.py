@@ -6,10 +6,22 @@ import unittest
 import app as application
 import catalog_sources
 import source_search
-from poster_policy import POSTER_DOMAINS, poster_url, poster_attributes
+from poster_policy import POSTER_DOMAINS, poster_url, poster_attributes, poster_attribute_candidates
 
 
 class PosterMetadataTests(unittest.TestCase):
+    def test_observed_huarw_hosts_only_expand_image_csp(self):
+        urls = json.loads(Path(__file__).with_name('poster-huarw-fixture.json').read_text(encoding='utf8'))
+        from urllib.parse import urlsplit
+        csp = application.app.test_client().get('/discover').headers['Content-Security-Policy']
+        for url in urls:
+            host = urlsplit(url).hostname
+            self.assertEqual(poster_url(url, 'https://huarw.com'), url)
+            self.assertIn('https://' + host, csp.split('img-src ')[1].split(';')[0])
+            for directive in ('script-src ', 'connect-src ', 'media-src '):
+                self.assertNotIn(host, csp.split(directive)[1].split(';')[0])
+            self.assertIsNone(poster_url(url.replace(host, host + '.evil.test'), 'https://huarw.com'))
+
     def test_233_background_anchor_and_srcset_metadata(self):
         url = 'https://as.cfhls.top//upload/vod/20260917-1/c0ca80c2e2db160264803b27e2415597.webp'
         body = f'<a href="/anime/48e80904f5e839e28d3d5f90.html" title="测试动漫" data-original="{url}">更新至3集</a>'
@@ -17,7 +29,7 @@ class PosterMetadataTests(unittest.TestCase):
         self.assertEqual(status, 'ok')
         self.assertEqual(rows[0]['poster_url'], url)
         self.assertEqual(poster_attributes({'style': f'background-image: url("{url}")'}, 'https://www.233dm.com'), url)
-        self.assertEqual(poster_attributes({'srcset': f'{url} 1x, https://image.tmdb.org/b.jpg 2x'}, 'https://www.233dm.com'), url)
+        self.assertEqual(poster_attributes({'srcset': f'{url} 1x, https://image.tmdb.org/b.jpg 2x'}, 'https://www.233dm.com'), 'https://image.tmdb.org/b.jpg')
         for bad in (url.replace('as.cfhls.top', 'as.cfhls.top.evil.test'), url + '?url=http://localhost', url.replace('.webp', '.mp4')):
             self.assertIsNone(poster_url(bad, 'https://www.233dm.com'))
         csp = application.app.test_client().get('/discover').headers['Content-Security-Policy']
@@ -110,6 +122,19 @@ class PosterMetadataTests(unittest.TestCase):
         self.assertEqual(status, 'ok')
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['poster_url'], 'https://image.tmdb.org/t/p/w500/a.jpg')
+
+    def test_responsive_candidates_survive_search_and_keep_safe_fallbacks(self):
+        attrs = {'src': 'https://image.tmdb.org/tiny.jpg', 'data-srcset': 'https://image.tmdb.org/small.jpg 160w, https://image.tmdb.org/huge.jpg 3000w, https://image.tmdb.org/sharp.jpg 640w, https://evil.test/track.jpg 720w'}
+        expected = ['https://image.tmdb.org/sharp.jpg', 'https://image.tmdb.org/huge.jpg', 'https://image.tmdb.org/small.jpg', 'https://image.tmdb.org/tiny.jpg']
+        self.assertEqual(poster_attribute_candidates(attrs, 'https://huarw.com'), expected)
+        image = '<img ' + ' '.join(f'{k}="{v}"' for k, v in attrs.items()) + '>'
+        body = '<a href="/mv/12.html" title="测试">' + image + '</a>'
+        row = catalog_sources.search_rows('pkavi', body, '测试')[1][0]
+        self.assertEqual(row['poster_url'], expected[0])
+        self.assertEqual(row['poster_candidates'], expected)
+        body = '<div class="public-list-box search-box"><a href="/movie/12">'+image+'</a><h3>测试</h3></div>'
+        row = source_search.parse_results(source_search.PROVIDERS['huarw'], body, '测试')[0]
+        self.assertEqual(row['poster_candidates'], expected)
 
     def test_image_csp_does_not_relax_scripts_or_playback(self):
         page = application.app.test_client().get('/discover')

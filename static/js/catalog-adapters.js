@@ -7,7 +7,8 @@
     const posterDomains = ['img.ddys.io','video.blender.org','huarw.com','cupfox.in','yhdmoe.com','fcma.cc',
         '233dm.com','pkavi.com','kanju.ai','doubanio.com','image.tmdb.org',
         'www.lufys.com','img.ffzy888.com','www.mdzypic.com','img.lzipic.com',
-        'snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com','i1.vvmp4.com','as.cfhls.top'];
+        'snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com','i1.vvmp4.com','as.cfhls.top',
+        'www.moduzytuuu.com','dbzy3.com','dbzy5.com','pic3.yzzyimg.online','pic.youkupic.com','pic3.yzzyimages.com'];
     function safePosterUrl(value, base) {
         if (typeof value!=='string' || !value || value.length>2048 || /[\s\\\x00-\x1f\x7f]/.test(value)) return null;
         try {
@@ -21,6 +22,28 @@
                 || Array.from(u.searchParams.keys()).some(k=>!['w','h','width','height','q','quality','format','fit','auto','size','v'].includes(k))) return null;
             return u.href;
         } catch {return null;}
+    }
+    function posterCandidates(values, base) {
+        return [...new Set((Array.isArray(values)?values:[]).slice(0,48).map(v=>safePosterUrl(v,base)).filter(Boolean))].slice(0,6);
+    }
+    function elementPosters(el, base) {
+        // Prefer a declared responsive image near 640px / 2x, not the first
+        // (often tiny) src. Keep original URLs as fallbacks; never invent a URL.
+        const get=k=>el.getAttribute?.(k)||'', responsive=[];
+        for(const attr of ['data-srcset','data-lazy-srcset','srcset']) {
+            for(const part of get(attr).split(',').slice(0,24)) {
+                const m=/^\s*(\S+)\s+(\d+(?:\.\d+)?)(w|x)\s*$/.exec(part);
+                if(!m || !safePosterUrl(m[1],base))continue;
+                const size=Number(m[2])*(m[3]==='x'?320:1);
+                if(size>0 && size<=20000)responsive.push({url:m[1],size});
+            }
+        }
+        responsive.sort((a,b)=>Number(b.size>=640)-Number(a.size>=640)
+            || (a.size>=640?a.size-b.size:b.size-a.size));
+        const values=[...responsive.map(v=>v.url),...['data-original','data-src','data-lazy-src','data-background','src'].map(get)];
+        const background=/(?:background-image|background)\s*:\s*url\(\s*['"]?([^'"\s)]+)['"]?\s*\)/i.exec(get('style'));
+        if(background)values.push(background[1]);
+        return posterCandidates(values,base);
     }
     const sources = {
         huarw: {host:'huarw.com', name:'华人影院', detail:/^\/movie\/(\d{1,20})$/,
@@ -120,7 +143,8 @@
                 if (!d || !title || seen.has(d.page) || !req.q.toLowerCase().split(/\s+/).every(t=>title.toLowerCase().includes(t))) continue;
                 seen.add(d.page); result.results.push({title,page_url:d.page,source_id:req.source,source_name:sources[req.source].name,
                     kind:'third_party_index',playback_verified:false,synchronization_verified:false,quality:'未核实',access:'以原站为准',
-                    poster_url:safePosterUrl(row.poster_url,'https://'+sources[req.source].host),
+                    poster_url:posterCandidates([row.poster_url,...(Array.isArray(row.poster_candidates)?row.poster_candidates:[])],'https://'+sources[req.source].host)[0]||null,
+                    poster_candidates:posterCandidates([row.poster_url,...(Array.isArray(row.poster_candidates)?row.poster_candidates:[])],'https://'+sources[req.source].host),
                     year:/^(19|20)\d{2}$/.test(String(row.year))?String(row.year):null});
                 if (result.results.length>=12) break;
             }
@@ -148,14 +172,6 @@
             return !view || typeof input.getClientRects!=='function' || input.getClientRects().length>0;
         });
     }
-    function elementPoster(el, base) {
-        // Some sites put lazy backgrounds on the film anchor, not an <img>.
-        const values=['data-original','data-src','data-lazy-src','data-background','src'].map(k=>el.getAttribute?.(k));
-        values.push(...(el.getAttribute?.('srcset')||'').split(',').map(s=>s.trim().split(/\s+/)[0]));
-        const background=/(?:background-image|background)\s*:\s*url\(\s*['"]?([^'"\s)]+)['"]?\s*\)/i.exec(el.getAttribute?.('style')||'');
-        if(background)values.push(background[1]);
-        return values.map(v=>safePosterUrl(v,base)).find(Boolean);
-    }
     // Reads visible metadata and public page identities only; no media URLs,
     // account fields, storage, cookies, scripts or captcha controls are read.
     function readDocument(doc, req) {
@@ -170,9 +186,9 @@
             for(const a of links) {
                 const d=detail(req.source,a.getAttribute('href'));
                 if(!d) continue;
-                for(const img of [a,...Array.from(a.querySelectorAll?.('img, [data-original], [data-src], [data-background], [style]')||[]).slice(0,8)]) {
-                    const url=elementPoster(img,req.url);
-                    if(url && !covers.has(d.page)) covers.set(d.page,url);
+                for(const img of [a,...Array.from(a.querySelectorAll?.('img, source, [data-original], [data-src], [data-lazy-src], [data-srcset], [data-lazy-srcset], [data-background], [style]')||[]).slice(0,12)]) {
+                    const urls=elementPosters(img,req.url);
+                    if(urls.length)covers.set(d.page,posterCandidates([...(covers.get(d.page)||[]),...urls],req.url));
                 }
             }
             for (const a of links) {
@@ -184,7 +200,7 @@
                 const year=card?.querySelector('.thumb-else a[href^="/search/year/"]')?.textContent?.trim();
                 const title=text(req.source==='kanju' ? (a.getAttribute('aria-label')||'').replace(/^打开播放器[：:]\s*/,'') || a.getAttribute('title') || a.textContent
                     : a.getAttribute('title') || a.textContent);
-                if (d && title) rows.push({title,page_url:d.page,poster_url:covers.get(d.page),year});
+                if (d && title) rows.push({title,page_url:d.page,poster_url:covers.get(d.page)?.[0],poster_candidates:covers.get(d.page),year});
             }
             const empty=/没有找到|暂无数据|没有相关|暂无相关/.test((doc.body?.textContent||'').slice(0,30000));
             return normalizeResult(req,{status:rows.length||empty?'ok':req.source==='kanju' && visibleLogin(doc)?'verification_required':'unavailable',results:rows});
@@ -214,5 +230,5 @@
         return Array.from(doc.querySelectorAll('button[data-directory-episode]')).some(el=>el.getAttribute('data-directory-episode')===episode.slice(3)
             && (el.classList.contains('movie-button-primary') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-selected')==='true'));
     }
-    return {sources,text,publicId,urlFor,detail,selection,fromPage,request,expectedPage,normalizeResult,readDocument,episodeReady,posterDomains,safePosterUrl};
+    return {sources,text,publicId,urlFor,detail,selection,fromPage,request,expectedPage,normalizeResult,readDocument,episodeReady,posterDomains,safePosterUrl,posterCandidates,elementPosters};
 });

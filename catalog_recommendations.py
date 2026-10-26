@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 import urllib3
 import source_search as search
-from poster_policy import poster_url, poster_attributes
+from poster_policy import poster_candidates, poster_attribute_candidates
 
 VERSION = '20261021-live-catalog'
 MAX_PAGE = 1000
@@ -79,7 +79,7 @@ class CatalogueParser(HTMLParser):
                        and any(a.get('id') == 'catalog_list' for _, a in self.stack)))
         if is_card and self.card is None:
             self.recognized = True
-            self.card = dict(depth=len(self.stack), title=[], text=[], page=None, poster=None)
+            self.card = dict(depth=len(self.stack), title=[], text=[], page=None, poster=[])
         if attrs.get('id') == 'catalog_list' or 'movie-list-body' in classes:
             self.recognized = True
         if tag == 'a':
@@ -88,8 +88,8 @@ class CatalogueParser(HTMLParser):
                 self.has_next = True
             if self.card is not None and self.card['page'] is None:
                 self.card['page'] = search.detail_url(self.provider, href)
-        if self.card is not None and not self.card['poster']:
-            self.card['poster'] = poster_attributes(attrs, self.origin)
+        if self.card is not None:
+            self.card['poster'] = poster_candidates(self.card['poster'] + poster_attribute_candidates(attrs, self.origin), self.origin)
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)
