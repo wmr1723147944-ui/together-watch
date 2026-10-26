@@ -5,7 +5,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
     'use strict';
     const MAX_VISIBLE = 480, KEEP_VISIBLE = 240;
-    function createFeed(doc, fetcher, { groupResults, addPoster, openGroup }) {
+    function createFeed(doc, fetcher, { groupResults, addPoster, registerPosters=()=>{}, openGroup }) {
         const $ = id => doc.getElementById(id), grid = $('catalogFeedGrid');
         if (!grid) return null;
         const win = doc.defaultView || globalThis;
@@ -62,7 +62,7 @@
                 item.group = group;
                 if (item.poster !== group.poster) {
                     item.cover.replaceChildren();
-                    addPoster(doc, item.cover, group.poster, group.choices[0].row.page_url, group.title);
+                    addPoster(doc, item.cover, group.poster, group.choices[0].row.page_url, group.title,group);
                     item.cover.append(el('span', group.year || '查看详情', 'catalog-film-badge'));
                     item.poster = group.poster;
                 }
@@ -74,8 +74,8 @@
             $('catalogHeroTitle').textContent = group.title;
             $('catalogHeroTagline').textContent = '选好这一部，邀请朋友一起看';
             $('catalogHeroFacts').textContent = [group.year, group.choices[0].row.genre].filter(Boolean).join(' · ') || '年份与版本请在详情中核对';
-            const img = $('catalogHeroImage'); img.hidden = !group.poster;
-            if (group.poster) img.src = group.poster; else img.removeAttribute('src');
+            const art = $('catalogHeroImage'); art.hidden = false;art.replaceChildren();
+            addPoster(doc,art,group.poster,group.choices[0].row.page_url,group.title,group);
             $('catalogHeroOpen').hidden = false;
         }
         function append(source, rows) {
@@ -89,13 +89,14 @@
                 return true;
             });
             for (const group of groupResults([{ source: source.id, name: source.name, rows: fresh }], 60)) {
+                registerPosters(doc,group);
                 const old = entries.get(group.key);
                 if (old) {
                     old.group.choices.push(...group.choices);
                     if (!old.group.poster && group.poster) {
                         old.group.poster = group.poster;
                         old.cover.replaceChildren();
-                        addPoster(doc, old.cover, group.poster, group.choices[0].row.page_url, group.title);
+                        addPoster(doc, old.cover, group.poster, old.group.choices[0].row.page_url, group.title,old.group);
                         old.cover.append(el('span', '查看影片 / 选集 →', 'catalog-hover-action'));
                         if (featured === old.group) setHero(old.group);
                     }
@@ -105,7 +106,7 @@
                 const card = el('article', null, 'catalog-film catalog-feed-film');
                 const cover = el('button', null, 'catalog-film-poster'); cover.type = 'button';
                 cover.setAttribute('aria-label', '查看 ' + group.title + ' 的来源和集数');
-                addPoster(doc, cover, group.poster, group.choices[0].row.page_url, group.title);
+                addPoster(doc, cover, group.poster, group.choices[0].row.page_url, group.title,group);
                 if (group.choices[0].row.genre) cover.append(el('span', group.choices[0].row.genre, 'catalog-film-badge'));
                 cover.append(el('span', '查看影片 / 选集 →', 'catalog-hover-action'));
                 const title = el('button', group.title, 'catalog-title'); title.type = 'button';
@@ -190,7 +191,6 @@
         $('catalogFeedMore').addEventListener('click', () => load(true));
         $('catalogFeedRefresh').addEventListener('click', () => reset());
         $('catalogHeroOpen').addEventListener('click', () => { if (featured) openGroup(featured, $('catalogHeroOpen'), true); });
-        $('catalogHeroImage').addEventListener('error', () => { $('catalogHeroImage').hidden = true; });
         let scrollQueued = false;
         win.addEventListener?.('scroll', () => {
             if (scrollQueued) return; scrollQueued = true;

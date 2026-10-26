@@ -119,6 +119,7 @@ public final class MainActivity extends ComponentActivity {
     // Keep the catalogue and at most one original-site finder separate from
     // playback. Replacing a video must not discard search/episode history.
     private WebView catalogWebView, originalFinderWebView;
+    private CatalogMetadataController catalogMetadata;
     private boolean originalFinderActive, backPending;
     private WebView roomWebView;
     private WebView companionWebView;
@@ -222,6 +223,10 @@ public final class MainActivity extends ComponentActivity {
         webSyncScript = readAsset("android-web-sync.js");
         catalogScript = readAsset("catalog-adapters.js");
         pageLayoutScript = readAsset("android-page-layout.js");
+        catalogMetadata = new CatalogMetadataController(this,catalogWebView,catalogScript,
+            readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
+            () -> foreground && finding && !originalFinderActive,
+            view -> configureWebView(view,false),networkExecutor);
         arrangePanels();
     }
 
@@ -971,7 +976,7 @@ public final class MainActivity extends ComponentActivity {
             String url=request.getUrl().toString();
             if(catalogue) {
                 // Only explicit actions from our first-party catalogue may
-                // select a room source. No new native bridge is exposed.
+                // select a room source. Source sites receive no native bridge.
                 if(!finding || !request.hasGesture() || !UrlPolicy.isTrustedServerUrl(view.getUrl(),SERVER_HOST))return true;
                 if(url.equals(SERVER_ORIGIN+"/#roomEntry")) {
                     showSetup();roomInput.setText("");videoUrlInput.setText("");return true;
@@ -988,6 +993,9 @@ public final class MainActivity extends ComponentActivity {
         }
         @Override public void onPageFinished(WebView view,String url) {
             if(!catalogue && finding && originalFinderActive && !pageLayoutScript.isEmpty())view.evaluateJavascript(pageLayoutScript,null);
+        }
+        @Override public void onPageStarted(WebView view,String url,Bitmap icon) {
+            if(catalogue && catalogMetadata!=null)catalogMetadata.navigation();
         }
         @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError error) {
             if(finding && request.isForMainFrame())reportError("找片页面加载失败，可返回上一步或稍后重试。");
@@ -1549,6 +1557,7 @@ public final class MainActivity extends ComponentActivity {
     @Override
     protected void onStop() {
         foreground = false;
+        if(catalogMetadata!=null)catalogMetadata.flush();
         cancelPendingMicrophone();
         closeRoutingPopup();
         ++bridgeGeneration;
@@ -1574,6 +1583,7 @@ public final class MainActivity extends ComponentActivity {
     @Override
     protected void onDestroy() {
         destroyed = true;
+        if(catalogMetadata!=null)catalogMetadata.close();
         sessionActive = false;
         ++bridgeGeneration;
         mainHandler.removeCallbacksAndMessages(null);

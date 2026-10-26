@@ -6,10 +6,25 @@ import unittest
 import app as application
 import catalog_sources
 import source_search
-from poster_policy import POSTER_DOMAINS, poster_url
+from poster_policy import POSTER_DOMAINS, poster_url, poster_attributes
 
 
 class PosterMetadataTests(unittest.TestCase):
+    def test_233_background_anchor_and_srcset_metadata(self):
+        url = 'https://as.cfhls.top//upload/vod/20260917-1/c0ca80c2e2db160264803b27e2415597.webp'
+        body = f'<a href="/anime/48e80904f5e839e28d3d5f90.html" title="测试动漫" data-original="{url}">更新至3集</a>'
+        status, rows = catalog_sources.search_rows('233dm', body, '测试')
+        self.assertEqual(status, 'ok')
+        self.assertEqual(rows[0]['poster_url'], url)
+        self.assertEqual(poster_attributes({'style': f'background-image: url("{url}")'}, 'https://www.233dm.com'), url)
+        self.assertEqual(poster_attributes({'srcset': f'{url} 1x, https://image.tmdb.org/b.jpg 2x'}, 'https://www.233dm.com'), url)
+        for bad in (url.replace('as.cfhls.top', 'as.cfhls.top.evil.test'), url + '?url=http://localhost', url.replace('.webp', '.mp4')):
+            self.assertIsNone(poster_url(bad, 'https://www.233dm.com'))
+        csp = application.app.test_client().get('/discover').headers['Content-Security-Policy']
+        self.assertIn('https://as.cfhls.top', csp.split('img-src ')[1].split(';')[0])
+        self.assertNotIn('as.cfhls.top', csp.split('script-src ')[1].split(';')[0])
+        self.assertNotIn('as.cfhls.top', csp.split('media-src ')[1].split(';')[0])
+
     def test_observed_pkavi_and_kanju_cover_formats(self):
         samples = json.loads((Path(__file__).with_name('poster-source-fixture.json')).read_text(encoding='utf8'))
         for value in samples.values():

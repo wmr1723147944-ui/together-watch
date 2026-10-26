@@ -37,8 +37,21 @@ test('Kanju reads public DOM attributes, with explicit partial-episode scope',()
     assert.equal(result.episodes[0].id,episode);assert.ok(!JSON.stringify(result).includes('private token'));
     assert.equal(a.episodeReady(doc,episode),true);assert.equal(a.episodeReady(doc,'ep-other'),false);
     ep.classList.contains=()=>false;assert.equal(a.episodeReady(doc,episode),false);
-    doc.querySelector=q=>q==='input[type="password"]'?{}:null;
-    assert.equal(a.readDocument(doc,a.request('search',{source:'kanju',q:'测试'})).status,'verification_required');
+    // An optional login panel must not hide an otherwise usable catalogue.
+    doc.querySelector=q=>q==='input[type="password"]'?{hidden:true}:null;
+    assert.equal(a.readDocument(doc,a.request('search',{source:'kanju',q:'测试'})).status,'ok');
+});
+test('Kanju ignores hidden login fields but reports a visible blocking login',()=>{
+    const field={hidden:true,style:{},getClientRects:()=>[{}]};
+    const doc={title:'看剧 AI',body:{textContent:''},querySelector:()=>null,
+        querySelectorAll:q=>q==='input[type="password"]'?[field]:[],defaultView:{getComputedStyle:e=>e.style||{}}};
+    for(const req of [a.request('search',{source:'kanju',q:'测试'}),a.request('detail',{source:'kanju',page_url:'https://www.kanju.ai/player/test'})]) {
+        field.hidden=true;assert.equal(a.readDocument(doc,req).status,'unavailable');
+        field.hidden=false;field.style={display:'none'};assert.equal(a.readDocument(doc,req).status,'unavailable');
+        field.style={};field.closest=()=>({hidden:true});assert.equal(a.readDocument(doc,req).status,'unavailable');
+        field.closest=()=>null;field.getClientRects=()=>[];assert.equal(a.readDocument(doc,req).status,'unavailable');
+        field.getClientRects=()=>[{}];assert.equal(a.readDocument(doc,req).status,'verification_required');
+    }
 });
 test('Kanju on an old desktop bridge or browser falls back with explicit capability response',async()=>{
     const saved=global.twSourceMetadata;let called=false;

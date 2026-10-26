@@ -2,15 +2,15 @@
 import re
 from html.parser import HTMLParser
 from urllib.parse import quote, unquote, urljoin, urlsplit
-from poster_policy import poster_url
+from poster_policy import poster_url, poster_attributes
 
 PROVIDERS = {
-    'kanju': dict(id='kanju', name='看剧 AI · Windows', host='www.kanju.ai', path='/collections/browse', param='q',
-                  kind='third_party_index', note='Windows 0.6.0 本机读取原站目录和已加载集数；网页端不代签请求。实际片源与播放待原站确认。'),
+    'kanju': dict(id='kanju', name='看剧 AI', host='www.kanju.ai', path='/collections/browse', param='q',
+                  kind='third_party_index', note='Windows 0.6.0 / 安卓 0.3.11 本机读取原站目录和已加载集数；验证状态只在本机保留。实际片源与播放待原站确认。'),
     '233dm': dict(id='233dm', name='233 动漫', host='www.233dm.com', path='/search/-------------.html', param='wd',
-                  kind='third_party_index', note='已适配搜索、选集和邀请同集；Windows 0.5.0 支持原站验证后继续查询，实际播放待核实。'),
+                  kind='third_party_index', note='已适配搜索、选集和邀请同集；Windows 0.5.0 / 安卓 0.3.11 支持原站验证后继续查询，实际播放待核实。'),
     'pkavi': dict(id='pkavi', name='七味网', host='www.pkavi.com', path='/vs/-------------.html', param='wd',
-                  kind='third_party_index', note='已适配搜索、选集和邀请同集；Windows 0.5.0 支持原站验证后继续查询，实际播放待核实。'),
+                  kind='third_party_index', note='已适配搜索、选集和邀请同集；Windows 0.5.0 / 安卓 0.3.11 支持原站验证后继续查询，实际播放待核实。'),
 }
 PUBLIC_ID = r'[A-Za-z0-9_-]{1,160}(?::[A-Za-z0-9_-]{1,80})?'
 DETAIL = {'233dm': r'/anime/([a-f0-9]{24})\.html', 'pkavi': r'/mv/([1-9][0-9]{0,19})\.html',
@@ -57,8 +57,9 @@ def selection(source, item, episode):
 
 
 class Metadata(HTMLParser):
-    def __init__(self):
+    def __init__(self, origin='https://www.pkavi.com'):
         super().__init__(convert_charrefs=True)
+        self.origin = origin
         self.links, self.anchor, self.title, self.description = [], None, [], ''
         self.ignored, self.in_title, self.empty = 0, False, False
         self.blocked_text = False
@@ -71,8 +72,10 @@ class Metadata(HTMLParser):
         if tag == 'title': self.in_title = True
         if tag == 'meta' and attrs.get('name') == 'description': self.description = clean(attrs.get('content'), 500)
         if tag == 'a': self.anchor = dict(href=attrs.get('href', ''), title=attrs.get('title', ''), text=[], images=[])
+        if self.anchor is not None:
+            # Background links may have no child img at all.
+            self.anchor['images'].append(poster_attributes(attrs, self.origin))
         if tag == 'img' and self.anchor is not None:
-            self.anchor['images'].extend(attrs.get(k) for k in ('data-original', 'data-src', 'data-lazy-src', 'src'))
             if not self.anchor['title']: self.anchor['title'] = attrs.get('alt', '')
 
     def handle_data(self, data):
@@ -103,7 +106,7 @@ class Metadata(HTMLParser):
 
 
 def search_rows(source, body, query):
-    p = Metadata(); p.feed(body)
+    p = Metadata('https://' + PROVIDERS[source]['host']); p.feed(body)
     if p.blocked: return 'access_blocked', []
     if p.challenge: return 'verification_required', []
     rows, seen, recognized = [], set(), False
@@ -129,7 +132,7 @@ def search_rows(source, body, query):
 
 
 def detail_rows(source, item, body):
-    p = Metadata(); p.feed(body)
+    p = Metadata('https://' + PROVIDERS[source]['host']); p.feed(body)
     result = dict(title=clean(''.join(p.title)), description=p.description, episodes=[], status='no_episodes')
     if p.blocked: return {**result, 'status': 'access_blocked'}
     if p.challenge: return {**result, 'status': 'verification_required'}

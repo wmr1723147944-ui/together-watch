@@ -110,7 +110,8 @@ exports.run=async({createDesktop,server,output,until})=>{
             await a.action('return-video');
             const room=await(await fetch(server+'/api/watch-rooms/'+id+'/program')).json();
             assert.equal(room.program.source,source);assert.equal(room.program.episode,episode(1));assert.equal(room.owner,undefined);
-            await until('host sync connected',()=>a.state().roomView.webContents.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent.includes("同步已连接")'));
+            try {await until('host sync connected',()=>a.state().roomView.webContents.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent.includes("同步已连接")'));}
+            catch(error){console.error('FIXTURE SYNC',source,await a.state().roomView.webContents.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent'),{browsing:a.state().browsing,selected:!!a.state().selected});throw error;}
             await gesture(a,'const v=document.querySelector("video");v.currentTime=9;v.play()');
             await until('host progressing',()=>read(a,'!document.querySelector("video").paused && document.querySelector("video").currentTime>11'));
             const {c:b}=await client('guest-'+source,source,item);

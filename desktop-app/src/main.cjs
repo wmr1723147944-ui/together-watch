@@ -73,7 +73,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     const roomPartition = session.fromPartition(SMOKE ? `room-test-${win.id}` : 'persist:tw-room');
     const videoPartition = session.fromPartition(SMOKE ? `video-test-${win.id}` : 'persist:tw-video');
     const metadataBrowser=createMetadataBrowser(win,videoPartition,{hidden:SMOKE});
-    win.on('close',()=>metadataBrowser.cancelAll());
+    win.on('close',()=>metadataBrowser.destroy());
     // No source-site cookies, login state, preload or IPC in the independent player.
     const playerPartition = session.fromPartition(`player-${win.id}-${crypto.randomBytes(6).toString('hex')}`);
     installAssets(playerPartition);

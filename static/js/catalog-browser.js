@@ -33,7 +33,7 @@
         const sources = [...root.querySelectorAll('[data-live-source]')];
         let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0;
         const controllers = new Set(), cards = new Map(), retries = new Set();
-        const feed = feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, openGroup });
+        const feed = feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, registerPosters:shared.registerPosters, openGroup });
         function el(tag, text, className) {
             const node = doc.createElement(tag);
             if (text != null) node.textContent = text;
@@ -67,7 +67,7 @@
             const choices = $('catalogSourceChoices'); choices.replaceChildren();
             $('catalogDetailFacts').textContent = (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个条目';
             const poster = $('catalogDetailPoster'); poster.replaceChildren();
-            shared.addPoster(doc, poster, group.poster, group.choices[0].row.page_url, group.title);
+            shared.addPoster(doc, poster, group.poster, group.choices[0].row.page_url, group.title,group);
             const buttons = [];
             function select(choice, button) {
                 for (const item of buttons) item.setAttribute('aria-pressed', String(item === button));
@@ -85,12 +85,13 @@
         function render() {
             const groups = groupResults(records); groupCount = groups.length;
             for (const group of groups) {
+                shared.registerPosters(doc,group);
                 let entry = cards.get(group.key);
                 if (!entry) {
                     const card = el('article', null, 'catalog-film discovery-title-card');
                     const cover = el('button', null, 'catalog-film-poster discovery-title-art'); cover.type = 'button';
                     cover.setAttribute('aria-label', '查看 ' + group.title + ' 的来源和集数');
-                    shared.addPoster(doc, cover, group.poster, group.choices[0].row.page_url, group.title);
+                    shared.addPoster(doc, cover, group.poster, group.choices[0].row.page_url, group.title,group);
                     cover.append(el('span', '查看来源 / 选集 →', 'catalog-hover-action'));
                     const title = el('button', group.title, 'catalog-title'); title.type = 'button';
                     const facts = el('p'); card.append(cover, title, facts); results.append(card);
@@ -101,7 +102,7 @@
                 entry.group = group;
                 if (!entry.poster && group.poster) {
                     entry.cover.replaceChildren();
-                    shared.addPoster(doc, entry.cover, group.poster, group.choices[0].row.page_url, group.title);
+                    shared.addPoster(doc, entry.cover, group.poster, group.choices[0].row.page_url, group.title,group);
                     entry.cover.append(el('span', '查看来源 / 选集 →', 'catalog-hover-action')); entry.poster = group.poster;
                 }
                 entry.facts.textContent = (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个来源条目';

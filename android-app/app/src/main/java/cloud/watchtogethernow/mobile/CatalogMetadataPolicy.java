@@ -1,0 +1,68 @@
+package cloud.watchtogethernow.mobile;
+
+import org.json.JSONObject;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.text.Normalizer;
+import java.util.Iterator;
+
+/** Fixed public metadata requests only: no supplied headers, cookies or private URLs. */
+final class CatalogMetadataPolicy {
+    static String host(String source) {
+        if("pkavi".equals(source))return "www.pkavi.com";
+        if("233dm".equals(source))return "www.233dm.com";
+        if("kanju".equals(source))return "www.kanju.ai";
+        return "";
+    }
+    static boolean allowed(String source,String url) {
+        try {
+            URI u=new URI(url);
+            return !host(source).isEmpty() && "https".equals(u.getScheme()) && host(source).equals(u.getHost())
+                && u.getUserInfo()==null && u.getPort()==-1;
+        } catch(Exception ignored){return false;}
+    }
+    static boolean catalogue(String url,String origin) {
+        try {URI u=new URI(url);return origin.equals(u.getScheme()+"://"+u.getRawAuthority()) && u.getUserInfo()==null
+            && ("/".equals(u.getPath()) || "/discover".equals(u.getPath()));}catch(Exception ignored){return false;}
+    }
+    static boolean only(JSONObject object,String... keys) {
+        for(Iterator<String> it=object.keys();it.hasNext();) {
+            String key=it.next();boolean ok=false;for(String k:keys)if(k.equals(key))ok=true;
+            if(!ok)return false;
+        }
+        return true;
+    }
+    static JSONObject request(String kind,JSONObject payload) {
+        try {
+            if(payload==null || !(payload.opt("source") instanceof String))return null;
+            String source=payload.getString("source"),host=host(source),url,item="",q="";
+            if(host.isEmpty())return null;
+            if("search".equals(kind)) {
+                if(!only(payload,"source","q") || !(payload.opt("q") instanceof String) || payload.getString("q").length()>300)return null;
+                q=Normalizer.normalize(payload.getString("q"),Normalizer.Form.NFKC)
+                    .replaceAll("[\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]"," ").replaceAll("(?U)\\s+"," ").trim();
+                if(q.isEmpty())return null;
+                if(q.codePointCount(0,q.length())>80)q=q.substring(0,q.offsetByCodePoints(0,80));
+                String encoded=URLEncoder.encode(q,"UTF-8").replace("+","%20");
+                url="https://"+host+(source.equals("kanju")?"/collections/browse?path=%2Fv1%2Fbrowse%2Fcatalog&q="+encoded+"&page=1&limit=12"
+                    :(source.equals("pkavi")?"/vs/":"/search/")+"-------------.html?wd="+encoded);
+            } else if("detail".equals(kind)) {
+                if(!only(payload,"source","page_url") || !(payload.opt("page_url") instanceof String))return null;
+                url=payload.getString("page_url");if(url.length()>1024 || !allowed(source,url))return null;
+                URI u=new URI(url);
+                if(source.equals("kanju")) {
+                    ProgramPolicy.Selection s=ProgramPolicy.fromPage(url);
+                    if(s==null || !s.source.equals(source))return null;
+                    item=s.item;url=ProgramPolicy.create(source,item,"page").page;
+                } else {
+                    if(u.getRawQuery()!=null || u.getRawFragment()!=null)return null;
+                    String pattern=source.equals("pkavi")?"/mv/([1-9][0-9]{0,19})\\.html":"/anime/([a-f0-9]{24})\\.html";
+                    java.util.regex.Matcher m=java.util.regex.Pattern.compile(pattern).matcher(u.getRawPath());
+                    if(!m.matches())return null;item=m.group(1);
+                }
+            } else return null;
+            JSONObject req=new JSONObject().put("kind",kind).put("source",source).put("url",url);
+            return req.put(kind.equals("search")?"q":"item",kind.equals("search")?q:item);
+        }catch(Exception ignored){return null;}
+    }
+}

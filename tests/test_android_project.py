@@ -8,6 +8,22 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_metadata_bridge_stays_in_catalogue_and_keeps_cookies_local(self):
+        java = ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile'
+        activity = (java / 'MainActivity.java').read_text(encoding='utf-8')
+        controller = (java / 'CatalogMetadataController.java').read_text(encoding='utf-8')
+        self.assertIn('catalogMetadata.navigation()', activity)
+        self.assertIn('catalogMetadata.close()', activity)
+        self.assertIn('foreground && finding && !originalFinderActive', activity)
+        for marker in ('CatalogMetadataPolicy.catalogue', 'CatalogMetadataPolicy.request',
+                       'CatalogMetadataPolicy.allowed', 'documentToken.equals(job.token)',
+                       'CookieManager.getInstance().flush()', 'setMediaPlaybackRequiresUserGesture(true)',
+                       'request.deny()', 'h.cancel()', 'jobs.size()>=2'):
+            self.assertIn(marker, controller)
+        self.assertNotIn('.addJavascriptInterface(', controller)
+        self.assertNotIn('.getCookie(', controller)
+        self.assertNotIn('setAcceptFileSchemeCookies', controller)
+
     def test_launcher_icons_adapt_to_round_masks_and_android_themed_icons(self):
         res = ANDROID / 'app/src/main/res'
         ns = '{http://schemas.android.com/apk/res/android}'

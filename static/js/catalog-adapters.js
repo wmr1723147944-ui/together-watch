@@ -7,7 +7,7 @@
     const posterDomains = ['img.ddys.io','video.blender.org','huarw.com','cupfox.in','yhdmoe.com','fcma.cc',
         '233dm.com','pkavi.com','kanju.ai','doubanio.com','image.tmdb.org',
         'www.lufys.com','img.ffzy888.com','www.mdzypic.com','img.lzipic.com',
-        'snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com','i1.vvmp4.com'];
+        'snzypic.vip','p.bfvp26.com','img.picbf.com','pps.vodfeiss.com','img.liangzipic.com','i1.vvmp4.com','as.cfhls.top'];
     function safePosterUrl(value, base) {
         if (typeof value!=='string' || !value || value.length>2048 || /[\s\\\x00-\x1f\x7f]/.test(value)) return null;
         try {
@@ -135,6 +135,27 @@
         }
         return result;
     }
+    function visibleLogin(doc) {
+        return Array.from(doc.querySelectorAll?.('input[type="password"]') || []).some(input => {
+            if (input.hidden || input.closest?.('[hidden], [inert], [aria-hidden="true"]')) return false;
+            // Detached HTML parsers have no layout. Explicit hidden/style flags
+            // still count; live pages must have a visible, laid-out field.
+            const view=doc.defaultView;
+            for(let el=input;el;el=el.parentElement) {
+                const style=view?.getComputedStyle ? view.getComputedStyle(el) : el.style;
+                if(style && (style.display==='none' || ['hidden','collapse'].includes(style.visibility) || style.opacity==='0')) return false;
+            }
+            return !view || typeof input.getClientRects!=='function' || input.getClientRects().length>0;
+        });
+    }
+    function elementPoster(el, base) {
+        // Some sites put lazy backgrounds on the film anchor, not an <img>.
+        const values=['data-original','data-src','data-lazy-src','data-background','src'].map(k=>el.getAttribute?.(k));
+        values.push(...(el.getAttribute?.('srcset')||'').split(',').map(s=>s.trim().split(/\s+/)[0]));
+        const background=/(?:background-image|background)\s*:\s*url\(\s*['"]?([^'"\s)]+)['"]?\s*\)/i.exec(el.getAttribute?.('style')||'');
+        if(background)values.push(background[1]);
+        return values.map(v=>safePosterUrl(v,base)).find(Boolean);
+    }
     // Reads visible metadata and public page identities only; no media URLs,
     // account fields, storage, cookies, scripts or captcha controls are read.
     function readDocument(doc, req) {
@@ -142,7 +163,6 @@
             && /sorry, you have been blocked|you are unable to access|access denied|访问被拒绝/i.test((doc.body?.textContent||'').slice(0,6000))) return {status:'access_blocked'};
         if (/系统安全验证|安全检查|just a moment|security check|attention required/i.test(doc.title)
             || /请稍候/.test(doc.title) && /正在进行安全验证|验证您不是自动程序/.test((doc.body?.textContent||'').slice(0,6000))) return {status:'verification_required'};
-        if(req.source==='kanju' && doc.querySelector('input[type="password"]')) return {status:'verification_required'};
         const links=Array.from(doc.querySelectorAll('a[href]')).slice(0,15000);
         if (req.kind==='search') {
             const rows=[];
@@ -150,8 +170,8 @@
             for(const a of links) {
                 const d=detail(req.source,a.getAttribute('href'));
                 if(!d) continue;
-                for(const img of Array.from(a.querySelectorAll?.('img')||[]).slice(0,4)) {
-                    const url=['data-original','data-src','data-lazy-src','src'].map(k=>safePosterUrl(img.getAttribute(k),req.url)).find(Boolean);
+                for(const img of [a,...Array.from(a.querySelectorAll?.('img, [data-original], [data-src], [data-background], [style]')||[]).slice(0,8)]) {
+                    const url=elementPoster(img,req.url);
                     if(url && !covers.has(d.page)) covers.set(d.page,url);
                 }
             }
@@ -167,12 +187,12 @@
                 if (d && title) rows.push({title,page_url:d.page,poster_url:covers.get(d.page),year});
             }
             const empty=/没有找到|暂无数据|没有相关|暂无相关/.test((doc.body?.textContent||'').slice(0,30000));
-            return normalizeResult(req,{status:rows.length||empty?'ok':'unavailable',results:rows});
+            return normalizeResult(req,{status:rows.length||empty?'ok':req.source==='kanju' && visibleLogin(doc)?'verification_required':'unavailable',results:rows});
         }
         if(req.source==='kanju') {
             const episodes=Array.from(doc.querySelectorAll('button[data-directory-episode]')).slice(0,6000)
                 .map(el=>({id:'ep-'+el.getAttribute('data-directory-episode'),title:text(el.getAttribute('title')||el.textContent,60)}));
-            return normalizeResult(req,{status:episodes.length?'ok':'unavailable',title:doc.querySelector('h1')?.textContent||doc.title,episodes});
+            return normalizeResult(req,{status:episodes.length?'ok':visibleLogin(doc)?'verification_required':'unavailable',title:doc.querySelector('h1')?.textContent||doc.title,episodes});
         }
         const episodes=[];
         for (const a of links) {

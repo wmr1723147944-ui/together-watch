@@ -32,7 +32,7 @@
             <p class="discovery-note search-privacy">主动搜索时向勾选来源发送片名，不发送房间号或共享账号。封面从原站图片服务加载，不携带本站页面地址。Windows 本机查询沿用你在原站的登录 / 验证状态，不上传这些凭据，不代签原站接口。片目、画质与观看权限以原站为准。</p>
             </details>
         </form>
-        <p class="discovery-note discovery-search-tip">点击封面查看详情与集数，再创建房间。<a href="https://www.kanju.ai/" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">看剧 AI 原站 ↗</a> · 统一搜索需 Windows 0.6.0 起。</p>
+        <p class="discovery-note discovery-search-tip">点击封面查看详情与集数，再创建房间。<a href="https://www.kanju.ai/" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">看剧 AI 原站 ↗</a> · 统一搜索需 Windows 0.6.0 / 安卓 0.3.11 起。</p>
         <section id="discoveryWelcome" class="discovery-welcome" aria-labelledby="discoveryWelcomeTitle">
             <div class="discovery-section-heading"><h3 id="discoveryWelcomeTitle">从一个片名开始</h3><span>试搜示例 · 不是播放推荐</span></div>
             <div class="discovery-starters">
@@ -55,7 +55,7 @@
             <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数或线路，例如 1180、线路 2" aria-label="筛选全部已读取的集数或线路" maxlength="80" hidden>
             <div id="discoveryEpisodes" class="discovery-episodes"></div>
             <button id="discoveryEpisodeMore" type="button" hidden>显示更多集数</button>
-            <p class="discovery-note">233 动漫、七味网的选集邀请及本机验证后续查需 Windows 0.5.0，并配套更新服务器。其他已适配来源从 0.4.0 起支持选集建房。安卓、旧客户端与浏览器可用下方原站入口；清晰度和观看权限由原站决定。</p>
+            <p class="discovery-note">233 动漫、七味网的本机验证后续查需 Windows 0.5.0 / 安卓 0.3.11。验证状态留在自己的设备，过期后仍需本人完成验证。旧客户端与浏览器可用下方原站入口；清晰度和观看权限由原站决定。</p>
             <a id="discoveryDetailOriginal" target="{{ '_self' if discovery_standalone else '_blank' }}" rel="noopener noreferrer" referrerpolicy="no-referrer">改用原站选集 ↗</a>
         </dialog>
         {% include '_site_directory.html' %}

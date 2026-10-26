@@ -3,21 +3,118 @@
     const adapters = typeof module === 'object' && module.exports ? require('./catalog-adapters.js') : globalThis.TogetherWatchCatalogAdapters;
     let metadataSerial=0;
     const hasAdapter = source => typeof source==='string' && !!adapters && Object.hasOwn(adapters.sources,source);
-    function addPoster(doc, container, value, page, title) {
+    const posterPools=new WeakMap(), posterBindings=new WeakMap();
+    const posterTitle=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'').slice(0,160);
+    const posterYear=value=>/^(19|20)\d{2}$/.test(String(value))?String(value):'';
+    function createPosterPool() {
+        // Page-local metadata only; no extra searches, storage or image proxy.
+        const rows=new Map(), health=new Map(), listeners=new Set();
+        function notify(){for(const fn of [...listeners])fn();}
+        function register(metadata) {
+            let changed=false;
+            const choices=metadata?.choices || [{source:metadata?.source_id,name:metadata?.source_name,row:metadata}];
+            for(const choice of choices.slice(0,24)) {
+                const row=choice.row;
+                if(!row || !safeResultUrl(choice.source,row.page_url) || !posterTitle(row.title))continue;
+                const entry={title:posterTitle(row.title),year:posterYear(row.year),page:row.page_url,source:choice.source,
+                    name:String(choice.name||choice.source).slice(0,40),url:adapters.safePosterUrl(row.poster_url,row.page_url)||''};
+                const key=entry.source+':'+entry.page;
+                if(JSON.stringify(rows.get(key))===JSON.stringify(entry))continue;
+                rows.delete(key);rows.set(key,entry);changed=true;
+                while(rows.size>1200)rows.delete(rows.keys().next().value);
+            }
+            if(changed)notify();
+        }
+        function candidates(value,page,title,year,includeFailed=false) {
+            const key=posterTitle(title), wantedYear=posterYear(year);
+            const peers=[...rows.values()].filter(row=>row.title===key);
+            const years=new Set(peers.map(row=>row.year).filter(Boolean));
+            if(wantedYear)years.add(wantedYear);
+            const own=adapters.safePosterUrl(value,page), result=own?[{url:own,page,name:'原来源',borrowed:false}]:[];
+            // Keep season/edition words and all digits in the exact title.
+            // Missing years may use a clearly labelled same-title reference,
+            // but not when known remakes disagree about the year.
+            for(const row of peers) {
+                if(!row.url || (wantedYear && row.year ? wantedYear!==row.year : years.size>1))continue;
+                result.push({...row,borrowed:row.page!==page});
+            }
+            const seen=new Set();
+            return result.filter(row=>{
+                if(seen.has(row.url) || !includeFailed && health.get(row.url)?.failedUntil>Date.now())return false;
+                seen.add(row.url);return true;
+            }).sort((a,b)=>Number(b.url===own)-Number(a.url===own)
+                || Number(!!health.get(b.url)?.ok)-Number(!!health.get(a.url)?.ok)).slice(0,8);
+        }
+        function mark(url,ok) {
+            health.delete(url);health.set(url,{ok,failedUntil:ok?0:Date.now()+60000});
+            while(health.size>1500)health.delete(health.keys().next().value);
+            notify();
+        }
+        return {register,candidates,mark,subscribe(fn){listeners.add(fn);return ()=>listeners.delete(fn);}};
+    }
+    function posterPool(doc) {
+        if(!posterPools.has(doc))posterPools.set(doc,createPosterPool());
+        return posterPools.get(doc);
+    }
+    function registerPosters(doc, metadata){posterPool(doc).register(metadata);}
+    function addPoster(doc, container, value, page, title, metadata={}) {
+        posterBindings.get(container)?.dispose();
+        const pool=posterPool(doc);pool.register(metadata);
         const fallback=doc.createElement('span'); fallback.className='discovery-poster-fallback';
         const name=doc.createElement('strong'); name.textContent=title.slice(0,40);
         const hint=doc.createElement('small'); hint.textContent='暂无封面';
         fallback.append(name,hint); container.append(fallback);
-        const url=adapters?.safePosterUrl(value,page);
-        if(!url) return;
-        hint.textContent='正在加载封面…';
-        const img=doc.createElement('img'); img.className='discovery-poster-image';
-        img.alt=''; img.loading='lazy'; img.decoding='async'; img.referrerPolicy='no-referrer';
-        // Do not display:none a lazy image: Chromium will never start loading it.
-        img.hidden=false; img.dataset.loading='true';
-        img.addEventListener('load',()=>{img.dataset.loading='false';img.hidden=false;fallback.hidden=true;});
-        img.addEventListener('error',()=>{img.hidden=true;fallback.hidden=false;hint.textContent='封面暂不可用';});
-        img.src=url; container.append(img);
+        let current=null,img=null,timer=null,observer=null,disposed=false,loaded=false,unsubscribe=()=>{};
+        let meta=metadata,primary=value;const attempted=new Set();
+        const credit=doc.createElement('span');credit.className='discovery-poster-credit';credit.hidden=true;
+        function clear(){clearTimeout(timer);timer=null;observer?.disconnect();observer=null;}
+        function dispose(){disposed=true;clear();unsubscribe();}
+        function fail(node,url){
+            if(disposed || node!==img)return;
+            clear();node.hidden=true;current=null;loaded=false;credit.hidden=true;fallback.hidden=false;
+            hint.textContent='封面暂不可用';pool.mark(url,false);refresh();
+        }
+        function refresh(){
+            if(disposed)return;
+            if(container.isConnected===false){dispose();return;}
+            const choices=pool.candidates(primary,page,title,meta.year);
+            if(current && (loaded?pool.candidates(primary,page,title,meta.year,true):choices).some(c=>c.url===current.url))return;
+            // A later source can reveal a remake conflict. Withdraw its borrowed
+            // cover rather than leave a now-ambiguous reference on screen.
+            clear();if(img)img.hidden=true;current=null;loaded=false;credit.hidden=true;fallback.hidden=false;
+            const next=attempted.size<4?choices.find(c=>!attempted.has(c.url)):null;
+            if(!next){hint.textContent=attempted.size?'封面暂不可用':'暂无封面';return;}
+            current=next;attempted.add(next.url);hint.textContent='正在加载封面…';
+            img?.remove?.();img=doc.createElement('img');const node=img,url=next.url;
+            node.className='discovery-poster-image';node.alt='';node.loading='lazy';node.decoding='async';node.referrerPolicy='no-referrer';
+            node.hidden=false;node.dataset.loading='true';
+            node.addEventListener('load',()=>{
+                if(disposed || node!==img || current?.url!==url)return;
+                if(typeof node.naturalWidth==='number' && node.naturalWidth<2){fail(node,url);return;}
+                clear();loaded=true;node.dataset.loading='false';node.hidden=false;fallback.hidden=true;
+                credit.hidden=!next.borrowed;credit.textContent='参考封面 · '+next.name;
+                node.title=next.borrowed?'同名作品参考封面，来自 '+next.name+'；播放来源未改变':'';
+                if(next.borrowed && !credit.parentNode)container.append(credit);
+                pool.mark(url,true);
+            });
+            node.addEventListener('error',()=>fail(node,url));
+            node.src=url;container.append(node);
+            const timeout=()=>{if(timer || loaded || disposed)return;timer=setTimeout(()=>fail(node,url),9000);timer.unref?.();};
+            const Observer=doc.defaultView?.IntersectionObserver;
+            // Lazy off-screen images must not time out before they are requested.
+            if(Observer){observer=new Observer(entries=>{if(entries.some(e=>e.isIntersecting))timeout();});observer.observe(node);}
+            else timeout();
+        }
+        // Initial creation often happens before appendChild. Only subsequent
+        // notifications should prune detached cards.
+        const originalConnected=container.isConnected;
+        if(originalConnected===false) {
+            // The caller will append this card synchronously; start in a microtask.
+            queueMicrotask(refresh);
+        } else refresh();
+        unsubscribe=pool.subscribe(refresh);
+        const binding={dispose,update(next){meta=next||meta;pool.register(meta);refresh();}};
+        posterBindings.set(container,binding);return binding;
     }
     function nativeMetadata(source) { return hasAdapter(source) && typeof globalThis.twSourceMetadata?.request==='function'
         && (Array.isArray(globalThis.twSourceMetadata.supportedSources)
@@ -161,8 +258,8 @@
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
-                status.textContent = found ? `${found} 个选集 · Windows ${source==='huarw'?'0.6.4':source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'}${source==='kanju'?'':' / 安卓 0.3.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
-                    : data.status === 'client_required' ? '看剧 AI 的统一选集需要 Windows 0.6.0；网页、安卓和旧版请改用原站选集。'
+                status.textContent = found ? `${found} 个选集 · Windows ${source==='huarw'?'0.6.4':source==='kanju'?'0.6.0':hasAdapter(source)?'0.5.0':'0.4.0'} / 安卓 ${['kanju','pkavi','233dm'].includes(source)?'0.3.11':'0.3.0'} 可选好再建房，朋友粘贴邀请自动跟随。`
+                    : data.status === 'client_required' ? '看剧 AI 的统一选集需要 Windows 0.6.0 或安卓 0.3.11；网页和旧版请改用原站选集。'
                     : data.status === 'no_episodes' ? '暂未识别到可用集数，可以改用原站选集。'
                     : '这个来源暂时无法读取集数，请稍后重试或换一个来源。';
                 if (found && data.selection_mode === 'original_page') {
@@ -247,7 +344,7 @@
                     if (current !== generation) return;
                     if(data.status==='client_required' && data.source_id===sourceId) {
                         block.dataset.state='notice';
-                        state.textContent='看剧 AI 的统一搜索需要 Windows 0.6.0；当前环境可直接在原站搜索。';
+                        state.textContent='看剧 AI 的统一搜索需要 Windows 0.6.0 或安卓 0.3.11；当前环境可直接在原站搜索。';
                         const req=adapters.request('search',{source:sourceId,q:value});
                         if(req){const link=element('a','在原站搜索这个片名 ↗');link.href=req.url;link.target='_blank';link.rel='noopener noreferrer';list.append(link);}
                         return;
@@ -288,7 +385,7 @@
                         cover.dataset.source = sourceId;
                         cover.type = 'button'; cover.setAttribute('aria-label', `查看${row.title.slice(0, 160)}的详情和集数`);
                         cover.addEventListener('click', () => details.open(sourceId, row, cover));
-                        addPoster(doc,cover,row.poster_url,url,row.title);
+                        addPoster(doc,cover,row.poster_url,url,row.title,{...row,source_id:sourceId});
                         const badge = typeof row.episode_label==='string' ? row.episode_label.slice(0,40) : '';
                         if(badge) cover.append(element('span',badge,'discovery-poster-badge'));
                         const play=element('span','▶','discovery-poster-play'); play.setAttribute('aria-hidden','true'); cover.append(play);
@@ -476,7 +573,7 @@
         }
         render();
     }
-    const api = { addPoster, metadataRequest, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    const api = { addPoster, registerPosters, createPosterPool, metadataRequest, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else globalThis.TogetherWatchDiscovery = api;
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));

@@ -16,7 +16,7 @@ import urllib3
 
 from source_discovery import OPEN_FILMS, normalize_query
 import catalog_sources
-from poster_policy import poster_url
+from poster_policy import poster_url, poster_attributes
 
 
 SEARCH_VERSION = "20261024-source-cleanup"
@@ -178,9 +178,8 @@ class _Cards(HTMLParser):
                    "fcma": "module-card-item" in classes}.get(source, False)
         if self.card is None and is_card:
             self.card = {"depth": len(self.stack), "title": [], "year": [], "episode": [], "links": [], "poster": None}
-        if self.card is not None and tag == "img" and not self.card["poster"]:
-            self.card["poster"] = next((url for key in ('data-original', 'data-src', 'data-lazy-src', 'src')
-                                       if (url := poster_url(attrs.get(key), 'https://' + self.provider['host']))), None)
+        if self.card is not None and not self.card["poster"]:
+            self.card["poster"] = poster_attributes(attrs, 'https://' + self.provider['host'])
         if self.card is not None and tag == "a":
             link = detail_url(self.provider, attrs.get("href", ""))
             if link:

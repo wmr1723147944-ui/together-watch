@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 import urllib3
 import source_search as search
-from poster_policy import poster_url
+from poster_policy import poster_url, poster_attributes
 
 VERSION = '20261021-live-catalog'
 MAX_PAGE = 1000
@@ -88,9 +88,8 @@ class CatalogueParser(HTMLParser):
                 self.has_next = True
             if self.card is not None and self.card['page'] is None:
                 self.card['page'] = search.detail_url(self.provider, href)
-        if tag == 'img' and self.card is not None and not self.card['poster']:
-            self.card['poster'] = next((u for k in ('data-original', 'data-src', 'data-lazy-src', 'src')
-                                       if (u := poster_url(attrs.get(k), self.origin))), None)
+        if self.card is not None and not self.card['poster']:
+            self.card['poster'] = poster_attributes(attrs, self.origin)
 
     def handle_startendtag(self, tag, attrs):
         self.handle_starttag(tag, attrs)

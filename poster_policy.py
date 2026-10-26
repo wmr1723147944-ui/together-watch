@@ -12,6 +12,8 @@ POSTER_DOMAINS = (
     'snzypic.vip', 'p.bfvp26.com', 'img.picbf.com', 'pps.vodfeiss.com', 'img.liangzipic.com',
     # Public PKAVI card covers (not the video host).
     'i1.vvmp4.com',
+    # Observed on 233dm's public lazy-background film anchors.
+    'as.cfhls.top',
 )
 # Kanju's public cards use this exact image wrapper. Do not allow arbitrary
 # proxy targets (localhost, signed media, or user-supplied URLs).
@@ -44,3 +46,13 @@ def poster_url(value, base):
 
 def image_csp_sources():
     return ' '.join(f'https://{d} https://*.{d}' for d in POSTER_DOMAINS) + f' https://{POSTER_WRAPPER_HOST}'
+
+
+def poster_attributes(attrs, base):
+    """Read inert public image metadata, including lazy background anchors."""
+    values = [attrs.get(k) for k in ('data-original', 'data-src', 'data-lazy-src', 'data-background', 'src')]
+    values.extend(part.strip().split()[0] for part in (attrs.get('srcset') or '').split(',') if part.strip())
+    match = re.search(r'''(?:background-image|background)\s*:\s*url\(\s*['"]?([^'"\s)]+)['"]?\s*\)''', attrs.get('style') or '', re.I)
+    if match:
+        values.append(match[1])
+    return next((url for value in values if (url := poster_url(value, base))), None)
