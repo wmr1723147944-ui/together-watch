@@ -246,6 +246,7 @@
                 const link = doc.createElement('a'); link.className = 'discovery-episode';
                 link.textContent = episode.label; link.href = episode.path;
                 link.referrerPolicy = 'no-referrer'; link.target = '_self'; list.append(link);
+                link.addEventListener('click', () => globalThis.TogetherWatchHistory?.store?.remember(episode.program, episode.meta));
             }
             if (more) { more.hidden = matching.length <= visible; more.textContent = `再显示 100 个（共 ${matching.length} 个）`; }
         }
@@ -290,7 +291,8 @@
                     const path = safeLaunchPath(source, item, episode.id, episode.launch_path);
                     if (!path) continue;
                     const line = typeof episode.line === 'string' ? episode.line.slice(0, 30) : '';
-                    episodes.push({ path, label: (line ? line + ' · ' : '') + episode.title.slice(0, 60) });
+                    const label = (line ? line + ' · ' : '') + episode.title.slice(0, 60);
+                    episodes.push({ path, label, program:{source,item,episode:episode.id}, meta:{title:row.title,label,poster:row.poster_url} });
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;

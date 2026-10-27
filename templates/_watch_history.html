@@ -1,0 +1,11 @@
+<section id="continueWatching" class="continue-watching" hidden>
+    <div class="history-heading"><h2>继续观看</h2><button type="button" data-watch-history>全部历史 →</button></div>
+    <div id="continueWatchingList" class="history-strip"></div>
+</section>
+<dialog id="watchHistoryDialog" class="history-dialog" aria-labelledby="watchHistoryTitle">
+    <div class="history-heading"><h2 id="watchHistoryTitle">观看历史</h2><button type="button" id="watchHistoryClose" aria-label="关闭观看历史">关闭</button></div>
+    <p>仅保存在这台设备，不上传观看历史。加入朋友房间时仍跟随房间进度。</p>
+    <div class="history-heading"><label><input id="watchHistoryEnabled" type="checkbox" checked> 记录观看历史</label><button type="button" id="watchHistoryClear">清空记录</button></div>
+    <div id="watchHistoryConfirm" class="history-heading" hidden><span>确定清空这台设备的观看历史？</span><button type="button" id="watchHistoryConfirmYes">确定清空</button><button type="button" id="watchHistoryConfirmNo">取消</button></div>
+    <div id="watchHistoryList" class="history-grid"></div>
+</dialog>

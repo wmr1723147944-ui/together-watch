@@ -29,6 +29,7 @@
             return {...best.raw,active:true,session};
         },
         apply(command){if(selected && command.session===session)selected.__twDesktopPlayer?.apply(command);},
+        overlay(packet){if(selected)selected.__twDesktopPlayer?.overlay(packet);},
         currentEpisode(source){
             if(source!=='kanju')return '';
             const rules=window.TogetherWatchCatalogAdapters;

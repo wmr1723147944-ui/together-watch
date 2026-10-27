@@ -127,6 +127,11 @@ public final class MainActivity extends ComponentActivity {
     private PermissionRequest pendingAudioPermission;
     private OnBackPressedCallback navigationBack;
     private View fullscreenView;
+    private DanmakuView webFullscreenDanmaku;
+    private JSONObject lastDanmakuPacket;
+    private double danmakuTime,danmakuSpeed=1;
+    private long danmakuSampleAt;
+    private boolean danmakuPlaying;
     private WebChromeClient.CustomViewCallback fullscreenCallback;
 
     private String activeRoom = "";
@@ -219,7 +224,7 @@ public final class MainActivity extends ComponentActivity {
             while ((count = input.read(bytes)) != -1) output.write(bytes, 0, count);
             discoveryScript = output.toString("UTF-8");
         } catch (IOException error) { setStatus("资源识别组件不可用，仍可使用网页播放"); }
-        playerAgent = readAsset("player-agent.js");
+        playerAgent = readAsset("danmaku-overlay.js") + "\n" + readAsset("player-agent.js");
         webSyncScript = readAsset("android-web-sync.js");
         catalogScript = readAsset("catalog-adapters.js");
         pageLayoutScript = readAsset("android-page-layout.js");
@@ -810,8 +815,13 @@ public final class MainActivity extends ComponentActivity {
         if(!bridgeCurrent(generation))return;
         if(page!=videoPageGeneration){scheduleBridge(generation);return;}
         final long revision=programRevision;
+        danmakuTime=sample.optDouble("time",0);danmakuSpeed=sample.optDouble("speed",1);
+        danmakuPlaying=sample.optBoolean("active")&&sample.optBoolean("ready")&&sample.optBoolean("playing")&&!sample.optBoolean("seeking");
+        danmakuSampleAt=android.os.SystemClock.elapsedRealtime();
+        if(!sample.optBoolean("active")){lastDanmakuPacket=null;if(webFullscreenDanmaku!=null)webFullscreenDanmaku.update(null);}
+        try { sample.put("title",videoWebView.getTitle()==null?"":videoWebView.getTitle().substring(0,Math.min(160,videoWebView.getTitle().length()))); }catch(Exception ignored){}
         boolean apply=revision>0 && appliedProgramRevision!=revision && !awaitingEpisode && !finding && programSelection!=null && sample.optBoolean("active");
-        String script="(function(){const b=window.TogetherWatchMobile;if(!b)return null;"
+        String script="(function(){const b=window.TogetherWatchMobile;if(!b)return null;b.context?.({owner:"+(!ownerKey.isEmpty())+"});"
             +(apply?"b.applyProgram("+revision+");":"")+"b.receive("+sample+");"
             // Also works with the deployed room script: a connected chat must
             // not keep saying "opening the episode" after detection has failed.
@@ -824,6 +834,15 @@ public final class MainActivity extends ComponentActivity {
                 JSONObject response=new JSONObject(result);
                 if(response.optInt("version")==1){
                     bridgeMisses=0;if(apply)appliedProgramRevision=revision;
+                    JSONObject overlay=DanmakuPacket.clean(response.optJSONObject("overlay"),sample.opt("session"));
+                    if(overlay!=null){
+                        lastDanmakuPacket=overlay;if(webFullscreenDanmaku!=null)webFullscreenDanmaku.update(overlay);
+                        if(nativePlayer.isActive())nativePlayer.overlay(overlay);
+                        else if(localSession>=0){
+                            JSONObject pageOverlay=fullscreenView==null?overlay:new JSONObject().put("enabled",false).put("items",new JSONArray());
+                            videoWebView.evaluateJavascript("window.__twAndroidPage?.overlay("+pageOverlay+")",null);
+                        }
+                    }
                     JSONArray commands=response.optJSONArray("commands");
                     if(commands!=null)for(int i=0;i<Math.min(16,commands.length());i++){
                         JSONObject command=commands.optJSONObject(i);if(command==null)continue;
@@ -1385,12 +1404,16 @@ public final class MainActivity extends ComponentActivity {
         ));
         fullscreenContainer.setVisibility(View.VISIBLE);
         enterImmersive();
+        webFullscreenDanmaku=new DanmakuView(this,()->danmakuTime+(danmakuPlaying?Math.min(1.5,(android.os.SystemClock.elapsedRealtime()-danmakuSampleAt)/1000.0)*danmakuSpeed:0),()->0);
+        fullscreenContainer.addView(webFullscreenDanmaku,new FrameLayout.LayoutParams(-1,-1));
+        webFullscreenDanmaku.update(lastDanmakuPacket);
         addFullscreenControls(false);
     }
 
     private void hideFullscreenVideo() {
         if (fullscreenView == null) return;
         fullscreenContainer.removeView(fullscreenView);
+        if(webFullscreenDanmaku!=null){webFullscreenDanmaku.update(null);fullscreenContainer.removeView(webFullscreenDanmaku);webFullscreenDanmaku=null;}
         removeFullscreenControls();
         fullscreenContainer.setVisibility(View.GONE);
         fullscreenView = null;

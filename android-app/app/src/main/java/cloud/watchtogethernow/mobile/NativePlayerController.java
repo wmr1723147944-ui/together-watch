@@ -29,6 +29,7 @@ final class NativePlayerController {
     private long appliedCommand;
     private JSONObject pendingState;
     private String error = "";
+    private final DanmakuView danmaku;
 
     NativePlayerController(Context context, PlayerView view, StatusListener listener) {
         this.context = context;
@@ -36,6 +37,11 @@ final class NativePlayerController {
         this.listener = listener;
         view.setShowFastForwardButton(false);
         view.setShowRewindButton(false);
+        danmaku=new DanmakuView(context,()->player==null?0:player.getCurrentPosition()/1000.0,()->{
+            if(player==null || view.getResizeMode()==androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM)return 0;
+            androidx.media3.common.VideoSize size=player.getVideoSize();return size.height>0?(double)size.width*size.pixelWidthHeightRatio/size.height:0;
+        });
+        if(view.getOverlayFrameLayout()!=null)view.getOverlayFrameLayout().addView(danmaku,new android.widget.FrameLayout.LayoutParams(-1,-1));
     }
 
     void open(String url, String referer, String userAgent, double initialPosition) {
@@ -86,6 +92,7 @@ final class NativePlayerController {
     }
 
     boolean isActive() { return player != null; }
+    void overlay(JSONObject packet) { danmaku.update(packet); }
     void pauseLocally() {
         pendingState = null;
         events = new JSONArray();
@@ -151,6 +158,7 @@ final class NativePlayerController {
     }
 
     void release() {
+        danmaku.update(null);
         pendingState = null;
         events = new JSONArray();
         view.setPlayer(null);

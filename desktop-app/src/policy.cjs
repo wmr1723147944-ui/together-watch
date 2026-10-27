@@ -63,6 +63,12 @@ function playbackCommand(raw, session) {
         playing: raw.playing === true, seek: raw.seek === true,
         issuedAt: Number.isFinite(raw.issuedAt) ? raw.issuedAt : Date.now() };
 }
+function danmakuOverlay(raw, session) {
+    if (!raw || raw.session !== session || !Array.isArray(raw.items)) return null;
+    return {enabled:raw.enabled===true,opacity:.85,size:22,items:raw.items.slice(0,6)
+        .filter(r=>r && typeof r.text==='string' && Number.isFinite(r.time) && r.time>=0 && r.time<=604800 && Number.isInteger(r.lane) && r.lane>=0 && r.lane<6)
+        .map(r=>({text:r.text.slice(0,80),time:r.time,lane:r.lane,kind:r.kind==='room'?'room':'public'}))};
+}
 function panelBounds(width, height, full, expanded = false) {
     const top = full ? 0 : expanded ? 328 : 128;
     const roomWidth = full ? 0 : Math.min(400, Math.max(300, Math.round(width * .29)));
@@ -131,4 +137,4 @@ function programTarget(value, server = SERVER) {
 function isKanju(value) {
     try { const u = new URL(value); return u.protocol === 'https:' && ['www.kanju.ai','kanju.ai'].includes(u.host) && !u.username && !u.password; } catch { return false; }
 }
-module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, panelBounds, playSelection, isDiscoveryUrl, programSelection, programTarget, isKanju };
+module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, danmakuOverlay, panelBounds, playSelection, isDiscoveryUrl, programSelection, programTarget, isKanju };

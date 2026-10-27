@@ -15,6 +15,7 @@
         for (const remove of cleanup) remove();
         cleanup = []; video = next; serial++; events = []; pending = null; appliedCommand = 0;
         if (!video) return;
+        window.__twDanmakuOverlay?.clear();
         const listen = (target, name, fn) => { target.addEventListener(name, fn, true); cleanup.push(() => target.removeEventListener(name, fn, true)); };
         const intent = event => { if (event.isTrusted) userUntil = Date.now() + 1400; };
         for (const name of ['pointerdown', 'pointerup', 'keydown', 'keyup']) listen(document, name, intent);
@@ -86,5 +87,5 @@
         }
         return true;
     }
-    window.__twDesktopPlayer = { sample, apply, focus };
+    window.__twDesktopPlayer = { sample, apply, focus, overlay(data) { window.__twDanmakuOverlay?.set(video,data); } };
 })();

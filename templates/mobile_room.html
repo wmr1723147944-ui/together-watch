@@ -15,6 +15,14 @@
         <button id="joinCallBtn">加入语音</button>
     </header>
     <p id="mobilePlayerStatus" role="status">等待 APP 播放器</p>
+    <details class="danmaku-options"><summary>弹幕设置 <span>好友 / 公共弹幕</span></summary>
+        <div class="danmaku-toggles"><label><input type="checkbox" id="roomDanmakuEnabled" checked> 好友弹幕</label><label><input type="checkbox" id="publicDanmakuEnabled"> 公共弹幕</label></div>
+        <p id="publicDanmakuStatus" role="status">正在检查公共弹幕服务…</p>
+        <div class="danmaku-search"><input id="danmakuQuery" aria-label="公共弹幕片名" placeholder="片名（请核对季度）" maxlength="80"><button id="danmakuSearch" type="button" disabled>查找</button></div>
+        <select id="danmakuEpisode" aria-label="选择弹幕集数"></select><button id="danmakuUse" type="button" disabled>加载所选集数</button>
+        <label class="danmaku-offset">弹幕延后（秒，可填负数）<input id="danmakuOffset" type="number" min="-600" max="600" value="0" step="0.5"></label>
+        <small>公共弹幕：弹弹play开放弹幕网络。好友弹幕仅在本房间保留，换片清空，不发到公共库。</small>
+    </details>
     <details class="room-audio-options"><summary>视频音量</summary>
         <label id="videoVolumeControl">本机音量 <input id="mobileVideoVolume" type="range" min="0" max="100" value="100"><output id="mobileVideoVolumeValue">100%</output></label>
     </details>
@@ -26,6 +34,7 @@
     </section>
     <main id="chatContainer" aria-live="polite"><p>和朋友聊聊吧。想开麦时，点击上方“加入语音”。</p></main>
     <form id="chatForm">
+        <select id="messageMode" aria-label="发送方式"><option value="chat">聊天</option><option value="danmaku">弹幕</option></select>
         <input id="chatInput" aria-label="聊天消息" placeholder="说点什么…" maxlength="500" autocomplete="off">
         <button id="sendBtn" type="button" disabled>发送</button>
     </form>
@@ -33,6 +42,9 @@
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20261014-mic') }}" defer></script>
     <script src="{{ url_for('static', filename='js/native-sync.js', v='20261013-solo') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261018-watch-rooms') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/watch-history.js', v='20261027-history') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/danmaku-core.js', v='20261027-history') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/room-experience.js', v='20261027-history') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261027-history') }}" defer></script>
 </body>
 </html>

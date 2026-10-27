@@ -291,6 +291,8 @@ function mobileHarness() {
     };
     let boot;
     const window = { TogetherWatchNativeSync: NativeSync, addEventListener() {},
+        // Playback transport unit tests isolate the independently tested room experience.
+        createRoomExperience: () => ({program(){},context(){},receive(){},overlay(){return null;},send(){return true;},destroy(){}}),
         createVoiceCallController: () => ({ handleSocketReconnect() {}, handleSocketDisconnect() {}, destroy() {} }) };
     const io = () => {
         const socket = { id: `socket-${sockets.length}`, connected: false, handlers: {}, emitted: [],

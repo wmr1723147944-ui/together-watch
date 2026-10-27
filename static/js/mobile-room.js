@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!value || !Number.isSafeInteger(value.revision) || value.revision < 1 || !value.program) return;
         if (roomProgram && value.revision <= roomProgram.revision) return;
         roomProgram = value;
+        experience.program(value);
         stopNative();
         playerStatus.textContent = '房间已选片，正在打开房主的播放页…';
     }
@@ -76,7 +77,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendChat() {
         const message = input.value.trim();
         if (!message || !socket.connected) return;
-        socket.emit('chat_message', { room, message });
+        if (document.getElementById('messageMode').value === 'danmaku') {
+            if (!experience.send(message)) return;
+        } else socket.emit('chat_message', { room, message });
         input.value = '';
     }
     send.addEventListener('click', sendChat);
@@ -98,6 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
         command: queueCommand,
         cancelCommand: () => { commands = commands.filter(item => item.type !== 'state'); },
     });
+    const experience = window.createRoomExperience({socket,room,addMessage,seek:time => {
+        if (!sync.sample || !companion?.connected) return;
+        sync.receive(sync.sample,[{type:'seek',time,speed:sync.sample.speed}]);
+        const id=++sync.commandId;sync.awaitingCommand=id;
+        queueCommand({type:'state',session:nativeSession,id,time,speed:sync.sample.speed,
+            playing:sync.sample.playing,seek:true,issuedAt:Date.now()});
+    }});
     function stopNative() {
         companion?.removeAllListeners();
         companion?.disconnect();
@@ -135,6 +145,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Android polls this object only while the top-level page is our HTTPS
     // mobile room. No Java interface is exposed to a third-party video page.
     window.TogetherWatchMobile = {
+        context(data) { experience.context(data); },
         program() { return roomProgram; },
         applyProgram(revision) {
             if (!Number.isSafeInteger(revision) || revision < 1) return false;
@@ -146,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
             receivedAt = Date.now();
             if (roomProgram && roomProgram.revision !== appliedProgramRevision) return;
             if (!data?.active) {
+                experience.receive(data,false);
                 if (companion) stopNative();
                 playerStatus.textContent = '网页播放 · 在上方页面操作';
                 return;
@@ -161,6 +173,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 companion.emit('request_room_state', { room });
             }
             sync.receive(data, data.events || []);
+            experience.receive(data,sync.initialized && !sync.awaitingCommand);
             playerStatus.textContent = data.error || (!data.ready ? '内置播放器正在缓冲…'
                 : !sync.initialized ? '正在获取房间进度…' : '内置播放 · 同步已连接');
             if (sync.roomDuration > 0 && data.duration > 0 && Math.abs(sync.roomDuration - data.duration) > 10) {
@@ -172,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('leaveCallBtn').click();
             playerStatus.textContent = '已暂停，返回 APP 后重新同步';
         },
-        drain() { const result = { version: 1, commands }; commands = []; return result; },
+        drain() { const result = { version: 1, commands, overlay:experience.overlay(nativeSession) }; commands = []; return result; },
     };
     const watchdog = setInterval(() => {
         if (companion && Date.now() - receivedAt > 12000) {
@@ -181,6 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }, 3000);
     window.addEventListener('beforeunload', () => {
+        experience.destroy();
         clearInterval(watchdog); stopNative(); call.destroy(); socket.disconnect();
     });
 });

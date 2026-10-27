@@ -35,6 +35,7 @@ from source_discovery import discovery_context, is_search_page, normalize_query
 from site_directory import DIRECTORY, site_entry, site_entries
 from source_search import SEARCH_VERSION, provider_choices, search_provider, load_detail, selection_page
 from room_program import normalize_program
+import danmaku_service
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -2266,6 +2267,7 @@ def hls_proxy():
 
 room_states = {}
 room_programs = {}
+room_danmaku = {}
 room_members = defaultdict(dict)
 sid_membership = {}
 sid_roles = {}
@@ -2296,6 +2298,7 @@ def cleanup_stale_rooms():
             rooms_paused_for_buffering.discard(room_id)
             room_playback_leaders.pop(room_id, None)
             room_programs.pop(room_id, None)
+            room_danmaku.pop(room_id, None)
 
 
 def public_room_program(room_id):
@@ -2363,6 +2366,7 @@ def watch_room_program(room_id):
                 room_playback_leaders.pop(room_id, None)
                 room_buffering.pop(room_id, None)
                 rooms_paused_for_buffering.discard(room_id)
+                room_danmaku.pop(room_id, None)
             room_activity[room_id] = time.time()
             socketio.emit("room_program", public_room_program(room_id), to=room_id)
         return program_response(public_room_program(room_id))
@@ -3266,6 +3270,72 @@ def handle_companion_layout(data):
     payload = {"layout": layout}
     for sid in paired_human_sids(room_id, client_key):
         socketio.emit("companion_player_layout", payload, to=sid)
+
+
+@app.get("/api/danmaku/status")
+def danmaku_status():
+    return jsonify({"available": danmaku_service.configured(), "provider": "弹弹play开放弹幕网络"})
+
+
+@app.get("/api/danmaku/search")
+@rate_limit("danmaku-search", limit=12, window_seconds=60)
+def danmaku_search():
+    try:
+        return jsonify({"results": danmaku_service.search(request.args.get("q", ""))})
+    except danmaku_service.DanmakuError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@app.get("/api/danmaku/comments/<episode_id>")
+@rate_limit("danmaku-comments", limit=20, window_seconds=60)
+def danmaku_comments(episode_id):
+    try:
+        return jsonify({"comments": danmaku_service.comments(episode_id)})
+    except danmaku_service.DanmakuError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@socketio.on("request_danmaku")
+def request_danmaku(data):
+    identity = socket_identity(data)
+    if not identity:
+        return {"ok": False}
+    with room_lock:
+        if not program_matches(data, identity[0]):
+            return {"ok": False}
+        return {"ok": True, "items": list(room_danmaku.get(identity[0], []))}
+
+
+@socketio.on("danmaku_message")
+def handle_danmaku(data):
+    identity = socket_identity(data)
+    if not identity:
+        return {"ok": False, "error": "请先加入房间"}
+    room_id, username = identity
+    with room_lock:
+        if not program_matches(data, room_id):
+            return {"ok": False, "error": "影片已切换，请稍后发送"}
+        state = current_room_state(room_id)
+        position = data.get("time")
+        if (not state or type(position) not in (int, float) or not math.isfinite(position)
+                or not 0 <= position <= 604800 or abs(position - state["time"]) > 15):
+            return {"ok": False, "error": "请等待播放器同步后再发弹幕"}
+        text = clean_text(data.get("message"), 80)
+        if not text:
+            return {"ok": False, "error": "弹幕不能为空"}
+        bucket = socket_message_times[request.sid]
+        now = time.monotonic()
+        while bucket and now - bucket[0] > 10:
+            bucket.popleft()
+        if len(bucket) >= 5:
+            return {"ok": False, "error": "弹幕发送太快，请稍等"}
+        bucket.append(now)
+        item = {"id": secrets.token_hex(8), "time": position, "text": text,
+                "username": username, "kind": "room", "program_revision": data.get("program_revision", 0)}
+        room_danmaku.setdefault(room_id, deque(maxlen=300)).append(item)
+        room_activity[room_id] = time.time()
+        emit("danmaku_message", item, to=room_id)
+        return {"ok": True}
 
 
 @socketio.on("chat_message")

@@ -54,6 +54,7 @@
         // Native clients keep this document alive while a film is playing.
         // Back dismisses one layer; it must never start another search.
         function back() {
+            if ($('watchHistoryDialog')?.open) { $('watchHistoryDialog').close(); return true; }
             if ($('discoveryDetail')?.open) { details.close(); return true; }
             if (activeQuery) { home(); return true; }
             return false;

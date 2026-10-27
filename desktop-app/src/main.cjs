@@ -9,7 +9,7 @@ const siteDirectory = require('./site-directory.cjs');
 const {createMetadataBrowser}=require('./metadata-browser.cjs');
 const {script:CATALOG_SCRIPT}=require('./catalog-adapters.cjs');
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
-const AGENT = fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
+const AGENT = fs.readFileSync(path.join(__dirname, 'danmaku-overlay.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
 const MEDIA_SCAN = fs.readFileSync(path.join(__dirname, 'media-scan.js'), 'utf8');
 const PLAYER_URL = policy.APP_ORIGIN + '/player.html';
 const SMOKE = !app.isPackaged && process.argv.includes('--smoke-test');
@@ -445,7 +445,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         }
         finderMode = mode;
         if (!discoveryView) {
-            discoveryView = new WebContentsView({ webPreferences: securePreferences({ session: videoPartition,
+            discoveryView = new WebContentsView({ webPreferences: securePreferences({ session: mode==='catalog'?roomPartition:videoPartition,
                 ...(mode==='catalog'?{preload:path.join(__dirname,'discovery-preload.cjs')}:{}) }) });
             finderViews.set(mode, discoveryView);
             const wc = discoveryView.webContents;
@@ -682,12 +682,15 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 if (raw.serial !== selected.serial) { selected.serial = raw.serial; playerSession++; }
                 const sample = policy.timingSample(raw, playerSession);
                 if (!sample) throw new Error('invalid player data');
+                sample.title = video.webContents.getTitle().slice(0,160);
                 if (builtin) {
                     const playback = await timeout(wc.executeJavaScript('window.__twBuiltin?.state()'));
                     if (playback?.error) { sample.error = playback.error; sample.ready = false; sample.events = []; }
                 }
-                const reply = await timeout(roomView.webContents.executeJavaScript(`window.TogetherWatchMobile.receive(${JSON.stringify(sample)});window.TogetherWatchMobile.drain()`));
+                const reply = await timeout(roomView.webContents.executeJavaScript(`window.TogetherWatchMobile.context?.(${JSON.stringify({owner:!!managed?.owner})});window.TogetherWatchMobile.receive(${JSON.stringify(sample)});window.TogetherWatchMobile.drain()`));
                 if (!stillCurrent()) return;
+                const overlay = policy.danmakuOverlay(reply?.overlay,playerSession);
+                if (overlay) await timeout(selected.frame.executeJavaScript(`window.__twDesktopPlayer?.overlay(${JSON.stringify(overlay)})`));
                 for (const value of (Array.isArray(reply?.commands) ? reply.commands : []).slice(0, 4)) {
                     if (!stillCurrent() || !selected) return;
                     const command = policy.playbackCommand(value, playerSession);
