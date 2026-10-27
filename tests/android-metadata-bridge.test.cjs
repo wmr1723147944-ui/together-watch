@@ -3,10 +3,10 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm'),fs=require('node:fs');
 const adapters=require('../static/js/catalog-adapters.js');
 const source=fs.readFileSync('android-app/app/src/main/assets/catalog-metadata-bridge.js','utf8');
-function setup(sources=['pkavi','233dm','kanju']) {
+function setup(sources=['pkavi','233dm','kanju','huarw'], clock={setTimeout,clearTimeout}) {
     const ctx={TogetherWatchCatalogAdapters:adapters,crypto:{randomUUID:()=>require('node:crypto').randomUUID()},setTimeout,clearTimeout,
         document:{querySelectorAll:()=>sources.map(source=>({dataset:{liveSource:source}}))}};
-    ctx.window=ctx;vm.createContext(ctx);vm.runInContext(source,ctx);return ctx;
+    Object.assign(ctx,clock);ctx.window=ctx;vm.createContext(ctx);vm.runInContext(source,ctx);return ctx;
 }
 test('Android metadata capability is bounded and returns only normalized public fields',async()=>{
     const c=setup(),api=c.twSourceMetadata,q=c.__twMetadataQueue;
@@ -18,6 +18,17 @@ test('Android metadata capability is bounded and returns only normalized public 
     assert.equal((await api.request('bad','search',{source:'pkavi',q:'x',cookie:'secret'})).status,'unavailable');
     assert.equal((await api.request('foreign','detail',{source:'pkavi',page_url:'https://127.0.0.1'})).status,'unavailable');
     assert.equal((await setup([]).twSourceMetadata.request('disabled','search',{source:'pkavi',q:'x'})).status,'unavailable');
+});
+
+test('Android Huarw uses local bounded metadata and expiry is not reported as user cancellation',async()=>{
+    const timers=[];
+    const c=setup(undefined,{setTimeout:(fn,ms)=>{timers.push({fn,ms});return timers.length;},clearTimeout(){}});
+    const result=c.twSourceMetadata.request('huarw','search',{source:'huarw',q:'元气少女'});
+    assert.equal(c.__twMetadataQueue.drain().requests[0].payload.source,'huarw');
+    assert.equal(timers[0].ms,29000);assert.ok(c.twSourceMetadata.requestTimeoutMs>timers[0].ms);
+    timers[0].fn();assert.equal((await result).status,'unavailable');
+    assert.deepEqual(Array.from(c.__twMetadataQueue.drain().cancelled),['huarw']);
+    c.__twMetadataQueue.complete(c.__twMetadataQueue.token,'huarw',{status:'ok',results:[]});
 });
 test('Android cancellation, busy limit and document tokens do not mix results',async()=>{
     const c=setup(),api=c.twSourceMetadata,q=c.__twMetadataQueue;

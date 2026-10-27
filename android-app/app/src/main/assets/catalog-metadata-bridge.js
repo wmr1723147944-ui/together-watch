@@ -5,14 +5,14 @@
     if (window.__twMetadataQueue) return;
     const adapters=window.TogetherWatchCatalogAdapters;
     if(!adapters)return;
-    const supportedSources=Object.freeze(['pkavi','233dm','kanju']);
+    const supportedSources=Object.freeze(['pkavi','233dm','kanju','huarw']);
     const pending=new Map(), cancelled=[];
     const token=globalThis.crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
-    function cancel(id) {
+    function cancel(id, status='cancelled') {
         const job=pending.get(id);if(!job)return;
         pending.delete(id);clearTimeout(job.timer);
         if(job.sent && cancelled.length<16)cancelled.push(id);
-        job.resolve(adapters.normalizeResult(job.req,{status:'cancelled'}));
+        job.resolve(adapters.normalizeResult(job.req,{status}));
     }
     const queue=Object.freeze({
         token,
@@ -33,6 +33,7 @@
     Object.defineProperty(window,'__twMetadataQueue',{value:queue,configurable:false});
     Object.defineProperty(window,'twSourceMetadata',{value:Object.freeze({
         supportedSources,
+        requestTimeoutMs: 42000,
         request(id,kind,payload,interactive=false) {
             const req=adapters.request(kind,payload);
             if(!req || !supportedSources.includes(req.source) || typeof id!=='string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(id)
@@ -44,7 +45,7 @@
             return new Promise(resolve=>{
                 const clean=kind==='search'?{source:req.source,q:req.q}:{source:req.source,page_url:req.url};
                 pending.set(id,{req,payload:clean,interactive,resolve,sent:false,
-                    timer:setTimeout(()=>cancel(id),interactive?180000:11000)});
+                    timer:setTimeout(()=>cancel(id,'unavailable'),interactive?180000:29000)});
             });
         },cancel,
     }),configurable:false});

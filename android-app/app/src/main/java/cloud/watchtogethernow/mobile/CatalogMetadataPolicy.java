@@ -12,6 +12,7 @@ final class CatalogMetadataPolicy {
         if("pkavi".equals(source))return "www.pkavi.com";
         if("233dm".equals(source))return "www.233dm.com";
         if("kanju".equals(source))return "www.kanju.ai";
+        if("huarw".equals(source))return "huarw.com";
         return "";
     }
     static boolean allowed(String source,String url) {
@@ -45,6 +46,7 @@ final class CatalogMetadataPolicy {
                 if(q.codePointCount(0,q.length())>80)q=q.substring(0,q.offsetByCodePoints(0,80));
                 String encoded=URLEncoder.encode(q,"UTF-8").replace("+","%20");
                 url="https://"+host+(source.equals("kanju")?"/collections/browse?path=%2Fv1%2Fbrowse%2Fcatalog&q="+encoded+"&page=1&limit=12"
+                    :source.equals("huarw")?"/search?wd="+encoded
                     :(source.equals("pkavi")?"/vs/":"/search/")+"-------------.html?wd="+encoded);
             } else if("detail".equals(kind)) {
                 if(!only(payload,"source","page_url") || !(payload.opt("page_url") instanceof String))return null;
@@ -56,7 +58,7 @@ final class CatalogMetadataPolicy {
                     item=s.item;url=ProgramPolicy.create(source,item,"page").page;
                 } else {
                     if(u.getRawQuery()!=null || u.getRawFragment()!=null)return null;
-                    String pattern=source.equals("pkavi")?"/mv/([1-9][0-9]{0,19})\\.html":"/anime/([a-f0-9]{24})\\.html";
+                    String pattern=source.equals("huarw")?"/movie/([0-9]{1,20})":source.equals("pkavi")?"/mv/([1-9][0-9]{0,19})\\.html":"/anime/([a-f0-9]{24})\\.html";
                     java.util.regex.Matcher m=java.util.regex.Pattern.compile(pattern).matcher(u.getRawPath());
                     if(!m.matches())return null;item=m.group(1);
                 }

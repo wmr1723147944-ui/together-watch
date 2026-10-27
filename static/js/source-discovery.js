@@ -70,6 +70,19 @@
         let mounting=container.isConnected===false, meta=metadata;
         const attempted=new Set(),recovered=new Set();
         const credit=doc.createElement('span');credit.className='discovery-poster-credit';credit.hidden=true;
+        function fitFrame(candidate) {
+            // Adapt cards and detail art, not the fixed-size hero/spotlight banners.
+            const card=container.classList?.contains('discovery-title-art') || container.classList?.contains('catalog-film-poster');
+            if((!card && container.id!=='catalogDetailPoster') || container.closest?.('.catalog-spotlight-film'))return;
+            const ratio=candidate?.width/candidate?.height;
+            if(Number.isFinite(ratio) && ratio>0) {
+                container.dataset.posterShape=ratio<.9?'portrait':ratio>1.15?'landscape':'square';
+                container.style?.setProperty('--poster-ratio',String(Math.max(.5,Math.min(2.4,ratio))));
+            } else {
+                delete container.dataset.posterShape;container.style?.removeProperty('--poster-ratio');
+            }
+        }
+        fitFrame(null);
         function clear(){clearTimeout(timer);timer=null;observer?.disconnect();observer=null;}
         function dispose(){disposed=true;clear();unsubscribe();}
         function density(info){
@@ -84,6 +97,7 @@
             clear();node.hidden=true;node.remove?.();
             if(node===pending?.node)pending=null;
             if(node===display?.node)display=null;
+            if(!display)fitFrame(null);
             credit.hidden=!display || !display.choice.borrowed;fallback.hidden=!!display;
             hint.textContent='封面暂不可用';pool.mark(url,false);refresh();
         }
@@ -94,7 +108,7 @@
             const allowed=pool.candidates(value,page,title,meta.year,true);
             // A later source can reveal a remake conflict. Withdraw its borrowed
             // cover rather than leave a now-ambiguous reference on screen.
-            if(display && !allowed.some(c=>c.url===display.choice.url)){display.node.hidden=true;display=null;credit.hidden=true;}
+            if(display && !allowed.some(c=>c.url===display.choice.url)){display.node.hidden=true;display=null;credit.hidden=true;fitFrame(null);}
             fallback.hidden=!!display;
             if(pending){
                 if(allowed.some(c=>c.url===pending.choice.url))return;
@@ -126,6 +140,7 @@
                 const candidate={node,choice:next,width:node.naturalWidth||0,height:node.naturalHeight||0};
                 if(!display || density(candidate)>density(display)*1.15){
                     display?.node.remove?.();display=candidate;
+                    fitFrame(candidate);
                     node.dataset.loading='false';node.dataset.portrait=String(candidate.height>candidate.width*1.15);
                     node.hidden=false;fallback.hidden=true;
                     credit.hidden=!next.borrowed;credit.textContent='参考封面 · '+next.name;
@@ -156,6 +171,9 @@
         && (Array.isArray(globalThis.twSourceMetadata.supportedSources)
             ? globalThis.twSourceMetadata.supportedSources.includes(source)
             : ['233dm','pkavi'].includes(source)); }
+    function metadataTimeout(source,interactive=false) {
+        return interactive?185000:nativeMetadata(source)?42000:12000;
+    }
     function originalSearch(source, query) {
         const q=normalizeQuery(query); if(!q) return null;
         const request=adapters?.request('search',{source,q}); if(request) return request.url;
@@ -165,15 +183,32 @@
         const [base,param]=rules[source],url=new URL(base);url.searchParams.set(param,q);return url.href;
     }
     async function metadataRequest(kind,payload,fetcher,signal,interactive=false) {
-        if (!nativeMetadata(payload.source)) return fetcher('/api/discover/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},
+        const server=()=>fetcher('/api/discover/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal});
+        if (!nativeMetadata(payload.source)) return server();
         const id='catalog-'+Date.now()+'-'+(++metadataSerial);
         const cancel=()=>Promise.resolve(globalThis.twSourceMetadata.cancel(id)).catch(()=>{});
         if(signal.aborted) throw new Error('cancelled');
         signal.addEventListener('abort',cancel,{once:true});
         try {
-            const data=await globalThis.twSourceMetadata.request(id,kind,payload,interactive);
+            let data;
+            try {data=await globalThis.twSourceMetadata.request(id,kind,payload,interactive);}
+            catch(error){if(signal.aborted)throw error;data=adapters.normalizeResult(adapters.request(kind,payload),{status:'unavailable'});}
             if(signal.aborted) throw new Error('cancelled');
+            // A local network failure may still have a working server path. Do
+            // not change paths for login, CAPTCHA, denied access, cancel or busy.
+            // Kanju needs its own browser session; the server cannot query it.
+            if(!interactive && data?.status==='unavailable' && ['huarw','233dm','pkavi'].includes(payload.source)) {
+                try {
+                    const response=await server();
+                    if(signal.aborted)throw new Error('cancelled');
+                    if(response.ok) {
+                        const fallback=await response.json();
+                        if(fallback?.source_id===payload.source && ['ok','verification_required','access_blocked'].includes(fallback.status))
+                            return {ok:true,json:async()=>fallback};
+                    }
+                } catch(error){if(signal.aborted)throw error;}
+            }
             return {ok:true,json:async()=>data};
         } finally {signal.removeEventListener('abort',cancel);}
     }
@@ -269,7 +304,7 @@
             original.href = url; status.textContent = '正在读取集数…';
             if (!panel.open) panel.showModal();
             const active = new AbortController(); controller = active;
-            const timer = setTimeout(() => active.abort(), interactive?185000:12000);
+            const timer = setTimeout(() => active.abort(), metadataTimeout(source,interactive));
             try {
                 const response = await metadataRequest('detail',{source,page_url:url},fetcher,active.signal,interactive);
                 if (!response.ok) throw new Error('unavailable');
@@ -374,7 +409,7 @@
                 block.dataset.state='loading';
                 const controller = new AbortController();
                 controllers.add(controller);
-                const timer = setTimeout(() => controller.abort(), interactive?185000:12000);
+                const timer = setTimeout(() => controller.abort(), metadataTimeout(sourceId,interactive));
                 try {
                     const response = await metadataRequest('search',{source:sourceId,q:value},fetcher,controller.signal,interactive);
                     if (!response.ok) throw new Error(response.status === 429 ? 'rate' : 'unavailable');
@@ -611,7 +646,7 @@
         }
         render();
     }
-    const api = { addPoster, registerPosters, createPosterPool, metadataRequest, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    const api = { addPoster, registerPosters, createPosterPool, metadataRequest, metadataTimeout, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else globalThis.TogetherWatchDiscovery = api;
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));

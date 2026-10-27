@@ -6,7 +6,9 @@ import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.view.View;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.RenderProcessGoneDetail;
@@ -29,6 +31,7 @@ import java.util.function.Consumer;
 final class CatalogMetadataController {
     private final Activity activity;
     private final WebView catalogue;
+    private final ViewGroup queryHost;
     private final String adapters,bridge,origin;
     private final BooleanSupplier enabled;
     private final Consumer<WebView> configure;
@@ -41,9 +44,9 @@ final class CatalogMetadataController {
     private boolean closed;
     private final Runnable ticker=this::tick;
 
-    CatalogMetadataController(Activity activity,WebView catalogue,String adapters,String bridge,String origin,
+    CatalogMetadataController(Activity activity,WebView catalogue,ViewGroup queryHost,String adapters,String bridge,String origin,
                               BooleanSupplier enabled,Consumer<WebView> configure,Executor disk) {
-        this.activity=activity;this.catalogue=catalogue;this.adapters=adapters;this.bridge=bridge;this.origin=origin;
+        this.activity=activity;this.catalogue=catalogue;this.queryHost=queryHost;this.adapters=adapters;this.bridge=bridge;this.origin=origin;
         this.enabled=enabled;this.configure=configure;this.disk=disk;
         handler.post(ticker);
     }
@@ -53,7 +56,22 @@ final class CatalogMetadataController {
     void flush() {try{disk.execute(()->CookieManager.getInstance().flush());}catch(java.util.concurrent.RejectedExecutionException ignored){}}
     void close() {
         if(closed)return;closed=true;generation++;handler.removeCallbacksAndMessages(null);cancelAll(false);flush();
-        for(Page page:pages.values())page.view.destroy();pages.clear();
+        for(Page page:pages.values()){detach(page.view);page.view.destroy();}pages.clear();
+    }
+    private static void detach(WebView view) {
+        if(view.getParent() instanceof ViewGroup)((ViewGroup)view.getParent()).removeView(view);
+    }
+    private void mount(Page page,boolean interactive) {
+        detach(page.view);
+        page.view.setFocusable(interactive);page.view.setFocusableInTouchMode(interactive);
+        page.view.setImportantForAccessibility(interactive?View.IMPORTANT_FOR_ACCESSIBILITY_AUTO:View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        page.view.getSettings().setOffscreenPreRaster(!interactive);
+        // An unattached WebView has no visible window/compositor. Dynamic sites
+        // that wait for a rendering frame can then work only in the manual dialog.
+        // Mount under the opaque catalogue, not GONE/alpha=0/outside the viewport.
+        // No automatic dialog, keyboard focus or touch/accessibility interception.
+        if(!interactive)queryHost.addView(page.view,0,new FrameLayout.LayoutParams(-1,-1));
+        page.view.onResume();
     }
     private void cancelAll(boolean reply) {for(Job job:new ArrayList<>(jobs.values()))finish(job,status("cancelled"),reply);}
     private static JSONObject status(String value) {JSONObject o=new JSONObject();try{o.put("status",value);}catch(Exception ignored){}return o;}
@@ -108,8 +126,8 @@ final class CatalogMetadataController {
         Page(String source) {
             this.source=source;view=new WebView(activity);configure.accept(view);
             view.getSettings().setMediaPlaybackRequiresUserGesture(true);
-            // Detached query views still need a viewport for responsive DOM
-            // and visibility checks. They share the app's own CookieManager.
+            // Seed a viewport until the attached host/dialog lays the view out.
+            // Query pages share the app's own CookieManager, never server cookies.
             int width=activity.getResources().getDisplayMetrics().widthPixels;
             int height=Math.max(width,activity.getResources().getDisplayMetrics().heightPixels);
             view.measure(android.view.View.MeasureSpec.makeMeasureSpec(width,android.view.View.MeasureSpec.EXACTLY),
@@ -129,14 +147,16 @@ final class CatalogMetadataController {
                     if(!CatalogMetadataPolicy.allowed(source,url) && job!=null){v.stopLoading();finish(job,status("unavailable"),true);}
                 }
                 @Override public void onReceivedError(WebView v,WebResourceRequest r,WebResourceError error) {
-                    if(r.isForMainFrame() && job!=null && r.getUrl().toString().equals(job.req.optString("url")))finish(job,status("unavailable"),true);
+                    if(r.isForMainFrame() && job!=null && r.getUrl().toString().equals(job.req.optString("url"))) {
+                        if(!retry(job))finish(job,status("unavailable"),true);
+                    }
                 }
                 @Override public void onReceivedSslError(WebView v,SslErrorHandler h,android.net.http.SslError e) {
                     h.cancel();if(job!=null)finish(job,status("unavailable"),true);
                 }
                 @Override public boolean onRenderProcessGone(WebView v,RenderProcessGoneDetail detail) {
                     dead=true;if(job!=null)finish(job,status("unavailable"),true);
-                    pages.remove(source);v.destroy();return true;
+                    pages.remove(source);detach(v);v.destroy();return true;
                 }
             });
         }
@@ -148,17 +168,19 @@ final class CatalogMetadataController {
         final Page page;
         final boolean interactive;
         final long deadline;
+        final long startedAt=SystemClock.elapsedRealtime();
         final Runnable poll=()->read(this);
         AlertDialog dialog;
         Runnable watchdog;
-        boolean done,resumed;
+        boolean done,resumed,retried;
+        Runnable reload;
         long emptySince;
         long posterSince;
         JSONObject partial;
         String lastStatus="unavailable";
         Job(String id,String token,int epoch,JSONObject req,Page page,boolean interactive) {
             this.id=id;this.token=token;this.epoch=epoch;this.req=req;this.page=page;this.interactive=interactive;
-            deadline=SystemClock.elapsedRealtime()+(interactive?178000:10000);
+            deadline=startedAt+(interactive?178000:28000);
         }
     }
     private void start(JSONObject data,String token,int epoch) {
@@ -171,12 +193,12 @@ final class CatalogMetadataController {
         if(page==null){page=new Page(source);pages.put(source,page);}
         Job job=new Job(id,token,epoch,req,page,data.optBoolean("interactive"));
         jobs.put(id,job);page.job=job;
-        page.view.onResume();
+        mount(page,job.interactive);
         if(job.interactive) {
             // Only an explicit catalogue button can open this dialog. Search
             // background requests never trigger a verification popup.
-            String name=source.equals("pkavi")?"七味网":source.equals("kanju")?"看剧 AI":"233 动漫";
-            AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("原站登录 / 验证 · "+name)
+            String name=source.equals("pkavi")?"七味网":source.equals("kanju")?"看剧 AI":source.equals("huarw")?"华人影院":"233 动漫";
+            AlertDialog dialog=new AlertDialog.Builder(activity).setTitle("原站查询 · "+name)
                 .setView(page.view).setNegativeButton("取消",(d,w)->finish(job,status("cancelled"),true))
                 .setPositiveButton("已完成，继续",null).create();job.dialog=dialog;
             dialog.setOnCancelListener(d->finish(job,status("cancelled"),true));
@@ -193,6 +215,15 @@ final class CatalogMetadataController {
         handler.postDelayed(job.poll,400);
     }
     private boolean current(Job job) {return !closed && !job.done && job.epoch==generation && documentToken.equals(job.token) && trusted() && enabled.getAsBoolean();}
+    private boolean retry(Job job) {
+        // One reload for a failed connection/fully loaded unusable document.
+        // Never reload a verification form, partial results or an active login.
+        if(!current(job) || job.interactive || job.retried || job.partial!=null
+            || !job.lastStatus.equals("unavailable") || job.deadline-SystemClock.elapsedRealtime()<6000)return false;
+        job.retried=true;
+        job.reload=()->{if(current(job))job.page.view.loadUrl(job.req.optString("url"));};
+        handler.postDelayed(job.reload,800);return true;
+    }
     private void read(Job job) {
         if(!current(job)){finish(job,status("cancelled"),true);return;}
         if(SystemClock.elapsedRealtime()>job.deadline){finish(job,job.partial!=null?job.partial:status(job.lastStatus),true);return;}
@@ -200,7 +231,8 @@ final class CatalogMetadataController {
         if(!CatalogMetadataPolicy.allowed(page.source,at)){handler.postDelayed(job.poll,500);return;}
         // Never export page HTML, scripts, cookies or a login form. Only the
         // shared adapter's bounded, public title/episode metadata is returned.
-        String code="(()=>{if(location.href!=="+JSONObject.quote(at)+" || document.readyState==='loading')return null;"
+        // Metadata may already be present while slow images/ads keep the page loading.
+        String code="(()=>{if(location.href!=="+JSONObject.quote(at)+" || !document.body)return null;"
             +adapters+";const a=window.TogetherWatchCatalogAdapters,r="+job.req+";return {expected:a.expectedPage(r,location.href),data:a.readDocument(document,r)};})()";
         // WebView callbacks can be lost on renderer failure. Keep a deadline
         // watchdog, independent of the JavaScript callback.
@@ -210,11 +242,13 @@ final class CatalogMetadataController {
             if(job.watchdog!=null)handler.removeCallbacks(job.watchdog);
             if(!current(job))return;
             if(navigation==page.navigation && at.equals(page.view.getUrl()))try {
-                if(raw.length()>1024*1024)throw new IllegalArgumentException();
+                if(raw==null || raw.length()>1024*1024)throw new IllegalArgumentException();
                 JSONObject envelope=new JSONObject(raw),result=envelope.getJSONObject("data");
                 String state=result.optString("status");
                 job.lastStatus=state.equals("verification_required")?state:"unavailable";
                 if(state.equals("access_blocked") || state.equals("verification_required") && !job.interactive){finish(job,result,true);return;}
+                if(state.equals("unavailable") && page.view.getProgress()==100
+                    && SystemClock.elapsedRealtime()-job.startedAt>=12000)retry(job);
                 if(envelope.optBoolean("expected") && (state.equals("ok") || state.equals("no_episodes"))) {
                     boolean empty=state.equals("no_episodes") || job.req.optString("kind").equals("search") && result.optJSONArray("results")!=null && result.optJSONArray("results").length()==0;
                     if(!empty){
@@ -242,14 +276,16 @@ final class CatalogMetadataController {
         if(job.done)return;job.done=true;handler.removeCallbacks(job.poll);jobs.remove(job.id);job.page.job=null;
         job.page.completedAt=SystemClock.elapsedRealtime();job.page.resultStatus=result.optString("status");
         if(job.watchdog!=null)handler.removeCallbacks(job.watchdog);
+        if(job.reload!=null)handler.removeCallbacks(job.reload);
         if(job.dialog!=null) {
             job.dialog.setOnCancelListener(null);job.dialog.dismiss();
-            if(job.page.view.getParent() instanceof ViewGroup)((ViewGroup)job.page.view.getParent()).removeView(job.page.view);
         }
+        detach(job.page.view);
         // Preserve the tab on cancellation too; never reload a half-completed
         // form unless the user chooses a different request.
         if("unavailable".equals(result.optString("status")))job.page.requested="";
         if(!job.page.dead) {
+            job.page.view.getSettings().setOffscreenPreRaster(false);
             job.page.view.evaluateJavascript("document.querySelectorAll('video,audio').forEach(v=>v.pause())",null);
             job.page.view.onPause();
         }

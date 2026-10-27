@@ -134,6 +134,23 @@ function posterDom(){
         addEventListener(k,fn){this.handlers[k]=fn;},remove(){if(this.parentNode)this.parentNode.children=this.parentNode.children.filter(n=>n!==this);}});
     return {doc:{createElement:node},node};
 }
+
+test('artwork frames follow loaded portrait, landscape and square proportions; broken upgrades retain shape',()=>{
+    for(const [width,height,shape] of [[600,900,'portrait'],[1200,675,'landscape'],[600,600,'square']]) {
+        const {doc,node}=posterDom(),cover=node('button'),row=posterRow('测试','2024');
+        cover.classList={contains:k=>k==='catalog-film-poster'};
+        const styles={};cover.style={setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]};
+        const binding=addPoster(doc,cover,row.poster_url,row.page_url,row.title,row);
+        const img=cover.children.find(n=>n.tag==='img');Object.assign(img,{naturalWidth:width,naturalHeight:height});img.handlers.load();
+        assert.equal(cover.dataset.posterShape,shape);assert.equal(+styles['--poster-ratio'],width/height);
+        img.handlers.error();assert.equal(cover.dataset.posterShape,undefined);assert.equal(styles['--poster-ratio'],undefined);
+        binding.dispose();
+    }
+    const {doc,node}=posterDom(),hero=node('div'),row=posterRow('测试','2024');
+    const binding=addPoster(doc,hero,row.poster_url,row.page_url,row.title,row);
+    const img=hero.children.find(n=>n.tag==='img');Object.assign(img,{naturalWidth:600,naturalHeight:900});img.handlers.load();
+    assert.equal(hero.dataset.posterShape,undefined,'hero stays wide');binding.dispose();
+});
 test('broken card recovers when another source arrives late and labels borrowed artwork',()=>{
     const {doc,node}=posterDom(),cover=node('button'),row=posterRow('测试','2024','kanju');
     const binding=addPoster(doc,cover,row.poster_url,row.page_url,row.title,row);

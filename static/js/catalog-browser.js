@@ -123,8 +123,8 @@
         async function searchSource(source, current, interactive = false, notice = null) {
             const id = source.dataset.liveSource, name = source.dataset.sourceName || id;
             const controller = new AbortController(); controllers.add(controller);
-            const timer = setTimeout(() => controller.abort(), interactive ? 185000 : 12000);
-            function note(message, retryMode = null, allowOriginal = false) {
+            const timer = setTimeout(() => controller.abort(), shared.metadataTimeout(id,interactive));
+            function note(message, retryMode = null, allowOriginal = false, inspect = false) {
                 const row = notice || el('div', null, 'catalog-query-note'); row.replaceChildren();
                 row.append(el('span', name + '：' + message));
                 if (retryMode) {
@@ -137,6 +137,15 @@
                         row.replaceChildren(el('span', name + (retryMode==='verify'?'：请在原站手动完成验证；若验证码不显示或无法通过，可关闭窗口并换来源。':retryMode==='inspect'?'：正在打开原站查询，完成后结果会回到这里…':'：正在重试…')));
                         await searchSource(source, current, retryMode!=='retry', row);
                     }); row.append(button);
+                }
+                if(inspect) {
+                    const button=el('button','打开原站检查');button.type='button';retries.add(button);button.disabled=pending>0;
+                    button.addEventListener('click',async()=>{
+                        if(current!==generation || pending)return;
+                        retries.delete(button);pending++;completed--;progress();
+                        row.replaceChildren(el('span',name+'：正在打开原站…'));
+                        await searchSource(source,current,true,row);
+                    });row.append(button);
                 }
                 if (allowOriginal && !shared.nativeMetadata(id)) {
                     const url = shared.originalSearch(id, activeQuery);
@@ -166,8 +175,8 @@
                 if (notice) notice.replaceChildren(el('span', name + '：已完成，结果已合入上方影片。'));
                 render();
             } catch (error) {
-                if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '暂未取得结果（网络或页面不兼容），不代表没有这部影片。',
-                    error.message!=='rate' && shared.nativeMetadata(id)?'inspect':'retry', true);
+                if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '连接超时或页面未能读取，不代表没有这部影片；可以重试或换个来源。',
+                    'retry', true, error.message!=='rate' && shared.nativeMetadata(id));
             } finally {
                 clearTimeout(timer); controllers.delete(controller);
                 if (current === generation) { pending--; completed++; progress(); }

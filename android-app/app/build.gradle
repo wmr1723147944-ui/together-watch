@@ -11,8 +11,8 @@ android {
         applicationId "cloud.watchtogethernow.mobile"
         minSdk 26
         targetSdk 36
-        versionCode 20
-        versionName "0.3.15"
+        versionCode 21
+        versionName "0.3.16"
 
         buildConfigField "String", "SERVER_ORIGIN", '"https://watchtogethernow.cloud"'
         buildConfigField "String", "LEGAL_NOTICE_VERSION", '"2026-07-28"'

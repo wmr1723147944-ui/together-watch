@@ -5,6 +5,10 @@ import static org.junit.Assert.*;
 
 public final class CatalogMetadataPolicyTest {
     @Test public void fixedSearchAndDetailIdentities() throws Exception {
+        assertEquals("https://huarw.com/search?wd=a%20b",CatalogMetadataPolicy.request("search",new JSONObject().put("source","huarw").put("q","a b")).getString("url"));
+        assertEquals("123",CatalogMetadataPolicy.request("detail",new JSONObject().put("source","huarw").put("page_url","https://huarw.com/movie/123")).getString("item"));
+        for(String url:new String[]{"https://huarw.com.evil.test/movie/1","https://huarw.com/movie/1?token=x","https://huarw.com/play/1-1","https://user@huarw.com/movie/1"})
+            assertNull(CatalogMetadataPolicy.request("detail",new JSONObject().put("source","huarw").put("page_url",url)));
         assertEquals("https://www.pkavi.com/vs/-------------.html?wd=%E6%B5%8B%E8%AF%95",CatalogMetadataPolicy.request("search",new JSONObject().put("source","pkavi").put("q","测试")).getString("url"));
         assertEquals("https://www.233dm.com/search/-------------.html?wd=a%20b",CatalogMetadataPolicy.request("search",new JSONObject().put("source","233dm").put("q"," a  b ")).getString("url"));
         assertEquals("https://www.kanju.ai/collections/browse?path=%2Fv1%2Fbrowse%2Fcatalog&q=test&page=1&limit=12",CatalogMetadataPolicy.request("search",new JSONObject().put("source","kanju").put("q","test")).getString("url"));

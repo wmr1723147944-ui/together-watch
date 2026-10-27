@@ -246,7 +246,7 @@ public final class MainActivity extends ComponentActivity {
         webSyncScript = readAsset("android-web-sync.js");
         catalogScript = readAsset("catalog-adapters.js");
         pageLayoutScript = readAsset("android-page-layout.js");
-        catalogMetadata = new CatalogMetadataController(this,catalogWebView,catalogScript,
+        catalogMetadata = new CatalogMetadataController(this,catalogWebView,videoContainer,catalogScript,
             readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
             () -> foreground && finding && !originalFinderActive,
             view -> configureWebView(view,false),networkExecutor);

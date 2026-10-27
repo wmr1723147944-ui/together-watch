@@ -35,6 +35,15 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertNotIn('.addJavascriptInterface(', controller)
         self.assertNotIn('.getCookie(', controller)
         self.assertNotIn('setAcceptFileSchemeCookies', controller)
+        for marker in ('interactive?178000:28000', 'job.retried', 'job.partial!=null',
+                       'handler.removeCallbacks(job.reload)', 'page.view.getProgress()==100'):
+            self.assertIn(marker, controller)
+        self.assertNotIn("document.readyState==='loading'", controller)
+        for marker in ('queryHost.addView(page.view,0', 'setOffscreenPreRaster(!interactive)',
+                       'IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS', 'detach(job.page.view)',
+                       'setOffscreenPreRaster(false)', 'setFocusable(interactive)'):
+            self.assertIn(marker, controller)
+        self.assertIn('this,catalogWebView,videoContainer,catalogScript', activity)
 
     def test_launcher_icons_adapt_to_round_masks_and_android_themed_icons(self):
         res = ANDROID / 'app/src/main/res'
