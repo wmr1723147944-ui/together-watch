@@ -17,6 +17,9 @@ final class PlaybackBoundary {
         result.put("active",true).put("session","web-"+generation+"-"+raw.optLong("session"));
         result.put("time",number(raw,"time",0,0,604800)).put("duration",number(raw,"duration",0,0,604800));
         result.put("speed",number(raw,"speed",1,.25,4)).put("playing",raw.optBoolean("playing"));
+        result.put("holding",raw.optBoolean("holding"));
+        result.put("visualTime",number(raw,"visualTime",result.optDouble("time"),0,604800));
+        result.put("visualSpeed",number(raw,"visualSpeed",result.optDouble("speed"),.25,4));
         result.put("ready",raw.optBoolean("ready")&&!raw.optBoolean("blocked")).put("seeking",raw.optBoolean("seeking"));
         result.put("appliedCommand",Math.max(0,raw.optLong("appliedCommand")));
         JSONArray events=new JSONArray(),incoming=raw.optJSONArray("events");

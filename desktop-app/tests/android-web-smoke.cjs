@@ -1,7 +1,7 @@
 'use strict';
 // Real Windows client + Android's packaged JS adapter in a separate Chromium
 // view, with the real local room server. This is NOT a physical WebView test.
-const {BrowserWindow, net, dialog} = require('electron');
+const {BrowserWindow, net, dialog, session} = require('electron');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -60,7 +60,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
     try {
         host=await createDesktop({server,visible:false});
         await host.start({nickname:'Windows CSP fixture',consent:true});
-        await host.state().discoveryView.webContents.session.protocol.handle('https',fixture);
+        await session.fromPartition('video-test-'+host.win.id).protocol.handle('https',fixture);
         assert.ok((await host.start({nickname:'Windows CSP fixture',source:page,consent:true})).ok);
         const hostVideo=host.state().video.webContents;
         await focus(hostVideo);
@@ -113,6 +113,19 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await wait('Android pause/seek reaches Windows',async()=>{const s=await state(hostVideo);return s.paused&&Math.abs(s.time-20)<1;});
         await key(pv,'p');
         await wait('Android play reaches Windows',async()=>!(await state(hostVideo)).paused);
+        // Android long-press uses the actual packaged adapter, not a mocked media clock.
+        await wait('Android hold starts',()=>pv.executeJavaScript("window.__twAndroidPage.holdAt('beginHold',.4,.25,true)"));
+        await delay(1400);
+        assert.equal(await pv.executeJavaScript('document.querySelector("video").playbackRate'),2);
+        assert.equal(await hostVideo.executeJavaScript('document.querySelector("video").playbackRate'),1,'peer must not inherit temporary speed');
+        await pv.executeJavaScript('window.__twAndroidPage.endHold(true)');
+        await wait('hold release synchronizes new position at original speed',async()=>{
+            const a=await state(pv),b=await state(hostVideo);
+            return Math.abs(a.time-b.time)<1.2 && await pv.executeJavaScript('document.querySelector("video").playbackRate===1');
+        });
+        await wait('second Android hold starts',()=>pv.executeJavaScript("window.__twAndroidPage.holdAt('beginHold',.4,.25,true)"));
+        await key(hostVideo,'k');
+        await wait('remote pause cancels Android hold',()=>pv.executeJavaScript('document.querySelector("video").paused && document.querySelector("video").playbackRate===1 && !window.__twDesktopPlayer.sample().holding'));
         await key(hostVideo,'j');
         await wait('Windows pause/seek reaches Android',async()=>{const s=await state(pv);return s.paused&&Math.abs(s.time-10)<1;});
         // A page reload must acquire a new bridge/player and the room position.

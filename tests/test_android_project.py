@@ -8,6 +8,18 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_fullscreen_controls_expire_and_hold_cancels_on_lifecycle_changes(self):
+        activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
+        for marker in ('postDelayed(hideFullscreenUi,2500)', 'removeCallbacks(hideFullscreenUi)',
+                       'setContentDescription("退出全屏")', 'dispatchTouchEvent(MotionEvent event)',
+                       'postDelayed(startPlayerHold,450)', 'MotionEvent.ACTION_CANCEL', 'MotionEvent.ACTION_POINTER_DOWN',
+                       'touchesPlayerControl', 'playerTouchConsumed', 'webHoldScript("canHold")'):
+            self.assertIn(marker, activity)
+        for method in ('protected void onStop()', 'protected void onDestroy()', 'private void exitNativeFullscreen()', 'private void hideFullscreenVideo()'):
+            body=activity.split(method,1)[1].split('\n    }',1)[0]
+            self.assertIn('finishPlayerHold(false)',body)
+        self.assertNotIn('exit.setText("退出全屏")',activity)
+
     def test_metadata_bridge_stays_in_catalogue_and_keeps_cookies_local(self):
         java = ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile'
         activity = (java / 'MainActivity.java').read_text(encoding='utf-8')

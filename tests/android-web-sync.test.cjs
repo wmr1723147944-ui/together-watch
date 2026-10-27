@@ -80,3 +80,17 @@ test('Android host shares exactly one confirmed episode, not a bare player page'
     assert.equal(bridge.currentEpisode('kanju'),'','ambiguous selections must not create a guessed invitation');
     assert.equal(bridge.currentEpisode('unknown'),'');
 });
+
+test('Android hold targets the selected frame and maps touches without cross-origin access',()=>{
+    const main=frame(100),child=frame(500),calls=[];
+    main.w.frames=[child.w];main.w.innerWidth=800;main.w.innerHeight=600;
+    child.w.parent=main.w;child.w.frameElement={getBoundingClientRect:()=>({left:100,top:80})};
+    child.w.__twDesktopPlayer.canHold=(...args)=>{calls.push(args);return true;};
+    child.w.__twDesktopPlayer.beginHold=(...args)=>{calls.push(args);return true;};
+    child.w.__twDesktopPlayer.endHold=commit=>calls.push(commit);
+    const bridge=start(main.w);bridge.sample(()=>{});
+    assert.equal(bridge.holdAt('canHold',.5,.5,false),true);assert.deepEqual(calls.pop(),[300,220,false]);
+    assert.equal(bridge.holdAt('beginHold',.5,.5,true),true);assert.deepEqual(calls.pop(),[300,220,true]);
+    assert.equal(bridge.holdAt('unknown',.5,.5,true),false);bridge.endHold(true);assert.equal(calls.pop(),true);
+    child.resize(0);bridge.sample(()=>{});assert.equal(calls.pop(),false);
+});

@@ -22,13 +22,22 @@
                 if(raw && (!best || raw.area>best.raw.area))best={w,raw};
             } catch {failed++;}
             if(!best){
-                if(selected){selected=null;selectedSerial=null;session++;}
+                if(selected){selected.__twDesktopPlayer?.endHold?.(false);selected=null;selectedSerial=null;session++;}
                 return {active:false,reason:failed?'adapter_error':available.blocked?'cross_origin_frame':'no_video'};
             }
-            if(selected!==best.w || selectedSerial!==best.raw.serial){selected=best.w;selectedSerial=best.raw.serial;session++;}
+            if(selected!==best.w || selectedSerial!==best.raw.serial){selected?.__twDesktopPlayer?.endHold?.(false);selected=best.w;selectedSerial=best.raw.serial;session++;}
             return {...best.raw,active:true,session};
         },
         apply(command){if(selected && command.session===session)selected.__twDesktopPlayer?.apply(command);},
+        holdAt(method,nx,ny,fullscreen){
+            if(!selected)return false;
+            if(method!=='canHold' && method!=='beginHold')return false;
+            let x=nx*window.innerWidth,y=ny*window.innerHeight,w=selected;
+            try {while(w!==window){const r=w.frameElement.getBoundingClientRect();x-=r.left;y-=r.top;w=w.parent;}}
+            catch{return false;}
+            return selected.__twDesktopPlayer?.[method](x,y,fullscreen)===true;
+        },
+        endHold(commit){selected?.__twDesktopPlayer?.endHold?.(commit);},
         overlay(packet){if(selected)selected.__twDesktopPlayer?.overlay(packet);},
         currentEpisode(source){
             if(source!=='kanju')return '';
@@ -49,6 +58,6 @@
             if(!el.classList.contains(active))el.click();
             return el.classList.contains(active);
         },
-        pause(){for(const w of frames().windows)try{w.document.querySelectorAll('video,audio').forEach(v=>v.pause());}catch{}},
+        pause(){for(const w of frames().windows)try{w.__twDesktopPlayer?.endHold?.(false);w.document.querySelectorAll('video,audio').forEach(v=>v.pause());}catch{}},
     };
 })();

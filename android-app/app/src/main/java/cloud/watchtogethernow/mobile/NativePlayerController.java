@@ -30,6 +30,7 @@ final class NativePlayerController {
     private JSONObject pendingState;
     private String error = "";
     private final DanmakuView danmaku;
+    private final PlaybackHold hold = new PlaybackHold();
 
     NativePlayerController(Context context, PlayerView view, StatusListener listener) {
         this.context = context;
@@ -92,14 +93,32 @@ final class NativePlayerController {
     }
 
     boolean isActive() { return player != null; }
+    boolean beginHold() {
+        if (player == null || !player.isPlaying() || pendingState != null || events.length() > 0) return false;
+        if (!hold.begin(player.getCurrentPosition()/1000.0, player.getPlaybackParameters().speed)) return false;
+        player.setPlaybackSpeed((float)hold.boosted);
+        return true;
+    }
+    void endHold(boolean commit) {
+        if (!hold.active || player == null) { hold.reset(); return; }
+        double roomTime=hold.roomTime(player.getCurrentPosition()/1000.0), speed=hold.speed;
+        hold.reset();
+        player.setPlaybackSpeed((float)speed);
+        if (commit) event("seek");
+        else player.seekTo((long)(roomTime*1000));
+    }
     void overlay(JSONObject packet) { danmaku.update(packet); }
     void pauseLocally() {
+        endHold(false);
         pendingState = null;
         events = new JSONArray();
         if (player != null) player.pause();
     }
     private void event(String type) {
         if (player == null) return;
+        // Accessibility / external player controls can interrupt a finger hold.
+        // Never report its temporary rate as the room's permanent speed.
+        if (hold.active) endHold(false);
         pendingState = null;
         if (events.length() >= 16) events = new JSONArray();
         JSONObject event = new JSONObject();
@@ -113,10 +132,15 @@ final class NativePlayerController {
         put(result, "active", player != null);
         put(result, "session", session);
         if (player == null) return result;
-        put(result, "time", player.getCurrentPosition() / 1000.0);
+        if (hold.active && !player.isPlaying()) endHold(player.getPlaybackState() == Player.STATE_ENDED);
+        double actualTime = player.getCurrentPosition()/1000.0;
+        put(result, "time", hold.roomTime(actualTime));
+        put(result, "holding", hold.active);
+        put(result, "visualTime", actualTime);
+        put(result, "visualSpeed", player.getPlaybackParameters().speed);
         long duration = player.getDuration();
         put(result, "duration", duration == C.TIME_UNSET ? 0 : Math.max(0, duration) / 1000.0);
-        put(result, "speed", player.getPlaybackParameters().speed);
+        put(result, "speed", hold.active ? hold.speed : player.getPlaybackParameters().speed);
         put(result, "playing", player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED);
         put(result, "ready", player.getPlaybackState() == Player.STATE_READY || player.getPlaybackState() == Player.STATE_ENDED);
         put(result, "seeking", pendingState != null);
@@ -136,6 +160,7 @@ final class NativePlayerController {
         if (!"state".equals(command.optString("type"))) return;
         long id = command.optLong("id");
         if (id < appliedCommand) return;
+        endHold(false);
         if (player.getPlaybackState() != Player.STATE_READY && player.getPlaybackState() != Player.STATE_ENDED) {
             pendingState = command;
             return;
@@ -158,6 +183,7 @@ final class NativePlayerController {
     }
 
     void release() {
+        hold.reset();
         danmaku.update(null);
         pendingState = null;
         events = new JSONArray();

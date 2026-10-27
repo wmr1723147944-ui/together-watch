@@ -20,6 +20,8 @@ import android.os.Looper;
 import android.os.Message;
 import android.os.Build;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.ViewConfiguration;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -104,6 +106,18 @@ public final class MainActivity extends ComponentActivity {
     private boolean cropFullscreen;
     private int orientationBeforeFullscreen = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED;
     private LinearLayout fullscreenControls;
+    private TextView holdSpeedHint;
+    private boolean touchCandidate, holdRequested, holdGestureActive, holdNativeMode, webHoldEligible;
+    private boolean playerTouchConsumed, holdObserved;
+    private float holdX, holdY, holdNx, holdNy;
+    private long holdDownTime;
+    private int holdToken;
+    private View holdTouchTarget;
+    private final Runnable hideFullscreenUi = () -> {
+        if (fullscreenControls != null) fullscreenControls.setVisibility(View.GONE);
+        if (nativeFullscreen && nativePlayerView != null) nativePlayerView.hideController();
+    };
+    private final Runnable startPlayerHold = this::startPlayerHold;
     private long lastDiscovery;
     private boolean discoveryInFlight;
     private boolean protectedPage;
@@ -209,13 +223,17 @@ public final class MainActivity extends ComponentActivity {
         nativePlayerView = new PlayerView(this);
         nativePlayerView.setVisibility(View.GONE);
         nativePlayerView.setKeepScreenOn(true);
+        nativePlayerView.setControllerShowTimeoutMs(2500);
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus);
         nativePlayerView.setFullscreenButtonClickListener(fullscreen -> {
             if (nativeFullscreen) exitNativeFullscreen(); else enterNativeFullscreen();
         });
         nativePlayerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
-            if (nativeFullscreen && fullscreenControls != null) fullscreenControls.setVisibility(visibility);
+            if (nativeFullscreen && fullscreenControls != null) {
+                if (visibility == View.VISIBLE && !holdGestureActive) showFullscreenControls();
+                else fullscreenControls.setVisibility(View.GONE);
+            }
         });
         roomContainer.addView(roomWebView, new FrameLayout.LayoutParams(-1, -1));
         try (InputStream input = getAssets().open("media-discovery.js")) {
@@ -476,6 +494,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showFinder(boolean original) {
+        finishPlayerHold(false);
         if(requestBusy)return;
         pendingSetupSelection=null;
         originalFinderActive=original;
@@ -637,6 +656,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void openProgramPage(String page) {
+        finishPlayerHold(false);
         hideFinders();
         finding=false;appliedProgramRevision=0;awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
@@ -815,7 +835,11 @@ public final class MainActivity extends ComponentActivity {
         if(!bridgeCurrent(generation))return;
         if(page!=videoPageGeneration){scheduleBridge(generation);return;}
         final long revision=programRevision;
-        danmakuTime=sample.optDouble("time",0);danmakuSpeed=sample.optDouble("speed",1);
+        danmakuTime=sample.optDouble("visualTime",sample.optDouble("time",0));danmakuSpeed=sample.optDouble("visualSpeed",sample.optDouble("speed",1));
+        if (holdGestureActive) {
+            if(sample.optBoolean("holding"))holdObserved=true;
+            else if(holdObserved)finishPlayerHold(false);
+        }
         danmakuPlaying=sample.optBoolean("active")&&sample.optBoolean("ready")&&sample.optBoolean("playing")&&!sample.optBoolean("seeking");
         danmakuSampleAt=android.os.SystemClock.elapsedRealtime();
         if(!sample.optBoolean("active")){lastDanmakuPacket=null;if(webFullscreenDanmaku!=null)webFullscreenDanmaku.update(null);}
@@ -1065,6 +1089,7 @@ public final class MainActivity extends ComponentActivity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
             if ("about:blank".equals(url)) return;
+            finishPlayerHold(false);
             videoLoading=true;
             videoPageGeneration += 1;
             protectedPage = false;
@@ -1388,7 +1413,115 @@ public final class MainActivity extends ComponentActivity {
         WebView old=routingPopup;routingPopup=null;old.stopLoading();old.destroy();
     }
 
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+
+    private boolean containsTouch(View view, float x, float y) {
+        if (view == null || !view.isShown()) return false;
+        android.graphics.Rect r = new android.graphics.Rect();
+        return view.getGlobalVisibleRect(r) && r.contains((int)x, (int)y);
+    }
+
+    private boolean touchesPlayerControl(View view, float x, float y) {
+        if (!containsTouch(view,x,y)) return false;
+        if (view instanceof Button || view instanceof android.widget.ImageButton || view instanceof android.widget.SeekBar
+                || view instanceof androidx.media3.ui.DefaultTimeBar) return true;
+        if (view instanceof ViewGroup) {
+            ViewGroup group=(ViewGroup)view;
+            for(int i=0;i<group.getChildCount();i++) if(touchesPlayerControl(group.getChildAt(i),x,y))return true;
+        }
+        return false;
+    }
+
+    @Override public boolean dispatchTouchEvent(MotionEvent event) {
+        int action=event.getActionMasked();
+        if(action==MotionEvent.ACTION_DOWN) {
+            finishPlayerHold(false);
+            playerTouchConsumed=false;
+            holdX=event.getRawX();holdY=event.getRawY();holdDownTime=event.getDownTime();
+            holdNativeMode=nativePlayer!=null && nativePlayer.isActive();
+            holdTouchTarget=fullscreenView!=null?fullscreenView:holdNativeMode?nativePlayerView:videoWebView;
+            touchCandidate=foreground && sessionActive && !finding && !awaitingEpisode && !videoLoading
+                && containsTouch(holdTouchTarget,holdX,holdY) && !containsTouch(fullscreenControls,holdX,holdY)
+                && !(holdNativeMode && touchesPlayerControl(nativePlayerView,holdX,holdY));
+            if(touchCandidate) {
+                int[] location=new int[2];holdTouchTarget.getLocationOnScreen(location);
+                holdNx=(holdX-location[0])/Math.max(1,holdTouchTarget.getWidth());
+                holdNy=(holdY-location[1])/Math.max(1,holdTouchTarget.getHeight());
+                // Keep the seek bar / native fullscreen controls available for dragging.
+                if((holdNativeMode || fullscreenView!=null) && holdNy>.80f)touchCandidate=false;
+            }
+            if(touchCandidate) {
+                final int token=holdToken;
+                if(!holdNativeMode)videoWebView.evaluateJavascript(webHoldScript("canHold"),result->{
+                    if(token==holdToken && touchCandidate)webHoldEligible="true".equals(result);
+                });
+                mainHandler.postDelayed(startPlayerHold,450);
+            }
+        } else if(action==MotionEvent.ACTION_POINTER_DOWN || action==MotionEvent.ACTION_CANCEL) {
+            boolean consumed=playerTouchConsumed;finishPlayerHold(false);
+            if(action==MotionEvent.ACTION_CANCEL)playerTouchConsumed=false;
+            if(consumed)return true;
+        } else if(action==MotionEvent.ACTION_MOVE && touchCandidate) {
+            if(Math.hypot(event.getRawX()-holdX,event.getRawY()-holdY)>ViewConfiguration.get(this).getScaledTouchSlop()*2) {
+                boolean consumed=playerTouchConsumed;finishPlayerHold(false);if(consumed)return true;
+            }
+        } else if(action==MotionEvent.ACTION_UP) {
+            boolean consumed=playerTouchConsumed, tap=touchCandidate;
+            finishPlayerHold(holdGestureActive);
+            playerTouchConsumed=false;
+            if(consumed)return true;
+            boolean handled=super.dispatchTouchEvent(event);
+            if(tap && fullscreenView!=null) {
+                if(fullscreenControls!=null && fullscreenControls.getVisibility()==View.VISIBLE)hideFullscreenUi.run();
+                else showFullscreenControls();
+            }
+            return handled;
+        }
+        return playerTouchConsumed || super.dispatchTouchEvent(event);
+    }
+
+    private String webHoldScript(String method) {
+        return "window.__twAndroidPage?.holdAt("+js(method)+","+holdNx+","+holdNy+","+(fullscreenView!=null)+")";
+    }
+
+    private void startPlayerHold() {
+        if(!touchCandidate || destroyed || !foreground || (!holdNativeMode && !webHoldEligible))return;
+        holdRequested=true;playerTouchConsumed=true;
+        final int token=holdToken;
+        MotionEvent cancel=MotionEvent.obtain(holdDownTime,android.os.SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,holdX,holdY,0);
+        super.dispatchTouchEvent(cancel);cancel.recycle();
+        if(holdNativeMode) {
+            if(nativePlayer.beginHold())activatePlayerHold();else finishPlayerHold(false);
+        } else videoWebView.evaluateJavascript(webHoldScript("beginHold"),result->{
+            if(token!=holdToken)return;
+            if("true".equals(result))activatePlayerHold();else finishPlayerHold(false);
+        });
+    }
+
+    private void activatePlayerHold() {
+        holdGestureActive=true;holdObserved=false;mainHandler.removeCallbacks(hideFullscreenUi);hideFullscreenUi.run();
+        nativePlayerView.hideController();
+        holdSpeedHint=new TextView(this);holdSpeedHint.setText("▶▶ 临时倍速中 · 松手恢复");
+        holdSpeedHint.setTextColor(0xffffffff);holdSpeedHint.setTextSize(13);holdSpeedHint.setPadding(dp(12),dp(6),dp(12),dp(6));
+        holdSpeedHint.setBackgroundColor(0x99000000);holdSpeedHint.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        FrameLayout host=(nativeFullscreen || fullscreenView!=null)?fullscreenContainer:videoContainer;
+        FrameLayout.LayoutParams layout=new FrameLayout.LayoutParams(-2,-2,Gravity.TOP|Gravity.CENTER_HORIZONTAL);
+        layout.topMargin=dp(10);host.addView(holdSpeedHint,layout);
+    }
+
+    private void finishPlayerHold(boolean commit) {
+        mainHandler.removeCallbacks(startPlayerHold);
+        boolean requested=holdRequested, active=holdGestureActive;
+        touchCandidate=false;holdRequested=false;holdGestureActive=false;webHoldEligible=false;holdToken++;
+        if(nativePlayer!=null)nativePlayer.endHold(commit && active);
+        if(requested && !holdNativeMode && videoWebView!=null && !destroyed)
+            videoWebView.evaluateJavascript("window.__twAndroidPage?.endHold("+(commit && active)+")",null);
+        if(holdSpeedHint!=null && holdSpeedHint.getParent() instanceof ViewGroup)((ViewGroup)holdSpeedHint.getParent()).removeView(holdSpeedHint);
+        holdSpeedHint=null;
+    }
+
     private void showFullscreenVideo(View view, WebChromeClient.CustomViewCallback callback) {
+        finishPlayerHold(false);
         exitNativeFullscreen();
         if (fullscreenView != null) {
             callback.onCustomViewHidden();
@@ -1412,6 +1545,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void hideFullscreenVideo() {
         if (fullscreenView == null) return;
+        finishPlayerHold(false);
         fullscreenContainer.removeView(fullscreenView);
         if(webFullscreenDanmaku!=null){webFullscreenDanmaku.update(null);fullscreenContainer.removeView(webFullscreenDanmaku);webFullscreenDanmaku=null;}
         removeFullscreenControls();
@@ -1439,6 +1573,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void enterNativeFullscreen() {
         if (nativeFullscreen || !nativePlayer.isActive()) return;
+        finishPlayerHold(false);
         hideFullscreenVideo();
         nativeFullscreen = true;
         ((ViewGroup) nativePlayerView.getParent()).removeView(nativePlayerView);
@@ -1454,6 +1589,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void exitNativeFullscreen() {
         if (!nativeFullscreen) return;
+        finishPlayerHold(false);
         nativeFullscreen = false;
         fullscreenContainer.removeView(nativePlayerView);
         removeFullscreenControls();
@@ -1470,25 +1606,44 @@ public final class MainActivity extends ComponentActivity {
         fullscreenControls = new LinearLayout(this);
         fullscreenControls.setOrientation(LinearLayout.HORIZONTAL);
         Button exit = new Button(this);
-        exit.setText("退出全屏");
+        exit.setText("‹ 返回");
+        exit.setContentDescription("退出全屏");
+        styleFullscreenButton(exit);
         exit.setOnClickListener(v -> { if (nativeFullscreen) exitNativeFullscreen(); else hideFullscreenVideo(); });
         fullscreenControls.addView(exit);
         if (nativeMode) {
             Button crop = new Button(this);
+            styleFullscreenButton(crop);
             crop.setText(cropFullscreen ? "显示完整画面" : "铺满屏幕（裁边）");
             crop.setOnClickListener(v -> {
                 cropFullscreen = !cropFullscreen;
                 nativePlayerView.setResizeMode(cropFullscreen ? AspectRatioFrameLayout.RESIZE_MODE_ZOOM : AspectRatioFrameLayout.RESIZE_MODE_FIT);
                 crop.setText(cropFullscreen ? "显示完整画面" : "铺满屏幕（裁边）");
+                showFullscreenControls();
             });
             fullscreenControls.addView(crop);
         }
-        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
-        params.setMargins(12, 8, 12, 0);
+        FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
+        params.setMargins(dp(12), dp(8), dp(12), 0);
         fullscreenContainer.addView(fullscreenControls, params);
+        showFullscreenControls();
+    }
+
+    private void styleFullscreenButton(Button button) {
+        button.setTextSize(13);button.setTextColor(0xffffffff);button.setAllCaps(false);
+        button.setBackgroundColor(0x66000000);button.setMinWidth(0);button.setMinimumWidth(0);
+        button.setMinHeight(0);button.setMinimumHeight(0);button.setPadding(dp(12),0,dp(12),0);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,dp(48));p.setMarginEnd(dp(8));button.setLayoutParams(p);
+    }
+
+    private void showFullscreenControls() {
+        if(fullscreenControls==null || holdGestureActive)return;
+        fullscreenControls.setVisibility(View.VISIBLE);
+        mainHandler.removeCallbacks(hideFullscreenUi);mainHandler.postDelayed(hideFullscreenUi,2500);
     }
 
     private void removeFullscreenControls() {
+        mainHandler.removeCallbacks(hideFullscreenUi);
         if (fullscreenControls != null) fullscreenContainer.removeView(fullscreenControls);
         fullscreenControls = null;
     }
@@ -1526,7 +1681,8 @@ public final class MainActivity extends ComponentActivity {
 
     @Override public void onWindowFocusChanged(boolean focused) {
         super.onWindowFocusChanged(focused);
-        if (focused && (nativeFullscreen || fullscreenView != null)) applyImmersive(true);
+        if(!focused) { finishPlayerHold(false);mainHandler.removeCallbacks(hideFullscreenUi);hideFullscreenUi.run(); }
+        if (focused && (nativeFullscreen || fullscreenView != null)) { applyImmersive(true);showFullscreenControls(); }
     }
 
     private void openExternal(String url) {
@@ -1579,6 +1735,9 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onStop() {
+        finishPlayerHold(false);
+        mainHandler.removeCallbacks(hideFullscreenUi);
+        hideFullscreenUi.run();
         foreground = false;
         if(catalogMetadata!=null)catalogMetadata.flush();
         cancelPendingMicrophone();
@@ -1605,6 +1764,7 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
+        finishPlayerHold(false);
         destroyed = true;
         if(catalogMetadata!=null)catalogMetadata.close();
         sessionActive = false;
