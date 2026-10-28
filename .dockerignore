@@ -1,5 +1,7 @@
 .env
 .env.server
+data
+*.sqlite3*
 .venv
 .git
 .gitignore

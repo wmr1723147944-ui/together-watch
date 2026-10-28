@@ -8,4 +8,5 @@
     </nav>
     {% if request.endpoint in ('index', 'discover') %}{% include "_catalog_search.html" %}{% endif %}
     <a class="nav-room-link" href="/#roomEntry">加入房间 <span aria-hidden="true">↗</span></a>
+    {% if request.endpoint in ('index', 'discover') %}<button type="button" class="account-nav" data-account-open><span data-account-label>登录</span></button>{% endif %}
 </header>

@@ -63,7 +63,7 @@
                 if(!data?.active || !data.ready || !selection || !initialized)return;
                 recordable=data;
                 if(Date.now()-lastHistoryRequest>15000)requestRoom();
-                if(contextReady && initialized && count>0 && !resumeChecked){resumeChecked=true;const time=store.takeResume(selection,owner,count===1);if(time!==null && (!data.duration || time<data.duration-5))seek(time);}
+                if(contextReady && initialized && count>0 && !resumeChecked && root.TogetherWatchAccount?.ready!==false){resumeChecked=true;const time=store.takeResume(selection,owner,count===1);if(time!==null && (!data.duration || time<data.duration-5))seek(time);}
                 if(Date.now()-lastSaved>5000){lastSaved=Date.now();store.record(selection,data);}
             },
             overlay(session){return {session,enabled:options.room||options.public,opacity:.85,size:22,items:sample?.active?timeline.at(sample.time):[]};},

@@ -1,0 +1,36 @@
+<dialog id="accountDialog" class="account-dialog" aria-labelledby="accountTitle">
+    <header class="account-heading"><div><small>TOGETHER WATCH</small><h2 id="accountTitle">我的账号</h2></div><button id="accountClose" type="button" aria-label="关闭账号面板">关闭</button></header>
+    <section id="accountGuest">
+        <p class="account-intro">把看到哪一集，留在你的账号里。<br>不登录也可以看，历史只保存在本机。</p>
+        <p id="accountConnection" class="account-note" role="status">正在检查登录状态…</p>
+        <form id="accountForm">
+            <label for="accountLoginName">用户名</label><input id="accountLoginName" autocomplete="username" maxlength="32" required placeholder="4–32 位字母、数字或下划线" autocapitalize="none" spellcheck="false">
+            <label for="accountPassword">密码</label><input id="accountPassword" type="password" autocomplete="current-password" maxlength="128" required placeholder="注册时需 12–128 个字符">
+            <div id="accountRegistration" hidden>
+                <label for="accountDisplayName">显示昵称（可选）</label><input id="accountDisplayName" maxlength="32" autocomplete="nickname" placeholder="例如：小雨">
+                <p class="account-note">暂不支持邮箱或短信找回，请保存好用户名和密码。请勿使用视频平台的账号密码。</p>
+                <label class="account-check"><input id="accountConsent" type="checkbox"><span>我已阅读并同意<a href="/terms" target="_blank" rel="noopener">用户协议</a>和<a href="/privacy" target="_blank" rel="noopener">隐私政策</a>，了解登录后的观看历史会保存在本服务账号中。</span></label>
+            </div>
+            <button id="accountSubmit" class="account-primary" type="submit">登录</button>
+        </form>
+        <button id="accountSwitch" type="button" class="account-text-button">没有账号？去注册</button>
+    </section>
+    <section id="accountMember" hidden>
+        <div class="account-profile"><span class="account-avatar" aria-hidden="true">▶</span><div><h3 id="accountName"></h3><small id="accountUsername"></small></div></div>
+        <p id="accountSyncState" role="status">正在同步…</p>
+        <div class="account-import"><strong>本机还有 <span id="accountLocalCount">0</span> 条访客历史</strong><p>只在你点击导入后上传。已有记录保留较新的进度，最多保留最近 100 条；导入不删除本机原记录。</p><button id="accountImport" type="button">导入本机历史到此账号</button></div>
+        <div class="account-actions"><button id="accountRefresh" type="button">刷新同步状态</button><button id="accountLogout" type="button">退出登录</button></div>
+        <details><summary>修改密码</summary><form id="accountPasswordForm">
+            <label for="accountOldPassword">当前密码</label><input id="accountOldPassword" type="password" autocomplete="current-password" maxlength="128" required>
+            <label for="accountNewPassword">新密码（12–128 个字符）</label><input id="accountNewPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+            <p class="account-note">修改后，其他设备需要重新登录。</p><button id="accountPasswordSubmit" type="submit">保存新密码</button>
+        </form></details>
+        <details><summary>注销账号</summary><form id="accountDeleteForm">
+            <p class="account-note">将删除账号和服务器上的个人观看历史，无法恢复。房间不因此关闭，本机访客历史不受影响。</p>
+            <label for="accountDeletePassword">确认当前密码</label><input id="accountDeletePassword" type="password" autocomplete="current-password" maxlength="128" required>
+            <label class="account-check"><input id="accountDeleteConfirm" type="checkbox" required><span>我确认永久删除这个账号及云端历史</span></label>
+            <button id="accountDeleteSubmit" class="account-danger" type="submit">永久注销账号</button>
+        </form></details>
+    </section>
+    <p id="accountMessage" role="status" aria-live="polite"></p>
+</dialog>

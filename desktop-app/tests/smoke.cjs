@@ -75,9 +75,18 @@ exports.run = async createDesktop => {
     const python = process.env.TW_SMOKE_PYTHON || 'python';
     // Local-only fixture route/state. Never relax production URL validation.
     const backend = spawn(python, ['-u', '-c', `
+import tempfile
+import os
+account_db=tempfile.TemporaryDirectory(prefix='tw-account-smoke-')
+os.environ['ACCOUNT_DATABASE']=os.path.join(account_db.name,'accounts.sqlite3')
 from app import app, socketio, ensure_room_state, LEGAL_NOTICE_VERSION
 from flask import send_file
 import os
+if os.environ.get('TW_SMOKE_ACCOUNTS_ONLY') == '1':
+    import app as module
+    import catalog_recommendations
+    module.enabled_search_sources=lambda: []
+    catalog_recommendations.load_page=lambda source, category, page: dict(source_id=source,category=category,page=page,status='ok',results=[],has_more=False,next_page=None)
 if os.environ.get('TW_SMOKE_EPISODES_ONLY') == '1':
     import app as module
     import catalog_recommendations
@@ -129,6 +138,9 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
     const clients = [];
     try {
         await until('local backend', async () => { try { return (await fetch(server + '/health')).ok; } catch { return false; } });
+        if (process.env.TW_SMOKE_ACCOUNTS_ONLY === '1') {
+            await require('./accounts-smoke.cjs').run({createDesktop,server,output,until});return;
+        }
         if (process.env.TW_SMOKE_EPISODES_ONLY === '1') {
             await require('./episodes-smoke.cjs').run({createDesktop,server,output,until});return;
         }

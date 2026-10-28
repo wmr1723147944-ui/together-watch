@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>一起看 · 房间</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/account.css', v='20261029-account') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile-room.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/client-room-theme.css', v='20261022-room-controls') }}">
 </head>
@@ -15,6 +16,8 @@
         <button id="joinCallBtn">加入语音</button>
     </header>
     <p id="mobilePlayerStatus" role="status">等待 APP 播放器</p>
+    <details class="room-audio-options"><summary>个人账号 / 历史同步</summary><button type="button" data-account-open><span data-account-label>登录</span> · 管理观看记录</button></details>
+    {% include "_account.html" %}
     <details class="danmaku-options"><summary>弹幕设置 <span>好友 / 公共弹幕</span></summary>
         <div class="danmaku-toggles"><label><input type="checkbox" id="roomDanmakuEnabled" checked> 好友弹幕</label><label><input type="checkbox" id="publicDanmakuEnabled"> 公共弹幕</label></div>
         <p id="publicDanmakuStatus" role="status">正在检查公共弹幕服务…</p>
@@ -42,9 +45,10 @@
     <script src="{{ url_for('static', filename='vendor/socket.io-4.7.2.min.js') }}" defer></script>
     <script src="{{ url_for('static', filename='js/voice-call.js', v='20261014-mic') }}" defer></script>
     <script src="{{ url_for('static', filename='js/native-sync.js', v='20261013-solo') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/watch-history.js', v='20261027-history') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/watch-history.js', v='20261029-account') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/account.js', v='20261029-account') }}" defer></script>
     <script src="{{ url_for('static', filename='js/danmaku-core.js', v='20261027-history') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/room-experience.js', v='20261027-history') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/room-experience.js', v='20261029-account') }}" defer></script>
     <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261027-history') }}" defer></script>
 </body>
 </html>

@@ -270,6 +270,9 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_COOKIE_SECURE=APP_ENV == "production",
+    SESSION_REFRESH_EACH_REQUEST=False,
+    ACCOUNT_DATABASE=os.environ.get('ACCOUNT_DATABASE', str(BASE_DIR / 'data' / 'accounts.sqlite3')),
+    ACCOUNT_REGISTRATION_ENABLED=os.environ.get('ACCOUNT_REGISTRATION_ENABLED', '1') == '1',
     PREFERRED_URL_SCHEME="https" if APP_ENV == "production" else "http",
 )
 if TRUST_PROXY_HOPS:
@@ -647,6 +650,10 @@ def rate_limit(scope, limit, window_seconds):
         return wrapped
 
     return decorator
+
+
+from accounts import register_accounts
+register_accounts(app, rate_limit)
 
 
 def validate_public_url(value):
@@ -1636,6 +1643,7 @@ def health():
             "public_launch_ready": PUBLIC_LAUNCH_READY,
             "turn_configured": TURN_CONFIGURED,
             "companion_archive": COMPANION_EXTENSION_ARCHIVE.is_file(),
+            "account_history_version": "20261029-v1",
         }
     )
 

@@ -8,13 +8,13 @@
         if (![p.item, p.episode].every(v => typeof v === 'string' && /^[A-Za-z0-9_.-]{1,240}$/.test(v) && !v.includes('..'))) return '';
         return [p.source, p.item, p.episode].join(':');
     }
-    function createStore(storage, now = Date.now) {
+    function createStore(storage, now = Date.now, storageKey = KEY) {
         const empty = () => ({ enabled: true, rows: [], meta: {}, deleted: [] });
         function read() {
-            try { const s = JSON.parse(storage.getItem(KEY)); return s && Array.isArray(s.rows) && s.meta && typeof s.meta==='object' && !Array.isArray(s.meta) && Array.isArray(s.deleted) ? s : empty(); }
+            try { const s = JSON.parse(storage.getItem(storageKey)); return s && Array.isArray(s.rows) && s.meta && typeof s.meta==='object' && !Array.isArray(s.meta) && Array.isArray(s.deleted) ? s : empty(); }
             catch { return empty(); }
         }
-        function write(s) { try { storage.setItem(KEY, JSON.stringify(s)); return true; } catch { return false; } }
+        function write(s) { try { storage.setItem(storageKey, JSON.stringify(s)); return true; } catch { return false; } }
         function cleanMeta(p, meta = {}) {
             let poster = '';
             try { const u = new URL(meta.poster); if (u.protocol === 'https:' && !u.username && !u.password && u.href.length < 2048) poster = u.href; } catch {}
@@ -52,10 +52,11 @@
             },
         };
     }
-    const api = { identity, createStore };
+    const api = { identity, createStore, KEY };
     if (typeof module === 'object' && module.exports) module.exports = api;
     else {
         try { api.store = createStore(root.localStorage); } catch { api.store = createStore({ getItem() {}, setItem() { throw Error('storage unavailable'); } }); }
+        api.localStore = api.store;
         root.TogetherWatchHistory = api;
         root.document.addEventListener('DOMContentLoaded', () => {
             const doc = root.document, dialog = doc.getElementById('watchHistoryDialog'); if (!dialog) return;
@@ -63,6 +64,10 @@
             const enabled = doc.getElementById('watchHistoryEnabled');
             const format = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2,'0')}`;
             function render() {
+                const account = root.TogetherWatchAccount;
+                const hint=doc.getElementById('watchHistoryScope'), clearHint=doc.getElementById('watchHistoryClearScope');
+                if(hint)hint.textContent=account?.ready===false ? '正在确认账号状态，暂不改写历史。'+account.status : account?.user ? `账号「${account.user.display_name}」的观看历史 · ${account.status}` : '未登录：记录只在这台设备。登录后可同步到账号；本机记录不会自动上传。';
+                if(clearHint)clearHint.textContent=account?.user?'确定清空这个账号在所有设备上的观看历史？':'确定清空这台设备的观看历史？';
                 enabled.checked = api.store.enabled(); list.replaceChildren();
                 const recent = doc.getElementById('continueWatchingList'); recent?.replaceChildren();
                 const rows = api.store.list(); if (shelf) shelf.hidden = !rows.length;
@@ -94,6 +99,8 @@
             dialog.addEventListener('close',()=>{confirmation.hidden=true;});
             enabled.onchange = () => api.store.setEnabled(enabled.checked);
             root.addEventListener('storage', e => { if (e.key === KEY) render(); });
+            root.addEventListener('tw-account-change',render);
+            root.addEventListener('tw-history-change',render);
             root.addEventListener('focus', render); render();
         });
     }

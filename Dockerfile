@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 RUN useradd --create-home --uid 10001 appuser
 COPY --chown=appuser:appuser . .
+RUN mkdir -p /app/data && chown appuser:appuser /app/data && chmod 700 /app/data
 
 USER appuser
 EXPOSE 5000

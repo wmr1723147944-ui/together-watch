@@ -28,6 +28,10 @@ services:
       WEBRTC_ICE_SERVERS: ${WEBRTC_ICE_SERVERS:-}
       DANDANPLAY_APP_ID: ${DANDANPLAY_APP_ID:-}
       DANDANPLAY_APP_SECRET: ${DANDANPLAY_APP_SECRET:-}
+      ACCOUNT_DATABASE: /app/data/accounts.sqlite3
+      ACCOUNT_REGISTRATION_ENABLED: ${ACCOUNT_REGISTRATION_ENABLED:-1}
+    volumes:
+      - account_data:/app/data
     expose:
       - "5000"
     networks:
@@ -66,5 +70,6 @@ networks:
   web:
 
 volumes:
+  account_data:
   caddy_data:
   caddy_config:
