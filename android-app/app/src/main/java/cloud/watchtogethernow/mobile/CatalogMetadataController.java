@@ -6,6 +6,7 @@ import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.util.Log;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -29,6 +30,7 @@ import java.util.function.Consumer;
 
 /** Polls only our catalogue main frame; original sites receive no native bridge. */
 final class CatalogMetadataController {
+    private static final String LOG_TAG="TogetherWatchCatalog";
     private final Activity activity;
     private final WebView catalogue;
     private final ViewGroup queryHost;
@@ -172,7 +174,7 @@ final class CatalogMetadataController {
         final Runnable poll=()->read(this);
         AlertDialog dialog;
         Runnable watchdog;
-        boolean done,resumed,retried;
+        boolean done,resumed,retried,readFailureLogged;
         Runnable reload;
         long emptySince;
         long posterSince;
@@ -187,7 +189,10 @@ final class CatalogMetadataController {
         if(data==null)return;
         String id=data.optString("id");if(!id.matches("[a-zA-Z0-9_-]{1,80}"))return;
         JSONObject req=CatalogMetadataPolicy.request(data.optString("kind"),data.optJSONObject("payload"));
-        if(req==null || !(data.opt("interactive") instanceof Boolean)){reply(token,id,status("unavailable"));return;}
+        if(req==null || !(data.opt("interactive") instanceof Boolean)){
+            // Log only the fixed failure stage, never the payload/query/account.
+            Log.w(LOG_TAG,"request_rejected");reply(token,id,status("unavailable"));return;
+        }
         String source=req.optString("source");Page page=pages.get(source);
         if(jobs.size()>=2 || jobs.containsKey(id) || page!=null && page.job!=null){reply(token,id,status("busy"));return;}
         if(page==null){page=new Page(source);pages.put(source,page);}
@@ -224,9 +229,14 @@ final class CatalogMetadataController {
         job.reload=()->{if(current(job))job.page.view.loadUrl(job.req.optString("url"));};
         handler.postDelayed(job.reload,800);return true;
     }
+    private void timeout(Job job) {
+        if(job.done)return;
+        Log.w(LOG_TAG,"read_timeout source="+job.req.optString("source"));
+        finish(job,job.partial!=null?job.partial:status(job.lastStatus),true);
+    }
     private void read(Job job) {
         if(!current(job)){finish(job,status("cancelled"),true);return;}
-        if(SystemClock.elapsedRealtime()>job.deadline){finish(job,job.partial!=null?job.partial:status(job.lastStatus),true);return;}
+        if(SystemClock.elapsedRealtime()>job.deadline){timeout(job);return;}
         Page page=job.page;String at=page.view.getUrl();final int navigation=page.navigation;
         if(!CatalogMetadataPolicy.allowed(page.source,at)){handler.postDelayed(job.poll,500);return;}
         // Never export page HTML, scripts, cookies or a login form. Only the
@@ -236,7 +246,7 @@ final class CatalogMetadataController {
             +adapters+";const a=window.TogetherWatchCatalogAdapters,r="+job.req+";return {expected:a.expectedPage(r,location.href),data:a.readDocument(document,r)};})()";
         // WebView callbacks can be lost on renderer failure. Keep a deadline
         // watchdog, independent of the JavaScript callback.
-        job.watchdog=()->finish(job,job.partial!=null?job.partial:status(job.lastStatus),true);
+        job.watchdog=()->timeout(job);
         handler.postDelayed(job.watchdog,Math.max(1,job.deadline-SystemClock.elapsedRealtime()));
         page.view.evaluateJavascript(code,raw->{
             if(job.watchdog!=null)handler.removeCallbacks(job.watchdog);
@@ -268,7 +278,12 @@ final class CatalogMetadataController {
                 if(job.interactive && !job.resumed && !envelope.optBoolean("expected") && state.equals("ok")) {
                     job.resumed=true;page.view.loadUrl(job.req.optString("url"));
                 }
-            }catch(Exception ignored){}
+            }catch(Exception ignored){
+                if(!job.readFailureLogged){
+                    job.readFailureLogged=true;
+                    Log.w(LOG_TAG,"read_response_invalid source="+job.req.optString("source"));
+                }
+            }
             if(current(job))handler.postDelayed(job.poll,500);
         });
     }

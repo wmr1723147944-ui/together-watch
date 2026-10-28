@@ -3,8 +3,8 @@ const assert=require('node:assert/strict');
 const vm=require('node:vm'),fs=require('node:fs');
 const adapters=require('../static/js/catalog-adapters.js');
 const source=fs.readFileSync('android-app/app/src/main/assets/catalog-metadata-bridge.js','utf8');
-function setup(sources=['pkavi','233dm','kanju','huarw'], clock={setTimeout,clearTimeout}) {
-    const ctx={TogetherWatchCatalogAdapters:adapters,crypto:{randomUUID:()=>require('node:crypto').randomUUID()},setTimeout,clearTimeout,
+function setup(sources=['pkavi','233dm','kanju','huarw'], clock={setTimeout,clearTimeout}, reader=adapters) {
+    const ctx={TogetherWatchCatalogAdapters:reader,crypto:{randomUUID:()=>require('node:crypto').randomUUID()},setTimeout,clearTimeout,
         document:{querySelectorAll:()=>sources.map(source=>({dataset:{liveSource:source}}))}};
     Object.assign(ctx,clock);ctx.window=ctx;vm.createContext(ctx);vm.runInContext(source,ctx);return ctx;
 }
@@ -18,6 +18,22 @@ test('Android metadata capability is bounded and returns only normalized public 
     assert.equal((await api.request('bad','search',{source:'pkavi',q:'x',cookie:'secret'})).status,'unavailable');
     assert.equal((await api.request('foreign','detail',{source:'pkavi',page_url:'https://127.0.0.1'})).status,'unavailable');
     assert.equal((await setup([]).twSourceMetadata.request('disabled','search',{source:'pkavi',q:'x'})).status,'unavailable');
+});
+
+test('Android result reader failure settles the promise and frees its queue slot',async()=>{
+    const reader={...adapters,normalizeResult(){throw Error('fixture reader failure');}};
+    const c=setup(undefined,undefined,reader),q=c.__twMetadataQueue,api=c.twSourceMetadata;
+    const promise=api.request('bad-reply','search',{source:'kanju',q:'元气少女'},true);
+    q.drain();
+    assert.doesNotThrow(()=>q.complete(q.token,'bad-reply',{status:'ok',results:[]}));
+    assert.equal((await promise).status,'unavailable');
+    const next=api.request('retry','search',{source:'huarw',q:'元气少女'});
+    assert.equal(q.drain().requests.length,1);
+    api.cancel('retry');assert.equal((await next).status,'unavailable');
+    reader.normalizeResult=adapters.normalizeResult;
+    const recovered=api.request('recovered','search',{source:'kanju',q:'元气少女'},true);
+    q.drain();q.complete(q.token,'recovered',{status:'ok',results:[]});
+    assert.equal((await recovered).status,'ok');
 });
 
 test('Android Huarw uses local bounded metadata and expiry is not reported as user cancellation',async()=>{

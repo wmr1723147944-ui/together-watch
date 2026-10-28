@@ -8,11 +8,20 @@
     const supportedSources=Object.freeze(['pkavi','233dm','kanju','huarw']);
     const pending=new Map(), cancelled=[];
     const token=globalThis.crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
+    function normalize(job,raw) {
+        try {return adapters.normalizeResult(job.req,raw);}
+        catch {
+            // The native job has already finished. A reader bug must not leave
+            // the catalogue promise pending after its timeout was cleared.
+            console.warn('[TogetherWatchCatalog] result_normalization_failed');
+            return {source_id:job.req.source,status:'unavailable'};
+        }
+    }
     function cancel(id, status='cancelled') {
         const job=pending.get(id);if(!job)return;
         pending.delete(id);clearTimeout(job.timer);
         if(job.sent && cancelled.length<16)cancelled.push(id);
-        job.resolve(adapters.normalizeResult(job.req,{status}));
+        job.resolve(normalize(job,{status}));
     }
     const queue=Object.freeze({
         token,
@@ -27,7 +36,7 @@
             if(documentToken!==token)return;
             const job=pending.get(id);if(!job)return;
             pending.delete(id);clearTimeout(job.timer);
-            job.resolve(adapters.normalizeResult(job.req,raw));
+            job.resolve(normalize(job,raw));
         },
     });
     Object.defineProperty(window,'__twMetadataQueue',{value:queue,configurable:false});

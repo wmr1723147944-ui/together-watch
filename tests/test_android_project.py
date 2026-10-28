@@ -8,6 +8,20 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_catalogue_query_does_not_reintroduce_jdk_only_regex_flags(self):
+        # JVM unit tests accepted this flag; Android's ICU engine rejects it
+        # before any original-site page is opened. Guard the platform boundary.
+        java = ANDROID / 'app/src/main/java'
+        for path in java.rglob('*.java'):
+            with self.subTest(path=path.name):
+                self.assertNotIn('(?U)', path.read_text(encoding='utf-8'))
+        policy = (java / 'cloud/watchtogethernow/mobile/CatalogMetadataPolicy.java').read_text(encoding='utf-8')
+        normalization = policy.split('static String normalizeQuery(', 1)[1].split('static JSONObject request(', 1)[0]
+        self.assertNotIn('.replaceAll(', normalization)
+        self.assertNotIn('Pattern.compile(', normalization)
+        self.assertIn('Character.isSpaceChar(point)', normalization)
+        self.assertIn('q=normalizeQuery(payload.getString("q"))', policy)
+
     def test_fullscreen_controls_expire_and_hold_cancels_on_lifecycle_changes(self):
         activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
         for marker in ('postDelayed(hideFullscreenUi,2500)', 'removeCallbacks(hideFullscreenUi)',

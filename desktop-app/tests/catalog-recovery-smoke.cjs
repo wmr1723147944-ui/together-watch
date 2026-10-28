@@ -5,7 +5,7 @@ const {app,BrowserWindow,nativeImage}=require('electron');
 const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),out=path.join(root,'.review-artifacts','mobile-search-0316');
+const root=path.resolve(__dirname,'../..'),out=path.join(root,'.review-artifacts','mobile-search-0317');
 let backend,win,log='';
 async function until(fn,ms=15000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(100);}throw Error('Timed out');}
 async function run(){
@@ -36,7 +36,10 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await js(fs.readFileSync(path.join(root,'android-app/app/src/main/assets/catalog-metadata-bridge.js'),'utf8'));
     await js(`window.testRequests=[];window.testPump=setInterval(()=>{
         const batch=__twMetadataQueue.drain();for(const r of batch.requests){testRequests.push(r);
-            __twMetadataQueue.complete(batch.token,r.id,{status:r.payload.source==='pkavi'?'verification_required':'unavailable'});
+            const reply=r.interactive && r.payload.source==='kanju'
+                ? {status:'ok',results:[{title:'元气少女 原站回传测试',page_url:'https://www.kanju.ai/player/test-return',poster_url:'https://image.tmdb.org/fixture-0.png'}]}
+                : {status:r.payload.source==='pkavi'?'verification_required':'unavailable'};
+            __twMetadataQueue.complete(batch.token,r.id,reply);
         }
     },25);
     for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['huarw','kanju','pkavi'].includes(c.dataset.liveSource);
@@ -59,8 +62,19 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     fs.writeFileSync(path.join(out,'mobile-adaptive-posters.png'),(await wc.capturePage()).toPNG());
     await js(`document.getElementById('catalogSearchNotes').open=true;document.getElementById('catalogSearchNotes').scrollIntoView()`);await delay(150);
     fs.writeFileSync(path.join(out,'mobile-search-recovery.png'),(await wc.capturePage()).toPNG());
+    // Exercise the user's exact retry action through the real catalogue UI and
+    // Android queue. This is a local fixture, not an Android WebView emulation.
+    await js(`Array.from(document.querySelectorAll('.catalog-query-note')).find(n=>n.textContent.includes('看剧'))
+        .querySelectorAll('button')[1].click()`);
+    await until(()=>js(`document.getElementById('discoveryLive').getAttribute('aria-busy')==='false'
+        && document.getElementById('discoveryLiveResults').textContent.includes('元气少女 原站回传测试')`));
+    assert.equal(await js('testRequests.filter(r=>r.interactive).length'),1);
+    assert.ok(await js(`Array.from(document.querySelectorAll('.catalog-query-note')).some(n=>n.textContent.includes('看剧') && n.textContent.includes('结果已合入上方影片') && !n.querySelector('button'))`));
+    assert.equal(await js(`document.querySelectorAll('#discoveryLiveResults .catalog-film').length`),4);
+    await js(`scrollTo(0,0)`);await delay(200);
+    fs.writeFileSync(path.join(out,'manual-results-returned.png'),(await wc.capturePage()).toPNG());
     await js('clearInterval(testPump)');
-    console.log('PASS: Android queue, local failure/server recovery, no automatic verification, separate retry actions, real image ratios at 4 widths, no overflow. Evidence: '+out);
+    console.log('PASS: Android queue, local failure/server recovery, explicit manual result return, no automatic verification, separate retry actions, real image ratios at 4 widths, no overflow. Evidence: '+out);
 }
 function finish(code){backend?.kill();win?.destroy();app.exit(code);}
 app.whenReady().then(run).then(()=>finish(0)).catch(e=>{console.error(e.stack,log);finish(1);});

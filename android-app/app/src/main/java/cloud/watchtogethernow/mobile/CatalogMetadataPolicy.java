@@ -33,6 +33,26 @@ final class CatalogMetadataPolicy {
         }
         return true;
     }
+    static String normalizeQuery(String value) {
+        // Android uses ICU regex, not the desktop JDK engine. Keep this path
+        // regex-free: an unsupported inline flag used to reject every search.
+        String normalized=Normalizer.normalize(value,Normalizer.Form.NFKC);
+        StringBuilder result=new StringBuilder();
+        boolean space=false;
+        for(int i=0;i<normalized.length();) {
+            int point=normalized.codePointAt(i);i+=Character.charCount(point);
+            if(point<=0x20 || point==0x7f || point==0x85
+                || point>=0x202a && point<=0x202e || point>=0x2066 && point<=0x2069
+                || Character.isWhitespace(point) || Character.isSpaceChar(point)) {
+                space=result.length()>0;
+            } else {
+                if(space)result.append(' ');
+                result.appendCodePoint(point);space=false;
+            }
+        }
+        if(result.codePointCount(0,result.length())>80)result.setLength(result.offsetByCodePoints(0,80));
+        return result.toString().trim();
+    }
     static JSONObject request(String kind,JSONObject payload) {
         try {
             if(payload==null || !(payload.opt("source") instanceof String))return null;
@@ -40,10 +60,8 @@ final class CatalogMetadataPolicy {
             if(host.isEmpty())return null;
             if("search".equals(kind)) {
                 if(!only(payload,"source","q") || !(payload.opt("q") instanceof String) || payload.getString("q").length()>300)return null;
-                q=Normalizer.normalize(payload.getString("q"),Normalizer.Form.NFKC)
-                    .replaceAll("[\\x00-\\x1f\\x7f\\u202a-\\u202e\\u2066-\\u2069]"," ").replaceAll("(?U)\\s+"," ").trim();
+                q=normalizeQuery(payload.getString("q"));
                 if(q.isEmpty())return null;
-                if(q.codePointCount(0,q.length())>80)q=q.substring(0,q.offsetByCodePoints(0,80));
                 String encoded=URLEncoder.encode(q,"UTF-8").replace("+","%20");
                 url="https://"+host+(source.equals("kanju")?"/collections/browse?path=%2Fv1%2Fbrowse%2Fcatalog&q="+encoded+"&page=1&limit=12"
                     :source.equals("huarw")?"/search?wd="+encoded
