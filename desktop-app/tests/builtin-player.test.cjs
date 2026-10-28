@@ -13,7 +13,7 @@ function setup() {
         getAttribute() { return this.src; }, canPlayType() { return ''; } };
     const notice = {textContent:'',hidden:false}, levels = {options:[],
         replaceChildren(option) { this.options = [option]; },add(option) { this.options.push(option); } };
-    const elements = {video,notice,levels,fit:{}};
+    const elements = {video,notice,levels,fit:{},episodes:{disabled:true},'player-fullscreen':{}};
     class Hls {
         static Events = {ERROR:'error',MANIFEST_PARSED:'manifest'};
         static isSupported() { return true; }
@@ -21,10 +21,17 @@ function setup() {
         on(name, fn) { this.events[name]=fn; }
         loadSource(url) { this.url=url; } attachMedia() {} stopLoad() { this.stopped=true; } destroy() { this.destroyed=true; }
     }
-    const window = {Hls}, document = {getElementById: id=>elements[id], body:{classList:{toggle(){}}}};
+    let episodeCalls=0;
+    const window = {Hls,twPlayer:{episodes:async()=>{episodeCalls++;}}}, document = {getElementById: id=>elements[id],addEventListener(){}, body:{classList:{toggle(){}}}};
     vm.runInNewContext(source,{window,document,Hls,Option:function(text,value){this.text=text;this.value=value;},setTimeout:fn=>{timers.add(fn);return fn;},clearTimeout:fn=>timers.delete(fn)});
-    return {api:window.__twBuiltin,video,notice,levels,streams,listeners,timers};
+    return {api:window.__twBuiltin,video,notice,levels,streams,listeners,timers,elements,episodeCalls:()=>episodeCalls};
 }
+
+test('builtin episode control is available only for a selectable programme',async()=>{
+    const t=setup();t.api.load({url:'https://example.com/a.mp4',kind:'mp4',episodes:true});
+    assert.equal(t.elements.episodes.disabled,false);await t.elements.episodes.onclick();assert.equal(t.episodeCalls(),1);
+    t.api.load({url:'https://example.com/b.mp4',kind:'mp4'});await t.elements.episodes.onclick();assert.equal(t.episodeCalls(),1);
+});
 test('loading a candidate preserves time without autoplay and releases previous media', () => {
     const t=setup(); t.api.load({url:'https://example.com/a.mp4',kind:'mp4',position:42});
     t.listeners.loadedmetadata(); assert.equal(t.video.currentTime,42); assert.equal(t.video.paused,true);

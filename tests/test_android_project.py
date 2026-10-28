@@ -8,6 +8,24 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_episode_picker_uses_current_program_and_preserves_owner_checks(self):
+        java = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
+        entry = java.split('private void showCurrentEpisodes()',1)[1].split('private void showFinder(boolean',1)[0]
+        self.assertIn('ownerKey.isEmpty()',entry)
+        self.assertIn('episodePicker.show(programSelection)',entry)
+        self.assertNotIn('showFinder()',entry)
+        self.assertNotIn('exitNativeFullscreen()',entry)
+        picker = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/EpisodePickerController.java').read_text(encoding='utf-8')
+        self.assertIn('attempt>=60',picker)
+        self.assertIn('TogetherWatchCatalogNavigation.episodes(',picker)
+        self.assertIn('window.__twMetadataQueue',picker)
+        self.assertIn('next.item.equals(program.item)',picker)
+        self.assertIn('request.hasGesture()',picker)
+        self.assertNotIn('addJavascriptInterface',picker)
+        self.assertNotIn('pauseLocally',picker)
+        self.assertIn('episodes.setOnClickListener(v->showCurrentEpisodes())',java)
+        self.assertIn('findViewById(R.id.findAgainButton).setOnClickListener(view -> showCurrentEpisodes())',java)
+
     def test_catalogue_query_does_not_reintroduce_jdk_only_regex_flags(self):
         # JVM unit tests accepted this flag; Android's ICU engine rejects it
         # before any original-site page is opened. Guard the platform boundary.

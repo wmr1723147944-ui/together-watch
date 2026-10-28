@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'none'; frame-src 'none'">
 <title>一起看 · Windows</title><link rel="stylesheet" href="shell.css"></head><body>
-<header><div class="brand"><img class="mark" src="app-icon.svg" width="42" height="42" alt=""><div>一起看<small>WINDOWS · 0.6.14 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
+<header><div class="brand"><img class="mark" src="app-icon.svg" width="42" height="42" alt=""><div>一起看<small>WINDOWS · 0.6.15 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
 <dialog id="setup" hidden aria-labelledby="entryTitle">
 <div class="entry-heading"><h1 id="entryTitle">加入朋友房间</h1><button id="cancelEntry" aria-label="关闭，返回选片">关闭</button></div>
 <p id="entryHint" class="intro">粘贴邀请，自动打开朋友正在看的影片。</p>
@@ -20,12 +20,12 @@
 <section id="tools" hidden>
     <nav class="room-actions" aria-label="观影操作">
         <span class="watch-label">一起看 <small id="modeLabel">网页播放</small></span>
-        <button id="discover">换片 / 选集</button><button id="return-video" hidden>回到播放</button>
+        <button id="discover">选集</button><button id="return-video" hidden>回到播放</button>
         <button id="invite">邀请朋友</button><button id="fullscreen" title="全屏（F11）">全屏</button>
         <button id="more" aria-expanded="false" aria-controls="roomMore">更多 ···</button>
     </nav>
     <section id="roomMore" hidden aria-label="更多房间操作">
-        <div class="extra-row"><strong>播放与同步</strong><button id="cinema">切换网页布局</button><button id="detect">重新连接同步</button><button id="reload">刷新当前页</button><button id="pick-current" hidden>确认当前集数</button></div>
+        <div class="extra-row"><strong>播放与同步</strong><button id="change-film">换一部影片</button><button id="cinema">切换网页布局</button><button id="detect">重新连接同步</button><button id="reload">刷新当前页</button><button id="pick-current" hidden>确认当前集数</button></div>
         <div class="extra-row"><strong>播放方式</strong><button id="scan-media">查找可播放视频</button><select id="mediaChoices" aria-label="可用的视频"><option value="">尚未找到视频</option></select><button id="play-media" disabled>用内置播放器</button><button id="original">用原网页播放</button></div>
         <form id="sourceForm" class="extra-row"><label for="currentSource">手动打开</label><input id="currentSource" aria-label="视频网页地址" type="url" required placeholder="粘贴视频网页链接"><button type="submit">打开链接</button><button id="kanju" type="button">看剧 AI 原站</button></form>
         <div class="extra-row room-options"><button id="roomLabel" title="点击复制房间号"></button><span>通常无需调整以上选项</span><button id="leave" class="danger">离开房间</button></div>

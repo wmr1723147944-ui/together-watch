@@ -2,6 +2,7 @@
 (() => {
     const video = document.getElementById('video'), notice = document.getElementById('notice');
     const levels = document.getElementById('levels');
+    const episodes=document.getElementById('episodes');
     let hls = null, loadId = 0, watchdog = null, failed = '', position = 0, cropped = false;
     function fail(message) {
         failed = message; clearTimeout(watchdog); video.pause(); hls?.stopLoad();
@@ -13,6 +14,8 @@
     }
     function load(item) {
         destroy(); failed = ''; position = item.position || 0;
+        episodes.disabled=!item.episodes || !window.twPlayer;
+        episodes.title=item.episodes?'选择当前影片的其他集数':'由房主选集；单视频链接不提供剧集目录';
         const id = loadId;
         notice.textContent = '正在加载公开媒体…'; notice.hidden = false;
         levels.replaceChildren(new Option('自动', '-1')); levels.disabled = true;
@@ -52,6 +55,15 @@
     });
     levels.onchange = () => { if (hls) hls.currentLevel = Number(levels.value); };
     document.getElementById('fit').onclick = () => { cropped = !cropped; video.style.objectFit = cropped ? 'cover' : 'contain'; };
+    episodes.onclick=async()=>{if(!episodes.disabled)try{await window.twPlayer.episodes();}catch{notice.textContent='选集未能打开，请退出全屏后重试。';notice.hidden=false;}};
+    document.getElementById('player-fullscreen').onclick=()=>{
+        const request=document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();
+        request?.catch(()=>{notice.textContent='请按 F11 进入或退出全屏。';notice.hidden=false;});
+    };
+    let controlsTimer;
+    function showControls(){document.body.classList.add('show-controls');clearTimeout(controlsTimer);controlsTimer=setTimeout(()=>document.body.classList.remove('show-controls'),2500);}
+    document.addEventListener('mousemove',showControls);document.addEventListener('pointerdown',showControls);
+    document.addEventListener('keydown',showControls);
     window.__twBuiltin = { load, destroy, state: () => ({ error: failed, ready: video.readyState >= 3 }),
         fullscreen(enabled, crop) { document.body.classList.toggle('full', enabled); video.style.objectFit = crop ? 'cover' : 'contain'; } };
 })();

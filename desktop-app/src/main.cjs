@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const policy = require('./policy.cjs');
 const siteDirectory = require('./site-directory.cjs');
 const {createMetadataBrowser}=require('./metadata-browser.cjs');
-const {script:CATALOG_SCRIPT}=require('./catalog-adapters.cjs');
+const {script:CATALOG_SCRIPT,api:catalogAdapters}=require('./catalog-adapters.cjs');
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
 const AGENT = fs.readFileSync(path.join(__dirname, 'danmaku-overlay.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
 const MEDIA_SCAN = fs.readFileSync(path.join(__dirname, 'media-scan.js'), 'utf8');
@@ -16,6 +16,7 @@ const SMOKE = !app.isPackaged && process.argv.includes('--smoke-test');
 const PACKAGE_CHECK = process.argv.includes('--verify-package');
 const shells = new Map();
 const metadataControls = new Map();
+const playerEpisodeControls = new Map();
 protocol.registerSchemesAsPrivileged([{ scheme: 'tw-app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.enableSandbox();
 if (SMOKE || PACKAGE_CHECK) app.setPath('userData', path.join(app.getPath('temp'), `tw-desktop-check-${process.pid}`));
@@ -60,6 +61,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     let builtin = null, scanning = null, lastScan = 0, lastOriginalPause = 0, sourcePage = '';
     let draft = null, managed = null, finderMode = 'catalog', selecting = false;
     let toolsExpanded = false;
+    let currentProgram = null, openingEpisodes = false;
+    let episodeView=null, episodeTimer=null, episodeGeneration=0;
     // Keep search context and the most recent original-site page, not a growing
     // collection of background tabs. Login state stays in videoPartition.
     const finderViews = new Map();
@@ -73,8 +76,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     const roomPartition = session.fromPartition(SMOKE ? `room-test-${win.id}` : 'persist:tw-room');
     const videoPartition = session.fromPartition(SMOKE ? `video-test-${win.id}` : 'persist:tw-video');
     const metadataBrowser=createMetadataBrowser(win,videoPartition,{hidden:SMOKE});
+    const episodeMetadataBrowser=createMetadataBrowser(win,videoPartition,{hidden:SMOKE});
     win.on('close',()=>metadataBrowser.destroy());
-    // No source-site cookies, login state, preload or IPC in the independent player.
+    win.on('close',()=>episodeMetadataBrowser.destroy());
+    // No source-site cookies, login state or general shell bridge in the
+    // independent player. Its preload exposes only a guarded episode-picker action.
     const playerPartition = session.fromPartition(`player-${win.id}-${crypto.randomBytes(6).toString('hex')}`);
     installAssets(playerPartition);
     const playerFullscreen = (wc, permission) => permission === 'fullscreen' && wc === builtin?.webContents && wc.getURL() === PLAYER_URL;
@@ -158,21 +164,25 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (sourceEpoch !== videoGeneration || !video || !current || !catalog.get(id)) return { ok: false, error: '播放页已切换，请重新选择视频。' };
         selected = null; videoGeneration++;
         const epoch = videoGeneration;
-        builtin = new WebContentsView({ webPreferences: securePreferences({ session: playerPartition, backgroundThrottling: false }) });
+        builtin = new WebContentsView({ webPreferences: securePreferences({ session: playerPartition, backgroundThrottling: false, preload:path.join(__dirname,'player-preload.cjs') }) });
         const view = builtin, wc = view.webContents;
+        const playerId=wc.id;
+        playerEpisodeControls.set(playerId,event=>event.sender===wc && event.senderFrame===wc.mainFrame
+            && event.senderFrame.url===PLAYER_URL && builtin===view ? showEpisodes() : false);
+        wc.on('destroyed',()=>playerEpisodeControls.delete(playerId));
         wc.on('will-navigate', event => event.preventDefault());
         wc.on('will-redirect', event => event.preventDefault());
         wc.setWindowOpenHandler(() => ({ action: 'deny' }));
         wc.on('before-input-event', keyHandler);
-        wc.on('enter-html-full-screen', () => { full = true; win.setFullScreen(true); layout(); });
-        wc.on('leave-html-full-screen', () => { full = false; win.setFullScreen(false); layout(); });
+        wc.on('enter-html-full-screen', () => { full = true; win.setFullScreen(true); layout(); focusPlayer(true); });
+        wc.on('leave-html-full-screen', () => { full = false; win.setFullScreen(false); layout(); focusPlayer(false); });
         wc.on('render-process-gone', () => { if (builtin === view) { closeBuiltin(); layout(); status('内置播放器已退出，已返回原网页。'); } });
         win.contentView.addChildView(view); browsing = false;
         video.webContents.setAudioMuted(true); pauseOriginal().catch(() => {}); layout();
         try {
             await wc.loadURL(PLAYER_URL);
             if (epoch !== videoGeneration || builtin !== view) return { ok: false, error: '播放页已切换。' };
-            await wc.executeJavaScript(`window.__twBuiltin.load(${JSON.stringify({ url: item.url, kind: item.kind, position: item.position })})`);
+            await wc.executeJavaScript(`window.__twBuiltin.load(${JSON.stringify({ url: item.url, kind: item.kind, position: item.position, episodes:!!currentProgram && (!managed || !!managed.owner) })})`);
             reportMedia('内置播放已打开，加载后点击播放。原网页已暂停，房间保持连接。');
             return { ok: true };
         } catch {
@@ -224,6 +234,10 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         layoutFinder(bounds.video, browsing && !full);
         video.setVisible(!builtin && (!browsing || full));
         roomView.setVisible(!full);
+        if(episodeView) {
+            const area=bounds.video, drawer=Math.min(area.width,420);
+            episodeView.setBounds({x:area.x+area.width-drawer,y:area.y,width:drawer,height:area.height});
+        }
     }
     function layoutFinder(bounds, visible) {
         if (!discoveryView || discoveryView.webContents.isDestroyed()) return;
@@ -236,7 +250,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     function keyHandler(_event, input) {
         if (input.type !== 'keyDown') return;
-        if (input.key === 'F11') { _event.preventDefault(); toggleFullscreen(); }
+        if (episodeView && ['Escape','BrowserBack'].includes(input.key)) {_event.preventDefault();closeEpisodePicker();}
+        else if (input.key === 'F11') { _event.preventDefault(); toggleFullscreen(); }
         else if (input.key === 'Escape' && full) { _event.preventDefault(); toggleFullscreen(false); }
         else if (input.key === 'Escape' && toolsExpanded) { _event.preventDefault(); toolsExpanded=false; layout(); }
         else if (input.key.toLowerCase() === 'z' && full && input.control) { _event.preventDefault(); crop = !crop; focusPlayer(full); }
@@ -273,12 +288,16 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     async function toggleFullscreen(value = !full) {
         if (!video) return;
+        if (!value && builtin && !builtin.webContents.isDestroyed()) {
+            await builtin.webContents.executeJavaScript('document.fullscreenElement ? document.exitFullscreen() : undefined').catch(()=>{});
+        }
         full = !!value;
         win.setFullScreen(full); layout();
         await focusPlayer(full || cinema);
         if (full) status('全屏：Esc / F11 返回，Ctrl+Z 切换完整画面和铺满裁边');
     }
     function closeViews(keepFinders = false) {
+        closeEpisodePicker();
         keepFinders = keepFinders === true; // Window close passes an event, not a flag.
         toolsExpanded=false;
         ++finderGeneration; metadataBrowser.cancelAll();
@@ -295,6 +314,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         video = roomView = null;
         browsing = false; pendingEpisode = null; selectionFailed = false;
         draft = managed = null;
+        currentProgram=null;
     }
     function setupView(view, isRoom) {
         const wc = view.webContents;
@@ -337,6 +357,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     async function navigateVideo(url, selection = null) {
         if (!sourceAllowed(url) || !video) return { ok: false, error: '请输入公开的 HTTPS 链接' };
+        closeEpisodePicker();
+        if(!managed)currentProgram=policy.programSelection(url,server);
         toolsExpanded=false;
         closeBuiltin(); sourcePage = url; resetMedia();
         const navigation = ++videoGeneration;
@@ -386,12 +408,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             if (!managed.owner) return {ok:false,error:'由房主选片 / 换集；你会自动跟随，无需粘贴视频链接。'};
             if (!descriptor) return {ok:false,error:'此页面还没有可共享的集数标识，请从找片页选集。'};
             const authority = managed, roomId = current.room;
+            selecting = true;
             try {
                 const next = await programApi(`/api/watch-rooms/${roomId}/program`, 'PUT', descriptor, authority.owner);
                 if (authority !== managed || current?.room !== roomId) return {ok:false,error:'操作已取消'};
                 await followProgram(next);
                 return {ok:true};
             } catch (e) { status(e.message); return {ok:false,error:e.message}; }
+            finally { selecting = false; }
         }
         return navigateVideo(selection?.page || url, selection);
     }
@@ -402,6 +426,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         // Claim the revision before awaiting: the HTTP reply and socket event
         // may arrive together. Only one navigation should win.
         authority.revision = target.revision;
+        currentProgram={source:value.program.source,item:value.program.item,episode:value.program.episode};
         // Stop the old native socket before navigation. Late samples are also
         // rejected server-side by program_revision.
         await roomView.webContents.executeJavaScript('window.TogetherWatchMobile.receive({active:false})');
@@ -423,6 +448,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             timeout(frame.executeJavaScript('document.querySelectorAll("video,audio").forEach(media=>media.pause())')).catch(() => {})));
     }
     async function showDiscovery(mode = 'catalog') {
+        closeEpisodePicker();
         toolsExpanded=false;
         const epoch = ++finderGeneration;
         await toggleFullscreen(false);
@@ -584,6 +610,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         closeViews(true);
         current = { room: id, nickname: data.nickname.trim().slice(0, 32) };
         managed = roomProgram ? {owner:roomProgram.owner || ownedRooms.get(server + '/' + id) || '', revision:roomProgram.revision} : null;
+        currentProgram=roomProgram ? {source:roomProgram.program.source,item:roomProgram.program.item,episode:roomProgram.program.episode} : descriptor;
         sourcePage = initialSource; resetMedia();
         const epoch = generation;
         video = new WebContentsView({ webPreferences: securePreferences({ session: videoPartition, backgroundThrottling: false }) });
@@ -707,6 +734,74 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         try { return await timeout(wc.executeJavaScript(`window.TogetherWatchCatalogNavigation?.${method}() === true`)); }
         catch { return false; }
     }
+    function closeEpisodePicker() {
+        ++episodeGeneration;clearTimeout(episodeTimer);episodeTimer=null;
+        episodeMetadataBrowser.cancelAll();
+        const view=episodeView;episodeView=null;
+        if(view) {
+            metadataControls.delete(view.webContents.id);
+            if(!win.isDestroyed())win.contentView.removeChildView(view);
+            if(!view.webContents.isDestroyed())view.webContents.close();
+        }
+        if(!win.isDestroyed())activeVideo()?.webContents.focus();
+    }
+    async function showEpisodes() {
+        if (openingEpisodes || !current) return false;
+        if (managed && !managed.owner) {status('由房主选集，你会自动跟随换集。');return false;}
+        if(episodeView){episodeView.webContents.focus();return true;}
+        const program=currentProgram;
+        if(!program || !['cupfox','yhdmoe','huarw','kanju','pkavi','233dm'].includes(program.source)) {
+            status('此链接没有可用剧集目录，可到「更多」换片或使用原网页选集。');return false;
+        }
+        openingEpisodes=true;
+        try {
+            const epoch=++episodeGeneration;
+            const view=new WebContentsView({webPreferences:securePreferences({session:roomPartition,backgroundThrottling:false,preload:path.join(__dirname,'discovery-preload.cjs')})});
+            episodeView=view;const wc=view.webContents,id=wc.id;
+            const alive=()=>episodeView===view && epoch===episodeGeneration && program===currentProgram && !wc.isDestroyed();
+            metadataControls.set(id,{
+                trusted:event=>alive() && event.sender===wc && event.senderFrame===wc.mainFrame && policy.isDiscoveryUrl(event.senderFrame.url,server),
+                request:data=>{
+                    const req=catalogAdapters.request(data?.kind,data?.payload);
+                    return alive() && data?.kind==='detail' && req?.source===program.source && req.item===program.item
+                        ? episodeMetadataBrowser.run(data.id,data.kind,data.payload,data.interactive) : {status:'unavailable'};
+                },cancel:id=>{if(alive())episodeMetadataBrowser.cancel(id);return true;}
+            });
+            wc.on('destroyed',()=>metadataControls.delete(id));
+            wc.on('before-input-event',keyHandler);
+            wc.setWindowOpenHandler(()=>({action:'deny'}));
+            wc.on('will-navigate',(event,url)=>{
+                event.preventDefault();if(!alive())return;
+                const descriptor=policy.programSelection(url,server);
+                if(descriptor?.source!==program.source || descriptor.item!==program.item)return;
+                if(descriptor.episode===program.episode)return;
+                chooseSource(url).then(result=>{if(result?.error)status(result.error);}).catch(()=>status('换集失败，当前影片未改变。'));
+            });
+            wc.on('will-redirect',event=>event.preventDefault());
+            view.setBackgroundColor('#171b25');win.contentView.addChildView(view);layout();
+            const watchClose=async()=>{
+                if(!alive())return;
+                try{if(await timeout(wc.executeJavaScript('window.TogetherWatchCatalogNavigation?.pickerClosed?.() === true'))) {closeEpisodePicker();return;}}catch{}
+                if(alive())episodeTimer=setTimeout(watchClose,350);
+            };
+            wc.loadURL(server+'/discover?picker=1').catch(()=>{if(alive()){closeEpisodePicker();status('选集页面加载失败，请重试。');}});
+            episodeTimer=setTimeout(watchClose,350);
+            for(let attempt=0;attempt<40;attempt++) {
+                if(!alive())return false;
+                if(policy.isDiscoveryUrl(wc.getURL(),server) && !wc.isLoadingMainFrame()) {
+                    const result=await timeout(wc.executeJavaScript(`typeof window.TogetherWatchCatalogNavigation?.episodes === 'function' ? window.TogetherWatchCatalogNavigation.episodes(${JSON.stringify(program)}) : null`));
+                    if(result!==null) {
+                        if(!result)closeEpisodePicker();
+                        status(result?'选集面板已打开，关闭即可继续观看。':'此来源没有可用集数目录，可用原网页选集。');return result;
+                    }
+                }
+                await new Promise(resolve=>setTimeout(resolve,250));
+            }
+            closeEpisodePicker();
+            status('选集入口尚未加载。请刷新找片页；如果仍无入口，请先更新服务器。');return false;
+        } catch {closeEpisodePicker();status('选集暂时无法打开，请重试；房间和当前影片未改变。');return false;}
+        finally {openingEpisodes=false;}
+    }
     async function returnToPlayback() {
         toolsExpanded=false;
         await parkFinder(discoveryView); browsing = false; layout();
@@ -714,6 +809,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     async function goBack() {
         if (switching || selecting) return;
+        if (episodeView) {closeEpisodePicker();return;}
         if (full) { await toggleFullscreen(false); return; }
         if (toolsExpanded) { toolsExpanded=false; layout(); return; }
         if (browsing && discoveryView) {
@@ -748,6 +844,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             return;
         }
         if (value === 'back' || value === 'finder-back') return goBack();
+        if (value === 'episodes') return showEpisodes();
         if (value === 'home') { await showDiscovery(); await catalogNavigation('home'); if (!current) status({finder:true}); return; }
         if (value === 'kanju' && (draft || current || browsing)) return showDiscovery('kanju');
         if (['finder-reload','finder-browser'].includes(value) && discoveryView) {
@@ -797,10 +894,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     win.on('closed', () => { powerMonitor.removeListener('suspend', suspend); powerMonitor.removeListener('resume', resume); });
     await win.loadURL(policy.APP_ORIGIN + '/index.html');
     if (!PACKAGE_CHECK) { await showDiscovery(); status({finder:true}); }
-    return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, mediaSession: playerPartition, roomView, discoveryView, browsing, cinema, selected, full, current }), toggleFullscreen };
+    return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, mediaSession: playerPartition, roomView, discoveryView, episodeView, browsing, cinema, selected, full, current }), toggleFullscreen };
 }
 
 app.whenReady().then(async () => {
+    ipcMain.handle('desktop:player-episodes',event=>playerEpisodeControls.get(event.sender.id)?.(event) ?? false);
     ipcMain.handle('desktop:metadata',(event,data)=>{
         const control=metadataControls.get(event.sender.id);
         return control?.trusted(event)?control.request(data):{status:'unavailable'};

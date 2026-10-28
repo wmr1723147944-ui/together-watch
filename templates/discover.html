@@ -8,12 +8,14 @@
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg', v='20261025-companion-v2') }}" type="image/svg+xml">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/watch-history.css', v='20261027-history') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261027-adaptive-posters') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261028-player-episodes') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser-light.css', v='20261024-light-catalog') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-mobile.css', v='20261024-mobile-app') }}">
+    {% if request.args.get('picker') == '1' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/episode-picker.css', v='20261028') }}">{% endif %}
 </head>
-<body class="media-app catalog-cinema">
+<body class="media-app catalog-cinema{{ ' episode-picker' if request.args.get('picker') == '1' else '' }}">
+    {% if request.args.get('picker') == '1' %}<aside id="episodePickerLoading" role="status">正在准备选集… <button id="episodePickerCancel" type="button">关闭</button></aside>{% endif %}
     {% include "_site_nav.html" %}
     <main id="mainContent" class="discovery-page">
         {% include "_watch_history.html" %}
@@ -23,9 +25,9 @@
     {% include "_catalog_mobile_nav.html" %}
     <script src="{{ url_for('static', filename='js/watch-history.js', v='20261027-history') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261027-poster-quality') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261027-search-recovery') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261028-player-episodes') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261028-category-continuation') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261027-search-recovery') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261028-player-episodes') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-mobile.js', v='20261024-mobile-app') }}" defer></script>
 </body>
 </html>

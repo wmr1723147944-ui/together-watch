@@ -151,6 +151,7 @@ public final class MainActivity extends ComponentActivity {
     private String activeRoom = "";
     private String activeNickname = "";
     private boolean finding, requestBusy, awaitingEpisode, videoLoading;
+    private EpisodePickerController episodePicker;
     private int flowGeneration;
     private long programRevision, appliedProgramRevision, episodeStarted;
     private ProgramPolicy.Selection programSelection;
@@ -250,6 +251,8 @@ public final class MainActivity extends ComponentActivity {
             readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
             () -> foreground && finding && !originalFinderActive,
             view -> configureWebView(view,false),networkExecutor);
+        episodePicker=new EpisodePickerController(this,SERVER_ORIGIN,catalogScript,readAsset("catalog-metadata-bridge.js"),
+            ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor);
         arrangePanels();
     }
 
@@ -308,7 +311,7 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.sampleButton).setOnClickListener(view -> chooseSample());
         findViewById(R.id.entryAdvancedButton).setOnClickListener(view ->
             setEntryAdvanced(videoUrlInput.getVisibility()!=View.VISIBLE));
-        findViewById(R.id.findAgainButton).setOnClickListener(view -> showFinder());
+        findViewById(R.id.findAgainButton).setOnClickListener(view -> showCurrentEpisodes());
         findViewById(R.id.pickPageButton).setOnClickListener(view -> chooseCurrentPage());
         findViewById(R.id.fullscreenButton).setOnClickListener(view -> {
             showVideoTab();
@@ -338,6 +341,7 @@ public final class MainActivity extends ComponentActivity {
     private void showRoomMenu() {
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
         if(sessionActive) {
+            if(programRevision==0 || !ownerKey.isEmpty()) {labels.add("换一部影片");actions.add(this::showFinder);}
             labels.add(finding?"回到播放":videoContainer.getVisibility()==View.VISIBLE?"只看聊天与语音":"恢复同屏观看");
             actions.add(finding?this::resumePlayback:videoContainer.getVisibility()==View.VISIBLE?this::showRoomTab:this::showVideoTab);
             if(!finding) {
@@ -369,7 +373,7 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.moreButton).setVisibility(sessionActive || originalFinderActive?View.VISIBLE:View.GONE);
         boolean canChoose=!sessionActive || programRevision==0 || !ownerKey.isEmpty();
         findViewById(R.id.findAgainButton).setEnabled(canChoose);
-        findViewById(R.id.findAgainButton).setTooltipText(canChoose?"保留房间，选择影片或集数":"由房主换片，你会自动跟随");
+        findViewById(R.id.findAgainButton).setTooltipText(canChoose?"选择当前影片的其他集数，保留房间":"由房主换片，你会自动跟随");
         findViewById(R.id.pickPageButton).setEnabled(canChoose);
         ((Button)findViewById(R.id.pickPageButton)).setText(sessionActive?"确认并切换到这一集":"选好这集，开始一起看");
     }
@@ -493,9 +497,16 @@ public final class MainActivity extends ComponentActivity {
         showFinder(originalFinderActive && originalFinderWebView != null);
     }
 
+    private void showCurrentEpisodes() {
+        if(requestBusy || !sessionActive)return;
+        if(programRevision>0 && ownerKey.isEmpty()){reportError("由房主选集，你会自动跟随换集。");return;}
+        finishPlayerHold(false);episodePicker.show(programSelection);
+    }
+
     private void showFinder(boolean original) {
         finishPlayerHold(false);
         if(requestBusy)return;
+        if(episodePicker!=null)episodePicker.close();
         pendingSetupSelection=null;
         originalFinderActive=original;
         finding=true;navigationBack.setEnabled(true);hideKeyboard();
@@ -539,6 +550,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void resumePlayback() {
         if(!sessionActive)return;
+        if(episodePicker!=null)episodePicker.close();
         hideFinders();finding=false;
         nativePlayerView.setVisibility(nativePlayer.isActive()?View.VISIBLE:View.GONE);
         videoWebView.setVisibility(nativePlayer.isActive()?View.GONE:View.VISIBLE);
@@ -657,6 +669,8 @@ public final class MainActivity extends ComponentActivity {
 
     private void openProgramPage(String page) {
         finishPlayerHold(false);
+        if(episodePicker!=null)episodePicker.close();
+        hideFullscreenVideo();
         hideFinders();
         finding=false;appliedProgramRevision=0;awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
@@ -768,6 +782,7 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onConfigurationChanged(Configuration configuration) {
         super.onConfigurationChanged(configuration);
         arrangePanels();
+        if(episodePicker!=null)episodePicker.resize();
         if (nativeFullscreen || fullscreenView != null) applyImmersive(true);
     }
 
@@ -1611,6 +1626,10 @@ public final class MainActivity extends ComponentActivity {
         styleFullscreenButton(exit);
         exit.setOnClickListener(v -> { if (nativeFullscreen) exitNativeFullscreen(); else hideFullscreenVideo(); });
         fullscreenControls.addView(exit);
+        if(sessionActive && (programRevision==0 || !ownerKey.isEmpty())) {
+            Button episodes=new Button(this);episodes.setText("选集");styleFullscreenButton(episodes);
+            episodes.setOnClickListener(v->showCurrentEpisodes());fullscreenControls.addView(episodes);
+        }
         if (nativeMode) {
             Button crop = new Button(this);
             styleFullscreenButton(crop);
@@ -1702,6 +1721,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void handleBackNavigation() {
+        if(episodePicker!=null && episodePicker.isOpen()){episodePicker.close();return;}
         if(requestBusy || backPending)return;
         if (nativeFullscreen) { showVideoTab(); return; }
         if (fullscreenView != null) {
@@ -1735,6 +1755,7 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onStop() {
+        if(episodePicker!=null)episodePicker.close();
         finishPlayerHold(false);
         mainHandler.removeCallbacks(hideFullscreenUi);
         hideFullscreenUi.run();
@@ -1764,6 +1785,7 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
+        if(episodePicker!=null)episodePicker.close();
         finishPlayerHold(false);
         destroyed = true;
         if(catalogMetadata!=null)catalogMetadata.close();

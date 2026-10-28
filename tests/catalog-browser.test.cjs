@@ -1,6 +1,63 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {groupResults,createBrowser}=require('../static/js/catalog-browser.js');
+const {groupResults,createBrowser,episodeRow}=require('../static/js/catalog-browser.js');
+
+test('current episode lookup uses validated same-title identities, never arbitrary URLs',()=>{
+    for(const [source,item,episode,page] of [
+        ['huarw','123','123-1-2','https://huarw.com/movie/123'],
+        ['cupfox','123','ep2','https://www.cupfox.in/vod-detail/123.html'],
+        ['yhdmoe','123','EP2','https://yhdmoe.com/watch/123'],
+        ['kanju','av_demo','ep-e2','https://www.kanju.ai/player/av_demo'],
+        ['233dm','a'.repeat(24),'1-2','https://www.233dm.com/anime/'+'a'.repeat(24)+'.html'],
+        ['pkavi','123','1-2','https://www.pkavi.com/mv/123.html']]) {
+        assert.equal(episodeRow({source,item,episode}).page_url,page);
+    }
+    for(const program of [null,{}, {source:'sample',item:'sintel',episode:'video'},
+        {source:'huarw',item:'123',episode:'456-1-2'}, {source:'kanju',item:'../../evil',episode:'ep-e2'},
+        {source:'cupfox',item:'https://localhost',episode:'ep2'}, {source:'ddys',item:'movie',episode:'page'}])assert.equal(episodeRow(program),null);
+});
+
+test('opening current episodes keeps search context and marks the selected episode',async()=>{
+    const f=fixture(['cupfox']);f.doc.defaultView={};
+    for(const id of ['discoveryDetail','discoveryDetailClose','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription',
+        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore'])f.elements.set(id,f.doc.createElement('div'));
+    const panel=f.elements.get('discoveryDetail');panel.showModal=function(){this.open=true;};panel.close=function(){this.open=false;};
+    const calls=[];
+    const browser=createBrowser(f.doc,async(url,options)=>{
+        const payload=JSON.parse(options.body);calls.push(payload);
+        return {ok:true,json:async()=>url.includes('/search')?{source_id:'cupfox',status:'ok',results:[{title:'同一部剧',page_url:'https://www.cupfox.in/vod-detail/12.html'}]}
+            :{source_id:'cupfox',page_url:payload.page_url,item_id:'12',title:'同一部剧',status:'ok',episodes:[1,2,3].map(n=>({id:'ep'+n,title:'第'+n+'集',launch_path:'/discover/play/cupfox/12/ep'+n}))}};
+    });
+    f.elements.get('discoveryQuery').value='同一部剧';await browser.run();
+    const cards=f.elements.get('discoveryLiveResults').children;
+    assert.equal(browser.episodes({source:'cupfox',item:'12',episode:'ep2'}),true);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(panel.open,true);assert.equal(calls.length,2);assert.equal(calls[1].page_url,'https://www.cupfox.in/vod-detail/12.html');
+    assert.equal(f.elements.get('discoveryEpisodes').children[1].attributes['aria-current'],'true');
+    assert.match(f.elements.get('discoveryDetailStatus').textContent,/当前房间/);
+    assert.equal(browser.back(),true);assert.equal(f.elements.get('discoveryQuery').value,'同一部剧');
+    assert.equal(f.elements.get('discoveryLiveResults').children,cards);
+    assert.equal(browser.episodes({source:'huarw',item:'12',episode:'12-1-1'}),false,'disabled source must not query');
+    assert.equal(calls.length,2);
+});
+
+test('dedicated picker has no background feed/search and closes synchronously',async()=>{
+    const f=fixture(['cupfox']);f.doc.defaultView={};f.doc.body={classList:{contains:name=>name==='episode-picker'}};
+    for(const id of ['discoveryDetail','discoveryDetailClose','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription',
+        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore','episodePickerCancel','episodePickerLoading'])f.elements.set(id,f.doc.createElement('div'));
+    const panel=f.elements.get('discoveryDetail');panel.showModal=function(){this.open=true;};panel.close=function(){this.open=false;};
+    f.elements.get('discoveryQuery').value='must not search';let calls=0;
+    const browser=createBrowser(f.doc,async()=>{calls++;return {ok:true,json:async()=>({status:'unavailable'})};});
+    assert.equal(calls,0);
+    const navigation=f.doc.defaultView.TogetherWatchCatalogNavigation;
+    f.elements.get('episodePickerCancel').onclick();assert.equal(navigation.pickerClosed(),true);
+    assert.equal(browser.episodes({source:'cupfox',item:'12',episode:'ep1'}),true);
+    assert.equal(navigation.pickerClosed(),false);assert.equal(f.elements.get('episodePickerLoading').hidden,true);
+    assert.equal(calls,1);
+    f.elements.get('discoveryDetailClose').handlers.click();
+    assert.equal(navigation.pickerClosed(),true,'do not wait for a delayed dialog close event');
+    await new Promise(resolve=>setImmediate(resolve));
+});
 
 const row=(title='开端',year='2022',page='https://ddys.io/movie/reset')=>({title,year,page_url:page,poster_url:'https://img.ddys.io/movies/reset.webp'});
 test('unified film grouping merges only equal titles AND known years, keeps all validated source choices',()=>{

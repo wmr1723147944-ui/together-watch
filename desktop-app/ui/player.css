@@ -3,4 +3,5 @@
 #notice{position:absolute;left:24px;right:24px;top:20px;padding:14px 18px;border-radius:10px;background:#182338ed;font-size:14px;line-height:1.7;pointer-events:none}
 #notice[hidden]{display:none}footer{height:46px;display:flex;align-items:center;gap:16px;padding:0 18px;font-size:12px;color:#94a6bf}#quality{flex:1}
 button,select{background:#182338;color:#dbe6f5;border:1px solid #36465c;border-radius:6px;padding:5px 8px;font:inherit}
-body.full main{height:100vh}body.full footer{display:none}
+body.full main{height:100vh}body.full footer{position:fixed;bottom:64px;right:12px;height:auto;padding:10px;background:#182338ed;border-radius:10px;opacity:0;pointer-events:none}
+body.full.show-controls footer,body.full footer:focus-within{opacity:1;pointer-events:auto}body.full #quality{display:none}

@@ -281,6 +281,10 @@
                 const link = doc.createElement('a'); link.className = 'discovery-episode';
                 link.textContent = episode.label; link.href = episode.path;
                 link.referrerPolicy = 'no-referrer'; link.target = '_self'; list.append(link);
+                if (episode.current) {
+                    link.setAttribute('aria-current','true'); link.textContent += ' · 正在看';
+                    link.addEventListener('click', event=>event.preventDefault());
+                }
                 link.addEventListener('click', () => globalThis.TogetherWatchHistory?.store?.remember(episode.program, episode.meta));
             }
             if (more) { more.hidden = matching.length <= visible; more.textContent = `再显示 100 个（共 ${matching.length} 个）`; }
@@ -320,6 +324,8 @@
                 const parts = new URL(url).pathname.split('/');
                 const item = hasAdapter(source) ? adapters.detail(source,url)?.item : source === 'fcma' ? parts.slice(2).join('-') : parts.pop().replace(/\.html$/, '');
                 if (data.source_id !== source || data.page_url !== url || data.item_id !== item || !Array.isArray(data.episodes)) throw new Error('invalid');
+                const detailTitle=row.current_episode && typeof data.title==='string' && data.title.trim() ? data.title.slice(0,160) : row.title;
+                if (row.current_episode) title.textContent=detailTitle+' · 选集';
                 if (typeof data.description === 'string') description.textContent = data.description.slice(0, 500);
                 for (const episode of data.episodes.slice(0, 6000)) {
                     if (!episode || typeof episode.title !== 'string') continue;
@@ -327,7 +333,7 @@
                     if (!path) continue;
                     const line = typeof episode.line === 'string' ? episode.line.slice(0, 30) : '';
                     const label = (line ? line + ' · ' : '') + episode.title.slice(0, 60);
-                    episodes.push({ path, label, program:{source,item,episode:episode.id}, meta:{title:row.title,label,poster:row.poster_url} });
+                    episodes.push({ path, label, current:episode.id===row.current_episode, program:{source,item,episode:episode.id}, meta:{title:detailTitle,label,poster:row.poster_url} });
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
@@ -340,6 +346,7 @@
                 }
                 if (data.truncated === true) status.textContent += ' 已达选集数量上限，其余请用原站选集。';
                 if (data.selection_scope==='loaded_page') status.textContent += ' 这里只显示原站当前已加载的集数，其余请在原站选择；不表示已验证可播放。';
+                if (found && row.current_episode) status.textContent='选择另一集后，会在当前房间换集，朋友自动跟随。'+(data.selection_scope==='loaded_page'?' 仅显示原站已加载的集数。':'');
             } catch (_) {
                 if (generation === current) status.textContent = '集数读取失败或超时，可关闭后重试；没有切换当前影片。';
             } finally { clearTimeout(timer); }

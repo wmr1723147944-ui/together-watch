@@ -179,3 +179,5 @@
 .discovery-form > .discovery-advanced { order: 2; }
 .discovery-starter-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; }
 .discovery-body .discovery-starter::after { inset: 0; width: auto; height: auto; border: 0; border-radius: 0; background: linear-gradient(90deg,#0c101dea,#0c101d45); z-index: -1; transform: none; }
+.discovery-episode[aria-current="true"]{border-color:#b5486f;background:#fff0f5;color:#a82e59;font-weight:700}
+.catalog-detail[data-playing="true"] #catalogDetailPoster,.catalog-detail[data-playing="true"] > .discovery-note{display:none}

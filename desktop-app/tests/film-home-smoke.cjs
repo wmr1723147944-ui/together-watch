@@ -45,7 +45,7 @@ exports.run=async({createDesktop,server,until,output})=>{
         assert.equal(data.program.source,'sample');assert.equal(data.program.item,'sintel');
         const room=c.state().current.room, roomView=c.state().roomView;
         assert.equal(c.state().video.getBounds().y,128);
-        assert.deepEqual(await shell.executeJavaScript('Array.from(document.querySelectorAll(".room-actions button")).filter(b=>!b.hidden).map(b=>b.textContent)'),['换片 / 选集','邀请朋友','全屏','更多 ···']);
+        assert.deepEqual(await shell.executeJavaScript('Array.from(document.querySelectorAll(".room-actions button")).filter(b=>!b.hidden).map(b=>b.textContent)'),['选集','邀请朋友','全屏','更多 ···']);
         assert.ok(await shell.executeJavaScript('document.getElementById("roomMore").hidden && document.getElementById("settings").hidden'));
         await shell.executeJavaScript('document.getElementById("more").click()');
         await until('advanced options expand above native video',()=>c.state().video.getBounds().y===328);

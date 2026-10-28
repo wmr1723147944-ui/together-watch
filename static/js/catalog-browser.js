@@ -4,6 +4,23 @@
     const adapters = typeof module === 'object' && module.exports ? require('./catalog-adapters.js') : globalThis.TogetherWatchCatalogAdapters;
     const feedApi = typeof module === 'object' && module.exports ? require('./catalog-feed.js') : globalThis.TogetherWatchFeed;
 
+    // Reconstruct only reviewed detail URLs from public programme identities.
+    // Never use a media URL, title search, or a guessed neighbouring episode.
+    function episodeRow(program) {
+        const {source, item, episode} = program || {};
+        if (![source,item,episode].every(v=>typeof v==='string')) return null;
+        const path=`/discover/play/${source}/${item}/${episode}`;
+        if (!shared.safeLaunchPath(source,item,episode,path)) return null;
+        const page = source==='huarw' ? `https://huarw.com/movie/${item}`
+            : source==='kanju' ? `https://www.kanju.ai/player/${encodeURIComponent(item)}`
+            : source==='233dm' ? `https://www.233dm.com/anime/${item}.html`
+            : source==='pkavi' ? `https://www.pkavi.com/mv/${item}.html`
+            : source==='cupfox' ? `https://www.cupfox.in/vod-detail/${item}.html`
+            : source==='yhdmoe' ? `https://yhdmoe.com/watch/${item}` : null;
+        return page && shared.safeResultUrl(source,page)
+            ? {title:'当前影片 · 选集',page_url:page,current_episode:episode} : null;
+    }
+
     // Without a year, two equal titles may be remakes. Keep those entries
     // separate rather than silently offering the wrong film to a room owner.
     function groupResults(records, limit = 12) {
@@ -31,9 +48,20 @@
         const query = $('discoveryQuery'), welcome = $('discoveryWelcome'), live = $('discoveryLive');
         const results = $('discoveryLiveResults'), status = $('discoveryLiveStatus'), details = shared.createDetails(doc, fetcher);
         const sources = [...root.querySelectorAll('[data-live-source]')];
+        const picker=doc.body?.classList?.contains('episode-picker')===true;
+        let pickerClosed=false;
         let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0;
         const controllers = new Set(), cards = new Map(), retries = new Set();
-        const feed = feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, registerPosters:shared.registerPosters, openGroup });
+        const feed = picker ? null : feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, registerPosters:shared.registerPosters, openGroup });
+        if(picker) {
+            $('episodePickerCancel').onclick=()=>{pickerClosed=true;};
+            // dialog.close events can be delayed by a background WebView.
+            // Record the user's close action synchronously for native hosts.
+            $('discoveryDetailClose').addEventListener('click',()=>{pickerClosed=true;});
+            $('discoveryDetail').addEventListener('close',()=>{pickerClosed=true;});
+            $('discoveryDetail').addEventListener('cancel',()=>{pickerClosed=true;});
+            $('discoveryDetailClose').textContent='关闭选集 ×';
+        }
         function el(tag, text, className) {
             const node = doc.createElement(tag);
             if (text != null) node.textContent = text;
@@ -55,18 +83,31 @@
         // Back dismisses one layer; it must never start another search.
         function back() {
             if ($('watchHistoryDialog')?.open) { $('watchHistoryDialog').close(); return true; }
-            if ($('discoveryDetail')?.open) { details.close(); return true; }
+            if ($('discoveryDetail')?.open) { if(picker)pickerClosed=true;details.close(); return true; }
             if (activeQuery) { home(); return true; }
             return false;
         }
+        function episodes(program) {
+            const row=episodeRow(program);
+            const source=sources.find(s=>s.dataset.liveSource===program?.source && s.checked!==false);
+            if (!row || !source) return false;
+            if(picker){pickerClosed=false;$('episodePickerLoading').hidden=true;}
+            // A retained search result may provide artwork/title. Keep the search
+            // and its scroll position; opening/closing this dialog is one layer.
+            const known=records.find(r=>r.source===program.source)?.rows?.find(r=>r.page_url===row.page_url);
+            const choice={source:program.source,name:source.dataset.sourceName||program.source,row:{...known,...row,title:known?.title||row.title}};
+            openGroup({title:choice.row.title,year:known?.year||'',poster:known?.poster_url||'',choices:[choice]},null);
+            return true;
+        }
         function openGroup(group, trigger, fromFeed = false) {
+            $('discoveryDetail')?.setAttribute('data-playing',String(!!group.choices[0].row.current_episode));
             const otherSources = $('catalogFindOtherSources');
             if (otherSources) {
                 otherSources.hidden = !fromFeed;
                 otherSources.onclick = () => { details.close(); query.value = group.title; run(); root.scrollIntoView?.({ block: 'start' }); };
             }
             const choices = $('catalogSourceChoices'); choices.replaceChildren();
-            $('catalogDetailFacts').textContent = (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个条目';
+            $('catalogDetailFacts').textContent = group.choices[0].row.current_episode ? '正在观看 · 房间保持连接' : (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个条目';
             const poster = $('catalogDetailPoster'); poster.replaceChildren();
             shared.addPoster(doc, poster, group.poster, group.choices[0].row.page_url, group.title,group);
             const buttons = [];
@@ -211,11 +252,11 @@
             const failed = () => { img.hidden = true; };
             img.addEventListener('error', failed); if (img.complete && !img.naturalWidth) failed();
         }
-        if (shared.normalizeQuery(query.value)) run(); else feed?.setVisible(true);
-        const navigation = { back, home };
+        if (!picker) {if (shared.normalizeQuery(query.value)) run(); else feed?.setVisible(true);}
+        const navigation = { back, home, episodes, pickerClosed:()=>pickerClosed };
         if (doc.defaultView) doc.defaultView.TogetherWatchCatalogNavigation = navigation;
-        return { run, home, back, cancel: stop };
+        return { run, home, back, episodes, cancel: stop };
     }
-    if (typeof module === 'object' && module.exports) module.exports = { groupResults, createBrowser };
+    if (typeof module === 'object' && module.exports) module.exports = { groupResults, createBrowser, episodeRow };
     else document.addEventListener('DOMContentLoaded', () => createBrowser(document));
 })();

@@ -1,6 +1,6 @@
 'use strict';
 const assert=require('node:assert/strict');
-const {BrowserWindow,net}=require('electron');
+const {BrowserWindow,net,session}=require('electron');
 const {setTimeout:delay}=require('node:timers/promises');
 const {api}=require('../src/catalog-adapters.cjs');
 const fs=require('node:fs'),path=require('node:path');
@@ -12,7 +12,9 @@ exports.run=async({createDesktop,server,output,until})=>{
         let verified=source!=='233dm',verifications=0;
         const host=api.sources[source].host;
         const detail=source==='huarw'?`/movie/${item}`:source==='kanju'?`/player/${encodeURIComponent(item)}`:source==='233dm'?`/anime/${item}.html`:`/mv/${item}.html`;
-        await c.state().discoveryView.webContents.session.protocol.handle('https',async req=>{
+        // Catalogue and original-site readers now use isolated partitions.
+        // Mock the reader partition, not the first-party catalogue session.
+        await session.fromPartition('video-test-'+c.win.id).protocol.handle('https',async req=>{
             const u=new URL(req.url);
             if(u.hostname!==host)return new Response('fixture blocked',{status:404});
             // The search DOM is ready while its image is still pending. The
@@ -124,8 +126,15 @@ exports.run=async({createDesktop,server,output,until})=>{
             await until('peer pause and seek',()=>read(b,'document.querySelector("video").paused && Math.abs(document.querySelector("video").currentTime-18)<1'));
             const next=server+api.selection(source,item,episode(2)).path;
             assert.equal((await b.action({type:'source',source:next})).ok,false);
-            assert.equal((await a.action({type:'source',source:next})).ok,true);
+            assert.equal(await a.action('episodes'),true);
+            const picker=a.state().episodeView.webContents;
+            assert.equal(a.state().browsing,false);
+            await until('native in-player episode directory '+source,()=>picker.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===2'));
+            assert.equal((await picker.executeJavaScript('twSourceMetadata.request("not-search","search",{source:"kanju",q:"test"})')).status,'unavailable');
+            assert.equal(await picker.executeJavaScript('document.querySelector("#discoveryEpisodes [aria-current]").getAttribute("href")'),api.selection(source,item,episode(1)).path);
+            await picker.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a")[1].click()');
             await until('invited guest changes episode',()=>b.state().video.webContents.getURL()===api.selection(source,item,episode(2)).page && !!b.state().selected);
+            assert.equal(a.state().episodeView,null);assert.equal(a.state().roomView,roomView);assert.equal(a.state().current.room,id);
             await delay(1800);
             assert.ok(await read(b,'document.querySelector("video").currentTime<15'));
             a.close();b.close();

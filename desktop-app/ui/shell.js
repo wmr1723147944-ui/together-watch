@@ -25,6 +25,7 @@ $('previous').onclick = () => window.desktop.action('back');
 $('more').onclick = () => window.desktop.action({type:'tools',expanded:$('roomMore').hidden});
 $('leave').onclick = () => window.desktop.action('leave');
 $('finder-catalog').onclick = () => window.desktop.action('discover');
+$('change-film').onclick = () => window.desktop.action('discover');
 $('finder-kanju').onclick = () => window.desktop.action('kanju');
 $('finder-pick').onclick = () => window.desktop.action('pick-current');
 for (const action of ['finder-back','finder-reload','finder-browser']) $(action).onclick = () => window.desktop.action(action);
@@ -46,6 +47,7 @@ async function enterRoom() {
 }
 $('startForm').onsubmit = event => {event.preventDefault();enterRoom();};
 for (const action of ['reload','invite','detect','fullscreen','settings','discover','return-video','cinema','scan-media','original','kanju','pick-current']) $(action).onclick = () => window.desktop.action(action);
+$('discover').onclick = () => window.desktop.action('episodes');
 $('mediaChoices').onchange = () => { $('play-media').disabled = !$('mediaChoices').value; };
 $('play-media').onclick = async () => {
     $('play-media').disabled = true;

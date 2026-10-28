@@ -1,0 +1,21 @@
+/* A dedicated first-party drawer. No recommendation feed behind the player. */
+html,body.episode-picker{background:#171b25!important;min-height:100%;margin:0}
+html{height:100%;overflow:hidden}body.episode-picker{height:100%;overflow:hidden}
+body.episode-picker>header,body.episode-picker>.catalog-mobile-nav,
+body.episode-picker #mainContent{visibility:hidden}
+body.episode-picker #episodePickerLoading{position:fixed;inset:0;padding:24px;color:#dce2ed;font:14px/1.6 sans-serif}
+#episodePickerCancel{float:right;padding:8px 14px;border:1px solid #556075;border-radius:8px;background:#252d3d;color:white}
+body.episode-picker .catalog-detail[open]{visibility:visible;position:fixed;inset:0;margin:0;width:100%;max-width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0;padding:20px;background:#171b25;color:#e6eaf2;box-sizing:border-box;overflow:auto}
+body.episode-picker .catalog-detail::backdrop{background:transparent;backdrop-filter:none}
+body.episode-picker .catalog-detail::before,body.episode-picker #catalogDetailPoster,
+body.episode-picker .catalog-source-choices,body.episode-picker #discoveryDetailOriginal,
+body.episode-picker .catalog-detail-heading .discovery-note,body.episode-picker #discoveryDetailDescription{display:none}
+body.episode-picker .catalog-detail header .discovery-eyebrow{display:none}
+body.episode-picker .catalog-detail header{justify-content:flex-end}
+body.episode-picker .catalog-detail header{position:sticky;top:-20px;background:#171b25;padding:12px 0;z-index:1}
+body.episode-picker .catalog-detail #discoveryDetailTitle{font-size:20px;color:#f1f4fa}
+body.episode-picker #catalogDetailFacts,body.episode-picker #discoveryDetailStatus{color:#abb8ce}
+body.episode-picker .discovery-episodes{grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px}
+body.episode-picker .catalog-detail .discovery-episode{background:#242c3b;border-color:#364258;color:#d8e2f3;min-height:44px}
+body.episode-picker .catalog-detail .discovery-episode[aria-current="true"]{background:#4b293a;border-color:#f481a8;color:#ffc1d7}
+body.episode-picker #discoveryDetailClose{background:#273044;border-color:#40506b;color:#edf3ff}

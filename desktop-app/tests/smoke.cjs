@@ -78,6 +78,15 @@ exports.run = async createDesktop => {
 from app import app, socketio, ensure_room_state, LEGAL_NOTICE_VERSION
 from flask import send_file
 import os
+if os.environ.get('TW_SMOKE_EPISODES_ONLY') == '1':
+    import app as module
+    import catalog_recommendations
+    import source_search
+    module.enabled_search_sources=lambda: [dict(source_search.PROVIDERS['cupfox'])]
+    catalog_recommendations.load_page=lambda source, category, page: dict(source_id=source,category=category,page=page,status='ok',results=[],has_more=False,next_page=None)
+    def episode_detail(source,page):
+        return dict(source_id=source,page_url=page,item_id='12',title='选集测试剧',status='ok',episodes=[dict(id=f'ep{n}',title=f'第 {n} 集',launch_path=f'/discover/play/cupfox/12/ep{n}') for n in range(1,4)])
+    module.load_detail=episode_detail
 if os.environ.get('TW_SMOKE_INVITE_ONLY') == '1':
     import app as module
     def title_search(source, query):
@@ -92,15 +101,14 @@ if os.environ.get('TW_SMOKE_CATALOG_ONLY') == '1':
     def empty_feed(source, category, page):
         return dict(source_id=source,category=category,page=page,status='ok',results=[],has_more=False,next_page=None)
     catalog_recommendations.load_page=empty_feed
-    original_search, original_detail = module.search_provider, module.load_detail
     def visual_search(source, query):
         if source == 'pkavi' and query == '视觉测试':
             return dict(source_id=source,query=query,status='ok',results=[dict(title='视觉测试动画',page_url='https://www.pkavi.com/mv/514960.html')])
-        return original_search(source,query)
+        return dict(source_id=source,status='unavailable',results=[])
     def visual_detail(source, page):
         if source == 'pkavi' and page == 'https://www.pkavi.com/mv/514960.html':
             return dict(source_id=source,page_url=page,item_id='514960',status='ok',description='本地选集与邀请流程测试',episodes=[dict(id='3-'+str(n),title='第'+str(n)+'集',line='线路 3',launch_path='/discover/play/pkavi/514960/3-'+str(n)) for n in (1,2)])
-        return original_detail(source,page)
+        return dict(source_id=source,status='unavailable',episodes=[])
     module.search_provider, module.load_detail = visual_search, visual_detail
 @app.get('/test-media.mp4')
 def test_media():
@@ -121,6 +129,9 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
     const clients = [];
     try {
         await until('local backend', async () => { try { return (await fetch(server + '/health')).ok; } catch { return false; } });
+        if (process.env.TW_SMOKE_EPISODES_ONLY === '1') {
+            await require('./episodes-smoke.cjs').run({createDesktop,server,output,until});return;
+        }
         if (process.env.TW_SMOKE_FILM_HOME_ONLY === '1') {
             await require('./film-home-smoke.cjs').run({createDesktop,server,output,until});
             return;
