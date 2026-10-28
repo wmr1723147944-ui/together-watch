@@ -1,6 +1,7 @@
 """Bounded public catalogue pages, not a ranking, media proxy or playback claim."""
 from collections import OrderedDict
 from copy import deepcopy
+from datetime import datetime, timezone
 from html.parser import HTMLParser
 import re
 import threading
@@ -11,17 +12,25 @@ import urllib3
 import source_search as search
 from poster_policy import poster_candidates, poster_attribute_candidates
 
-VERSION = '20261021-live-catalog'
+VERSION = '20261028-category-continuation'
 MAX_PAGE = 1000
 MAX_ROWS = 60
 TTL, FAILURE_TTL, MAX_CACHE = 600, 20, 192
 CATEGORIES = ('all', 'movie', 'series', 'animation', 'documentary')
 FEEDS = {
     'ddys': dict(categories=CATEGORIES, paginated=True),
-    'cupfox': dict(categories=('all', 'movie', 'series', 'animation'), paginated=False),
+    # This site's filter has year links, not numbered pages. Our bounded page
+    # counter walks those public year buckets; it is not an invented upstream
+    # ?page=N endpoint. Only advance when the next bucket is linked in the HTML.
+    'cupfox': dict(categories=CATEGORIES, paginated=True),
     'yhdmoe': dict(categories=('all', 'animation'), paginated=True),
 }
 _cache, _inflight, _lock = OrderedDict(), set(), threading.Lock()
+
+
+def cupfox_years():
+    # The observed archive exposes each year down to 2010, then "before 2010".
+    return [str(year) for year in range(datetime.now(timezone.utc).year, 2009, -1)] + ['lt__2010']
 
 
 def feed_choices(enabled):
@@ -39,9 +48,14 @@ def page_path(source, category, page):
         return (base or '/') if page == 1 else base + '/page/' + str(page)
     if source == 'yhdmoe':
         return '/catalog?' + urlencode(dict(country_flag='', type='', year='', genre='', status='', sort='hot', page=page))
-    if page != 1:
-        raise ValueError('single-page catalogue')
-    return {'all': '/', 'movie': '/type/movie/', 'series': '/type/tv/', 'animation': '/type/anime/'}[category]
+    years = cupfox_years()
+    if page > len(years) + 1:
+        raise ValueError('end of catalogue archive')
+    params = {} if category == 'all' else {'type': {
+        'movie': 'movie', 'series': 'tv', 'animation': 'anime', 'documentary': 'doc'}[category]}
+    if page > 1:
+        params['year'] = years[page - 2]
+    return '/filter/' + ('?' + urlencode(params) if params else '')
 
 
 def _equivalent_page(url, wanted):
@@ -63,8 +77,12 @@ class CatalogueParser(HTMLParser):
         self.origin = 'https://' + self.provider['host']
         self.stack, self.cards, self.card, self.titles = [], [], None, []
         self.recognized, self.empty, self.has_next = False, False, False
-        self.next_url = (self.origin + page_path(source, category, page + 1)
-                         if FEEDS[source]['paginated'] and page < MAX_PAGE else None)
+        self.next_url = None
+        if FEEDS[source]['paginated'] and page < MAX_PAGE:
+            try:
+                self.next_url = self.origin + page_path(source, category, page + 1)
+            except ValueError:
+                pass  # A finite archive has a real end, not a repeated last page.
 
     def handle_starttag(self, tag, attrs):
         attrs = {key: value or '' for key, value in attrs}

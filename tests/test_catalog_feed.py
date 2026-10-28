@@ -22,12 +22,25 @@ class CatalogFeedTests(unittest.TestCase):
         self.assertEqual(feed.page_path('ddys', 'all', 2), '/page/2')
         self.assertEqual(feed.page_path('ddys', 'series', 3), '/series/page/3')
         self.assertIn('sort=hot&page=2', feed.page_path('yhdmoe', 'animation', 2))
-        self.assertEqual(feed.page_path('cupfox', 'movie', 1), '/type/movie/')
+        self.assertEqual(feed.page_path('cupfox', 'movie', 1), '/filter/?type=movie')
         for args in [('ddys', 'all', True), ('ddys', 'all', 0), ('ddys', 'all', 1001),
-                     ('ddys', '../', 1), ('cupfox', 'all', 2), ('yhdmoe', 'movie', 1),
+                     ('ddys', '../', 1), ('cupfox', 'all', 1000), ('yhdmoe', 'movie', 1),
                      ('https://localhost', 'all', 1)]:
             with self.assertRaises(ValueError, msg=args):
                 feed.page_path(*args)
+
+    def test_each_category_walks_only_code_owned_year_buckets_then_stops(self):
+        with patch.object(feed, 'cupfox_years', return_value=['2026', '2025', 'lt__2010']):
+            for category, kind in [('all', ''), ('movie', 'movie'), ('series', 'tv'),
+                                   ('animation', 'anime'), ('documentary', 'doc')]:
+                first = '/filter/' + ('?type=' + kind if kind else '')
+                prefix = first + ('&' if kind else '?')
+                self.assertEqual(feed.page_path('cupfox', category, 1), first)
+                self.assertEqual(feed.page_path('cupfox', category, 2), prefix + 'year=2026')
+                self.assertEqual(feed.page_path('cupfox', category, 3), prefix + 'year=2025')
+                self.assertEqual(feed.page_path('cupfox', category, 4), prefix + 'year=lt__2010')
+                with self.assertRaises(ValueError):
+                    feed.page_path('cupfox', category, 5)
 
     def test_ddys_cards_keep_titles_years_posters_and_valid_next_page(self):
         body = card() + card('second', '另一部', '2025', 'https://evil.test/a.jpg') + card()
@@ -49,6 +62,50 @@ class CatalogFeedTests(unittest.TestCase):
         self.assertIsNone(rows[0]['year'])
         self.assertEqual(rows[0]['poster_url'], 'https://www.cupfox.in/simg/20221234.jpg')
         self.assertFalse(more)
+
+    def test_cupfox_archive_requires_real_same_category_next_link(self):
+        body = '''<div class="movie-list-body"><div class="movie-list-item">
+          <a href="/vod-detail/123.html"><img src="/simg/123.jpg"></a>
+          <div class="movie-title">测试影片</div></div></div>'''
+        with patch.object(feed, 'cupfox_years', return_value=['2026', '2025', 'lt__2010']):
+            for category in feed.CATEGORIES:
+                for page in (1, 2, 3):
+                    url = feed.page_path('cupfox', category, page + 1)
+                    rows, more = feed.parse_page('cupfox', category, page, body + f'<a href="{url}">年份</a>')
+                    self.assertEqual(len(rows), 1)
+                    self.assertTrue(more, (category, page))
+                    self.assertEqual(rows[0]['category'], category)
+                self.assertFalse(feed.parse_page('cupfox', category, 4, body + '<a href="/filter/">全部</a>')[1])
+            for bad in ['https://evil.test/filter/?type=movie&year=2026',
+                        'https://user@www.cupfox.in/filter/?type=movie&year=2026',
+                        '/filter/?type=tv&year=2026', '/filter/?type=movie&year=2025',
+                        '/filter/?type=movie&year=2026&url=http://localhost',
+                        '/filter/?type=movie&year=2026&year=2026', '/filter/?type=movie&page=2']:
+                self.assertFalse(feed.parse_page('cupfox', 'movie', 1, body + f'<a href="{bad}">更多</a>')[1], bad)
+            # The year link may precede the type parameter or be HTML escaped.
+            self.assertTrue(feed.parse_page('cupfox', 'movie', 1, body + '<a href="/filter/?year=2026&amp;type=movie">2026</a>')[1])
+
+    def test_documentary_feed_is_enabled_without_restoring_retired_sources(self):
+        choices = feed.feed_choices(search.provider_choices())
+        self.assertTrue(any('documentary' in p['categories'] for p in choices))
+        self.assertFalse(any(p['id'] in ('ddys', 'fcma') for p in choices))
+        url = '/api/discover/feed?source=cupfox&category=documentary&page=2'
+        with patch.object(feed, 'load_page', return_value={'status': 'ok', 'results': []}) as load:
+            self.assertEqual(self.client.get(url).status_code, 200)
+            load.assert_called_once_with('cupfox', 'documentary', 2)
+
+    def test_archive_response_advances_only_with_observed_continuation(self):
+        body = '''<div class="movie-list-body"><div class="movie-list-item">
+          <a href="/vod-detail/123.html"><div class="movie-title">测试影片</div></a></div></div>'''
+        with patch.object(feed, 'cupfox_years', return_value=['2026', 'lt__2010']):
+            with patch.object(search, '_fetch_path', return_value=body + '<a href="/filter/?type=doc&amp;year=2026">2026</a>') as fetch:
+                first = feed.load_page('cupfox', 'documentary', 1)
+                self.assertEqual((first['status'], first['has_more'], first['next_page']), ('ok', True, 2))
+                self.assertEqual(fetch.call_args.args[1], '/filter/?type=doc')
+            with patch.object(search, '_fetch_path', return_value=body) as fetch:
+                last = feed.load_page('cupfox', 'documentary', 3)
+                self.assertEqual((last['status'], last['has_more'], last['next_page']), ('ok', False, None))
+                self.assertEqual(fetch.call_args.args[1], '/filter/?type=doc&year=lt__2010')
 
     def test_yhdmoe_images_outside_anchor_and_unreleased_entries(self):
         body = '''<div id="catalog_list"><div class="card"><img src="/static/img/poster_s/123.jpg">

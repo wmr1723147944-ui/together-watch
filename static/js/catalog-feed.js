@@ -13,7 +13,7 @@
             id: el.dataset.feedSource, name: el.dataset.sourceName, categories: el.dataset.categories.split(',')
         }));
         let generation = 0, category = 'all', states = [], busy = false, visible = false, started = false;
-        let autoPaused = false, total = 0, featured = null, trimMessage = '';
+        let autoPaused = false, emptyBatches = 0, total = 0, featured = null, trimMessage = '';
         const controllers = new Set(), entries = new Map(), seen = new Set();
         function el(tag, text, className) {
             const n = doc.createElement(tag); if (text != null) n.textContent = text;
@@ -33,7 +33,7 @@
             button.textContent = busy ? '正在加载…' : entries.size >= MAX_VISIBLE ? '继续浏览（保留最近的影片）'
                 : !available && failed.length ? '重试未完成的目录' : '加载更多影片';
             $('catalogFeedStatus').textContent = busy ? (total ? `已发现 ${total} 部，正在加载下一批…` : '正在从各站读取片单…')
-                : !states.length ? '当前没有启用的推荐来源，仍可使用上方搜索。'
+                : !states.length ? '当前分类没有启用的目录来源，仍可使用上方搜索。'
                 : `${total ? `已发现 ${total} 部。` : ''}${available ? entries.size >= MAX_VISIBLE ? '为保持页面流畅，请点下方按钮继续浏览。' : autoPaused ? '本批没有新增影片，点下方按钮可继续查找。' : '继续向下浏览，会自动加载更多。' : failed.length ? '部分目录暂时失败，可重试；已加载的影片仍可查看。' : states.some(s=>s.limit) ? '已到本轮分页上限，可刷新或切换分类继续浏览。' : '当前目录已浏览完，稍后刷新可查看更新。'}${trimMessage}`;
             const notes = $('catalogFeedNotesBody'); notes.replaceChildren();
             for (const s of failed) notes.append(el('p', `${s.name}：${s.error}`, 'catalog-query-note'));
@@ -122,7 +122,7 @@
         async function load(manual = false) {
             if (!visible || busy) return;
             if (manual) {
-                autoPaused = false;
+                autoPaused = false; emptyBatches = 0;
                 for (const s of states) if (!s.done) s.error = '';
                 if (entries.size >= MAX_VISIBLE) {
                     while (entries.size > KEEP_VISIBLE) {
@@ -164,7 +164,11 @@
             }
             await Promise.all([worker(), worker()]);
             if (current !== generation) return;
-            busy = false; autoPaused = added === 0; renderStatus();
+            // The current-year archive can overlap the category's first batch.
+            // Skip one duplicate/empty batch, but never spin through unbounded
+            // empty pages. Per-source and global guards both stop after two.
+            emptyBatches = added ? 0 : emptyBatches + 1;
+            busy = false; autoPaused = emptyBatches >= 2; renderStatus();
             if (!autoPaused) win.setTimeout?.(maybeLoad, 180);
         }
         function maybeLoad() {
@@ -173,7 +177,7 @@
             if (rect.top < (win.innerHeight || 0) + 420 && rect.bottom > 0) load();
         }
         function reset(nextCategory = category) {
-            cancel(); category = nextCategory; started = true; autoPaused = false; total = 0; trimMessage = '';
+            cancel(); category = nextCategory; started = true; autoPaused = false; emptyBatches = 0; total = 0; trimMessage = '';
             entries.clear(); seen.clear(); grid.replaceChildren(); featured = null;
             $('catalogHeroImage').hidden = true; $('catalogHeroOpen').hidden = true;
             $('catalogHeroTitle').textContent = '今天，想看点什么？';

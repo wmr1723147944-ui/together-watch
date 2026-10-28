@@ -14,7 +14,7 @@ function fixture(ids=['ddys','cupfox','yhdmoe']) {
     for(const id of ['catalogFeedGrid','catalogFeedSkeleton','catalogFeedEmpty','catalogFeedMore','catalogFeedStatus',
         'catalogFeedNotesBody','catalogFeedNotes','catalogHeroTitle','catalogHeroTagline','catalogHeroFacts','catalogHeroImage',
         'catalogHeroOpen','catalogFeedRefresh','catalogFeedSentinel','discoveryWelcome','discoveryDetail'])elements.set(id,node());
-    const configs=ids.map(id=>({dataset:{feedSource:id,sourceName:id,categories:id==='yhdmoe'?'all,animation':'all,movie'}}));
+    const configs=ids.map(id=>({dataset:{feedSource:id,sourceName:id,categories:id==='yhdmoe'?'all,animation':'all,movie,series,animation,documentary'}}));
     const win={innerHeight:900,handlers:{},timers:[],addEventListener(k,f){this.handlers[k]=f;},setTimeout(f){this.timers.push(f);}};
     const doc={getElementById:id=>elements.get(id),querySelectorAll:()=>configs,createElement:node,defaultView:win,visibilityState:'visible',addEventListener(){}};
     const hooks={groupResults,addPoster(_doc,cover,poster){cover.append(node('img'));cover.children[0].src=poster;},openGroup(...args){hooks.opened=args;}};
@@ -91,8 +91,32 @@ test('repeated/invalid entries do not duplicate the grid or cause an endless aut
     const f=fixture(['ddys']);let count=0;
     const feed=createFeed(f.doc,async url=>{count++;return reply(url,[row('ddys',1),row('ddys',1),row('ddys',2,'')],true);},f.hooks);
     await feed.setVisible(true);await feed.load(true);assert.equal(f.grid.children.length,1);
-    await feed.load();assert.equal(count,2);assert.match(f.elements.get('catalogFeedStatus').textContent,/没有新增/);
-    await feed.load(true);assert.equal(count,3);assert.equal(f.elements.get('catalogFeedNotes').hidden,false);
+    await feed.load();assert.equal(count,3);assert.equal(f.elements.get('catalogFeedNotes').hidden,false);
+    await feed.load();assert.equal(count,3);
+    await feed.load(true);assert.equal(count,4);
+});
+
+test('all category tabs can skip an overlapping batch and keep loading distinct films',async()=>{
+    for(const category of ['movie','series','animation','documentary']) {
+        const f=fixture(['cupfox']),calls=[];
+        const feed=createFeed(f.doc,async url=>{
+            const q=new URL(url,'http://localhost').searchParams,page=+q.get('page');
+            calls.push([q.get('category'),page]);
+            // The current-year list overlaps the latest list; the next year does not.
+            return reply(url,[row('cupfox',page===3?2:1,category+(page===3?'乙':'甲'))],page<3);
+        },f.hooks);
+        await feed.setVisible(true);calls.length=0;
+        await feed.reset(category);
+        f.elements.get('catalogFeedSentinel').getBoundingClientRect=()=>({top:950,bottom:1000});
+        feed.maybeLoad();await tick();
+        assert.equal(f.grid.children.length,1);
+        assert.equal(f.elements.get('catalogFeedMore').hidden,false);
+        feed.maybeLoad();await tick();
+        assert.equal(f.grid.children.length,2,category);
+        assert.deepEqual(calls,[[category,1],[category,2],[category,3]]);
+        assert.equal(f.elements.get('catalogFeedMore').hidden,true);
+        feed.maybeLoad();await tick();assert.equal(calls.length,3);
+    }
 });
 
 test('category changes abort old requests and late replies cannot replace the new category',async()=>{
