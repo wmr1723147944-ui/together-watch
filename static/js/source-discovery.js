@@ -71,9 +71,10 @@
         const attempted=new Set(),recovered=new Set();
         const credit=doc.createElement('span');credit.className='discovery-poster-credit';credit.hidden=true;
         function fitFrame(candidate) {
-            // Adapt cards and detail art, not the fixed-size hero/spotlight banners.
+            // Every artwork surface gets its loaded shape, including the
+            // spotlight. The hero uses this to switch from banner to poster+copy.
             const card=container.classList?.contains('discovery-title-art') || container.classList?.contains('catalog-film-poster');
-            if((!card && container.id!=='catalogDetailPoster') || container.closest?.('.catalog-spotlight-film'))return;
+            if(!card && !['catalogDetailPoster','catalogHeroImage'].includes(container.id))return;
             const ratio=candidate?.width/candidate?.height;
             if(Number.isFinite(ratio) && ratio>0) {
                 container.dataset.posterShape=ratio<.9?'portrait':ratio>1.15?'landscape':'square';

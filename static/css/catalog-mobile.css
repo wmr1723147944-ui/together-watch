@@ -28,6 +28,13 @@
     .catalog-hero .catalog-primary { position: absolute; right: 14px; bottom: 20px; margin: 0; padding: 8px 10px; border-radius: 16px; color: #fff; background: var(--mobile-accent); font-size: 11px !important; }
     .catalog-primary span { margin-left: 5px; }
     .hero-caption { font-size: 9px; right: 12px; top: 14px; }
+    .catalog-spotlight .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) { grid-template-columns: minmax(0,1fr) 92px; gap: 14px; padding: 16px; height: auto; min-height: 168px; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) .catalog-hero-copy { align-self: stretch; justify-content: center; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) .catalog-eyebrow { position: static; font-size: 9px; padding: 2px 5px; margin-bottom: 7px; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) h1 { padding: 0; font-size: 20px; -webkit-line-clamp: 2; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) .hero-facts { max-width: 100%; font-size: 10px; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) .catalog-primary { position: static; margin-top: 9px; padding: 6px 10px; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) .hero-caption { display: none; }
     .catalog-section-title { margin: 19px 0 8px; gap: 8px; }
     .catalog-section-title h2 { font-size: 18px; }
     .catalog-refresh { padding: 4px 0 4px 8px; min-height: 36px; border: 0; background: transparent; color: #657080; }

@@ -146,10 +146,18 @@ test('artwork frames follow loaded portrait, landscape and square proportions; b
         img.handlers.error();assert.equal(cover.dataset.posterShape,undefined);assert.equal(styles['--poster-ratio'],undefined);
         binding.dispose();
     }
-    const {doc,node}=posterDom(),hero=node('div'),row=posterRow('测试','2024');
-    const binding=addPoster(doc,hero,row.poster_url,row.page_url,row.title,row);
-    const img=hero.children.find(n=>n.tag==='img');Object.assign(img,{naturalWidth:600,naturalHeight:900});img.handlers.load();
-    assert.equal(hero.dataset.posterShape,undefined,'hero stays wide');binding.dispose();
+    for(const kind of ['hero','spotlight']) {
+        const {doc,node}=posterDom(),cover=node('div'),row=posterRow('测试','2024'),styles={};
+        if(kind==='hero')cover.id='catalogHeroImage';
+        else {cover.classList={contains:k=>k==='catalog-film-poster'};cover.closest=()=>({});}
+        cover.style={setProperty:(k,v)=>styles[k]=v,removeProperty:k=>delete styles[k]};
+        const binding=addPoster(doc,cover,row.poster_url,row.page_url,row.title,row);
+        const img=cover.children.find(n=>n.tag==='img');Object.assign(img,{naturalWidth:600,naturalHeight:900});img.handlers.load();
+        assert.equal(cover.dataset.posterShape,'portrait',kind+' must use the actual artwork shape');
+        assert.equal(+styles['--poster-ratio'],2/3);
+        img.handlers.error();assert.equal(cover.dataset.posterShape,undefined);
+        binding.dispose();
+    }
 });
 test('broken card recovers when another source arrives late and labels borrowed artwork',()=>{
     const {doc,node}=posterDom(),cover=node('button'),row=posterRow('测试','2024','kanju');

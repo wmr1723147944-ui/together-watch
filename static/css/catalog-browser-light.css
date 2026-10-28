@@ -35,7 +35,7 @@
 .catalog-channels button[aria-pressed="true"] { background: #eaf8ff; border-color: #bce8fa; color: #007da6; font-weight: 600; }
 .catalog-channels button:hover { background: #e8f6fc; color: #007da6; }
 .channel-tip { color: #6b7584; font-size: 12px; margin-left: auto; white-space: nowrap; }
-.catalog-spotlight { display: grid; grid-template-columns: 1.08fr 1fr; gap: 22px; align-items: stretch; }
+.catalog-spotlight { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.2fr); gap: 22px; align-items: stretch; }
 .catalog-hero { position: relative; isolation: isolate; overflow: hidden; border-radius: 12px; min-height: 330px; background: linear-gradient(135deg,#21516c,#172c47); }
 .catalog-hero-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 32%; z-index: -2; }
 .catalog-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg,#0b172ae8 0%,#122035a3 32%,#0f1a2c0a 80%); z-index: -1; }
@@ -47,9 +47,19 @@
 .catalog-primary { border: 0; border-radius: 6px; padding: 9px 15px; margin-top: 15px; color: #fff; background: #007da6; font-size: 12px !important; }
 .catalog-primary:hover { background: #006b90; }.catalog-primary span { margin-left: 14px; }
 .hero-caption { position: absolute; top: 16px; right: 16px; color: #fff; background: #0005; border-radius: 4px; font-size: 10px; padding: 4px 7px; }
-.catalog-spotlight-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px 18px; }
+.catalog-spotlight-grid { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 16px 14px; align-items: start; }
 .catalog-spotlight-film { display: flex; flex-direction: column; min-width: 0; }
-.catalog-browser .catalog-spotlight-film .catalog-film-poster { flex: 1; min-height: 115px; aspect-ratio: 2.1; }
+.catalog-browser .catalog-spotlight-film .catalog-film-poster { flex: none; min-height: 0; aspect-ratio: var(--poster-ratio,2/3); }
+/* Portrait/square key art is a poster, not a widescreen backdrop. Keep the
+   image's own frame ratio and give the copy a separate, readable column. */
+.catalog-hero:has(.catalog-hero-image[data-poster-shape="portrait"]),
+.catalog-hero:has(.catalog-hero-image[data-poster-shape="square"]) { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,.78fr); gap: 22px; padding: 32px 24px 24px; min-height: 280px; }
+.catalog-hero:has(.catalog-hero-image[data-poster-shape="portrait"])::after,
+.catalog-hero:has(.catalog-hero-image[data-poster-shape="square"])::after { background: linear-gradient(135deg,#12273c55,#0b172a88); }
+.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"]) { position: relative; inset: auto; grid-area: 1/2; width: 100%; height: auto; aspect-ratio: var(--poster-ratio); align-self: center; z-index: 0; border-radius: 8px; overflow: hidden; }
+.catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) .catalog-hero-copy { grid-area: 1/1; padding: 0; height: auto; align-self: center; }
+.catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) h1 { font-size: clamp(21px,2vw,30px); overflow-wrap: anywhere; }
+.catalog-hero .hero-caption { z-index: 1; }
 .catalog-spotlight:has(.catalog-spotlight-grid[hidden]) { grid-template-columns: 1fr; }
 .catalog-spotlight:has(.catalog-spotlight-grid[hidden]) .catalog-hero { min-height: 260px; }
 .catalog-section-title { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 30px 0 10px; }
@@ -116,9 +126,10 @@
 }
 @media (max-width: 900px) {
     .catalog-cinema .site-nav-catalog { gap: 18px; }.catalog-cinema .site-nav nav { gap: 16px; }.catalog-cinema .site-brand strong span { display: none; }
-    .catalog-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 24px 15px; }.catalog-spotlight { gap: 16px; grid-template-columns: 1fr 1fr; }
+    .catalog-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 24px 15px; }.catalog-spotlight { gap: 16px; grid-template-columns: 1fr; }
     .catalog-hero { min-height: 285px; }.catalog-hero-copy { padding: 24px; }.catalog-spotlight-grid { gap: 12px; }
-    .catalog-browser .catalog-spotlight-film .catalog-film-poster { min-height: 100px; }.catalog-cinema .catalog-search { max-width: 360px; }.channel-heading small { display: none; }
+    .catalog-hero:has(.catalog-hero-image:is([data-poster-shape="portrait"],[data-poster-shape="square"])) { grid-template-columns: minmax(0,1fr) minmax(0,170px); }
+    .catalog-cinema .catalog-search { max-width: 360px; }.channel-heading small { display: none; }
 }
 @media (max-width: 680px) {
     .catalog-cinema .site-nav-catalog { height: auto; min-height: 110px; display: grid; grid-template-columns: auto 1fr auto; gap: 12px 18px; padding: 12px 16px; }
