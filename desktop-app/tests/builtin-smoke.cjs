@@ -16,6 +16,12 @@ exports.run = async ({createDesktop, server, output, until}) => {
         await wc.debugger.sendCommand('Input.dispatchKeyEvent', {type:'keyDown',key:'q',code:'KeyQ',windowsVirtualKeyCode:81});
         await wc.debugger.sendCommand('Input.dispatchKeyEvent', {type:'keyUp',key:'q',code:'KeyQ',windowsVirtualKeyCode:81});
     }
+    async function pointerClick(wc,id) {
+        const point=await wc.executeJavaScript(`(()=>{const r=document.getElementById(${JSON.stringify(id)}).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+        await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',...point});
+        await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});
+        await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});
+    }
     try {
         for (const name of ['builtin-alice','builtin-bob']) {
             const client = await createDesktop({server, testSource:'http://127.0.0.1:', visible:false}); clients.push(client);
@@ -75,6 +81,17 @@ exports.run = async ({createDesktop, server, output, until}) => {
         await a.toggleFullscreen(true);
         assert.equal(a.state().builtin.getBounds().y, 0);
         assert.equal(a.state().builtin.getBounds().height, a.win.getContentSize()[1]);
+        await pointerClick(aw,'fit');
+        assert.equal(await aw.executeJavaScript('document.activeElement.id'),'fit','real pointer click leaves focus on button');
+        await delay(2800);
+        assert.equal(await aw.executeJavaScript('getComputedStyle(document.querySelector("footer")).opacity'),'0','mouse focus must not pin fullscreen controls');
+        assert.ok(await aw.executeJavaScript('document.documentElement.scrollHeight<=innerHeight+1 && document.documentElement.scrollWidth<=innerWidth+1'),'no fullscreen scrollbar');
+        await aw.debugger.sendCommand('Input.dispatchKeyEvent',{type:'keyDown',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+        await aw.debugger.sendCommand('Input.dispatchKeyEvent',{type:'keyUp',key:'Tab',code:'Tab',windowsVirtualKeyCode:9});
+        await delay(2800);
+        assert.equal(await aw.executeJavaScript('getComputedStyle(document.querySelector("footer")).opacity'),'1','keyboard-focused controls remain accessible');
+        await aw.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseMoved',x:80,y:80});await delay(2800);
+        assert.equal(await aw.executeJavaScript('getComputedStyle(document.querySelector("footer")).opacity'),'0','pointer movement exits keyboard mode');
         await a.toggleFullscreen(false);
         fs.writeFileSync(path.join(output,'windows-builtin-player.png'), (await aw.capturePage()).toPNG());
         await a.action('original');
@@ -93,7 +110,7 @@ exports.run = async ({createDesktop, server, output, until}) => {
         // The trusted player presents an error, never claims a 403 is playing.
         await bw.executeJavaScript('window.__twBuiltin.load({url:"https://media.example.com/broken.mp4",kind:"mp4"})');
         await until('403 error visible', () => bw.executeJavaScript('!!window.__twBuiltin.state().error'));
-        console.log('BUILTIN PASS: MP4 decode, solo advance, two-peer seek/pause/play/speed, isolated session, native and F11 fullscreen, original-page fallback, stale candidate/racing navigation rejection, 403 message.');
+        console.log('BUILTIN PASS: MP4 decode, solo advance, two-peer seek/pause/play/speed, isolated session, native and F11 fullscreen, actual mouse focus auto-hides, keyboard focus stays visible, no fullscreen scrollbar, original-page fallback, stale candidate/racing navigation rejection, 403 message.');
         if (process.env.TW_SMOKE_LIVE_MEDIA === '1') {
             // Real network media: an openly published trailer and HLS.js' public
             // demo. This does not validate third-party film catalogues.

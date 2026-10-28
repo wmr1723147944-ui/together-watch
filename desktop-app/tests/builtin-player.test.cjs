@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,'../ui/player.js'),'utf8');
 function setup() {
-    const listeners = {}, timers = new Set(), streams = [];
+    const listeners = {}, timers = new Set(), streams = [],documentListeners={},windowListeners={},classes=new Set();
     const video = { currentTime:0,duration:120,readyState:0,style:{},paused:true,
         addEventListener(name, fn) { listeners[name] = fn; },
         pause() { this.paused = true; }, load() {}, removeAttribute() { this.src = ''; },
@@ -22,10 +22,20 @@ function setup() {
         loadSource(url) { this.url=url; } attachMedia() {} stopLoad() { this.stopped=true; } destroy() { this.destroyed=true; }
     }
     let episodeCalls=0;
-    const window = {Hls,twPlayer:{episodes:async()=>{episodeCalls++;}}}, document = {getElementById: id=>elements[id],addEventListener(){}, body:{classList:{toggle(){}}}};
+    const window = {Hls,twPlayer:{episodes:async()=>{episodeCalls++;}},addEventListener(k,f){windowListeners[k]=f;}}, document = {getElementById: id=>elements[id],addEventListener(k,f){documentListeners[k]=f;}, body:{classList:{
+        add(...names){names.forEach(n=>classes.add(n));},remove(...names){names.forEach(n=>classes.delete(n));},toggle(n,enabled){if(enabled)classes.add(n);else classes.delete(n);}}}};
     vm.runInNewContext(source,{window,document,Hls,Option:function(text,value){this.text=text;this.value=value;},setTimeout:fn=>{timers.add(fn);return fn;},clearTimeout:fn=>timers.delete(fn)});
-    return {api:window.__twBuiltin,video,notice,levels,streams,listeners,timers,elements,episodeCalls:()=>episodeCalls};
+    return {api:window.__twBuiltin,video,notice,levels,streams,listeners,timers,elements,classes,documentListeners,windowListeners,episodeCalls:()=>episodeCalls};
 }
+
+test('fullscreen pointer controls expire after focus, keyboard navigation remains usable',()=>{
+    const t=setup();t.api.fullscreen(true,false);assert.ok(t.classes.has('show-controls'));
+    t.documentListeners.pointerdown();t.documentListeners.focusin();
+    [...t.timers].forEach(fn=>fn());assert.equal(t.classes.has('show-controls'),false);assert.equal(t.classes.has('keyboard-controls'),false);
+    t.documentListeners.keydown({key:'Tab'});assert.ok(t.classes.has('keyboard-controls'));
+    t.documentListeners.mousemove();assert.equal(t.classes.has('keyboard-controls'),false);
+    t.windowListeners.blur();assert.equal(t.classes.has('show-controls'),false);
+});
 
 test('builtin episode control is available only for a selectable programme',async()=>{
     const t=setup();t.api.load({url:'https://example.com/a.mp4',kind:'mp4',episodes:true});

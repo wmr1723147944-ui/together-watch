@@ -35,8 +35,10 @@ exports.run=async({createDesktop,server,output,until})=>{
     }
     const readProgram=async room=>(await(await fetch(server+'/api/watch-rooms/'+room+'/program')).json());
     try {
+        console.log('EPISODES: creating host and guest');
         const host=await client('host'),room=host.state().current.room,roomView=host.state().roomView;
         const guest=await client('guest',room);
+        console.log('EPISODES: clients ready; opening built-in player');
         assert.equal(await guest.action('episodes'),false,'guest cannot change room programme');
         assert.equal(await guest.state().video.webContents.executeJavaScript('typeof window.twPlayer'),'undefined');
         await host.action('scan-media');
@@ -45,10 +47,12 @@ exports.run=async({createDesktop,server,output,until})=>{
         await host.state().mediaSession.protocol.handle('https',media);
         assert.equal((await host.action({type:'play-media',id:choices[0]})).ok,true);
         const player=host.state().builtin.webContents;
+        console.log('EPISODES: built-in player ready; entering fullscreen');
         assert.equal(await player.executeJavaScript('typeof window.desktop'),'undefined');
         assert.equal(await player.executeJavaScript('typeof window.twPlayer.episodes'),'function');
         await player.executeJavaScript('document.getElementById("player-fullscreen").click()',true);
         await until('native fullscreen event',()=>host.state().full);
+        console.log('EPISODES: fullscreen ready; opening drawer');
         await player.executeJavaScript('document.dispatchEvent(new MouseEvent("mousemove"))');
         assert.ok(await player.executeJavaScript('!document.getElementById("episodes").disabled && getComputedStyle(document.querySelector("footer")).opacity==="1"'));
         await delay(2700);
@@ -64,14 +68,18 @@ exports.run=async({createDesktop,server,output,until})=>{
         assert.equal((await readProgram(room)).revision,1,'clicking current episode must not restart timeline');
         await finder.executeJavaScript('document.getElementById("discoveryDetailClose").click()');
         await until('drawer closes in place',()=>!host.state().episodeView);
+        console.log('EPISODES: drawer closed in place; switching episode');
         assert.equal(host.state().full,true);assert.equal(host.state().builtin.webContents,player);assert.equal(host.state().browsing,false);
         await host.action('episodes');finder=host.state().episodeView.webContents;
         await until('reopened drawer',()=>finder.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===3'));
-        await finder.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a")[1].click()');
+        // The click closes its own WebContents after the room update. Return
+        // the evaluation result before navigation destroys its reply channel.
+        await finder.executeJavaScript('setTimeout(()=>document.querySelectorAll("#discoveryEpisodes a")[1].click(),100);true');
         await until('host second episode',async()=>(await readProgram(room)).program.episode==='ep2');
         await until('guest second episode',()=>guest.state().video.webContents.executeJavaScript('document.querySelector(".play-btn.on")?.getAttribute("ep_slug")==="ep2"'));
         assert.equal(host.state().current.room,room);assert.equal(host.state().roomView,roomView);assert.equal(guest.state().current.room,room);
         assert.equal((await readProgram(room)).revision,2);
+        console.log('EPISODES: guest follows; narrow layout and back');
         await host.action('episodes');
         finder=host.state().episodeView.webContents;
         await until('new current highlight',()=>finder.executeJavaScript('document.querySelector("#discoveryEpisodes [aria-current]")?.getAttribute("href")==="/discover/play/cupfox/12/ep2"'));

@@ -60,10 +60,18 @@
         const request=document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();
         request?.catch(()=>{notice.textContent='请按 F11 进入或退出全屏。';notice.hidden=false;});
     };
-    let controlsTimer;
+    let controlsTimer,fullscreen=false;
     function showControls(){document.body.classList.add('show-controls');clearTimeout(controlsTimer);controlsTimer=setTimeout(()=>document.body.classList.remove('show-controls'),2500);}
-    document.addEventListener('mousemove',showControls);document.addEventListener('pointerdown',showControls);
-    document.addEventListener('keydown',showControls);
+    function pointerControls(){document.body.classList.remove('keyboard-controls');showControls();}
+    document.addEventListener('mousemove',pointerControls);document.addEventListener('pointerdown',pointerControls);
+    document.addEventListener('keydown',event=>{
+        // Only keyboard navigation pins focused controls. Mouse-click focus
+        // must not make a fullscreen button stay visible indefinitely.
+        if(event.key==='Tab')document.body.classList.add('keyboard-controls');
+        showControls();
+    });
+    document.addEventListener('focusin',showControls);
+    window.addEventListener('blur',()=>{clearTimeout(controlsTimer);document.body.classList.remove('show-controls','keyboard-controls');});
     window.__twBuiltin = { load, destroy, state: () => ({ error: failed, ready: video.readyState >= 3 }),
-        fullscreen(enabled, crop) { document.body.classList.toggle('full', enabled); video.style.objectFit = crop ? 'cover' : 'contain'; } };
+        fullscreen(enabled, crop) { if(enabled && !fullscreen)showControls();fullscreen=!!enabled;document.body.classList.toggle('full', enabled); video.style.objectFit = crop ? 'cover' : 'contain'; } };
 })();

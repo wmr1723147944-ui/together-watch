@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const policy = require('./policy.cjs');
+const {liveContents,requestBelongsToView}=require('./view-lifecycle.cjs');
 const siteDirectory = require('./site-directory.cjs');
 const {createMetadataBrowser}=require('./metadata-browser.cjs');
 const {script:CATALOG_SCRIPT,api:catalogAdapters}=require('./catalog-adapters.cjs');
@@ -83,7 +84,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     // independent player. Its preload exposes only a guarded episode-picker action.
     const playerPartition = session.fromPartition(`player-${win.id}-${crypto.randomBytes(6).toString('hex')}`);
     installAssets(playerPartition);
-    const playerFullscreen = (wc, permission) => permission === 'fullscreen' && wc === builtin?.webContents && wc.getURL() === PLAYER_URL;
+    const playerFullscreen = (wc, permission) => permission === 'fullscreen' && !!wc && wc === liveContents(builtin) && wc.getURL() === PLAYER_URL;
     playerPartition.setPermissionCheckHandler(playerFullscreen);
     playerPartition.setPermissionRequestHandler((wc, permission, callback) => callback(playerFullscreen(wc, permission)));
     playerPartition.webRequest.onBeforeRequest((details, callback) => callback({ cancel:
@@ -99,9 +100,9 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     function closeBuiltin() {
         if (!builtin) return;
         const old = builtin; builtin = null; selected = null; videoGeneration++;
-        win.contentView.removeChildView(old);
-        if (!old.webContents.isDestroyed()) old.webContents.close();
-        if (video && !video.webContents.isDestroyed()) video.webContents.setAudioMuted(false);
+        if(!win.isDestroyed())win.contentView.removeChildView(old);
+        liveContents(old)?.close();
+        liveContents(video)?.setAudioMuted(false);
         reportMedia();
     }
     function resetMedia() {
@@ -113,11 +114,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     // Observe only requests already made by this source view. No crawler, header
     // copying, token forwarding or main-process proxy is involved.
     videoPartition.webRequest.onBeforeRequest((details, callback) => {
-        if (details.webContentsId === video?.webContents.id && requests.size < 512) requests.set(details.id, videoGeneration);
+        if (requestBelongsToView(details,video) && requests.size < 512) requests.set(details.id, videoGeneration);
         callback({});
     });
     videoPartition.webRequest.onResponseStarted(details => {
-        if (!video || details.webContentsId !== video.webContents.id || requests.get(details.id) !== videoGeneration
+        if (!requestBelongsToView(details,video) || requests.get(details.id) !== videoGeneration
             || ![200, 206].includes(details.statusCode)) return;
         const type = Object.entries(details.responseHeaders || {}).find(([name]) => name.toLowerCase() === 'content-type')?.[1];
         if (catalog.add(details.url, sourcePage, Array.isArray(type) ? type[0] : type)) reportMedia();
@@ -174,8 +175,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         wc.on('will-redirect', event => event.preventDefault());
         wc.setWindowOpenHandler(() => ({ action: 'deny' }));
         wc.on('before-input-event', keyHandler);
-        wc.on('enter-html-full-screen', () => { full = true; win.setFullScreen(true); layout(); focusPlayer(true); });
-        wc.on('leave-html-full-screen', () => { full = false; win.setFullScreen(false); layout(); focusPlayer(false); });
+        wc.on('enter-html-full-screen', () => { if(builtin!==view || win.isDestroyed())return;full = true; win.setFullScreen(true); layout(); focusPlayer(true); });
+        wc.on('leave-html-full-screen', () => { if(builtin!==view || win.isDestroyed())return;full = false; win.setFullScreen(false); layout(); focusPlayer(false); });
         wc.on('render-process-gone', () => { if (builtin === view) { closeBuiltin(); layout(); status('内置播放器已退出，已返回原网页。'); } });
         win.contentView.addChildView(view); browsing = false;
         video.webContents.setAudioMuted(true); pauseOriginal().catch(() => {}); layout();
@@ -191,8 +192,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         }
     }
     async function pauseOriginal() {
-        if (!video || video.webContents.isDestroyed()) return;
-        await Promise.all(video.webContents.mainFrame.framesInSubtree.slice(0, 32).map(frame =>
+        const wc=liveContents(video);if(!wc)return;
+        await Promise.all(wc.mainFrame.framesInSubtree.slice(0, 32).map(frame =>
             timeout(frame.executeJavaScript("document.querySelectorAll('video,audio').forEach(v=>v.pause())")).catch(() => {})));
     }
 
@@ -240,7 +241,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         }
     }
     function layoutFinder(bounds, visible) {
-        if (!discoveryView || discoveryView.webContents.isDestroyed()) return;
+        if (!liveContents(discoveryView)) return;
         discoveryView.setBounds(bounds);
         if (visible) {
             parkedFinders.delete(discoveryView);
@@ -305,13 +306,17 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         ++generation; clearTimeout(timer); timer = null; selected = null; current = null; micApproved = false;
         full = false;
         if (!win.isDestroyed()) win.setFullScreen(false);
-        for (const view of new Set([video, roomView, ...(keepFinders ? [] : finderViews.values())])) if (view) {
+        const closingViews=new Set([video, roomView, ...(keepFinders ? [] : finderViews.values())]);
+        // Invalidate owners before closing native views: close can dispatch
+        // network/fullscreen callbacks synchronously.
+        video = roomView = null;
+        if(!keepFinders)discoveryView=null;
+        for (const view of closingViews) if (view) {
             if (!win.isDestroyed()) win.contentView.removeChildView(view);
-            if (!view.webContents.isDestroyed()) view.webContents.close();
+            liveContents(view)?.close();
         }
         if (keepFinders) { for (const view of finderViews.values()) parkFinder(view).catch(() => {}); }
         else { finderViews.clear(); discoveryView = null; }
-        video = roomView = null;
         browsing = false; pendingEpisode = null; selectionFailed = false;
         draft = managed = null;
         currentProgram=null;
@@ -739,11 +744,12 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         episodeMetadataBrowser.cancelAll();
         const view=episodeView;episodeView=null;
         if(view) {
-            metadataControls.delete(view.webContents.id);
+            const wc=liveContents(view);
+            if(wc)metadataControls.delete(wc.id);
             if(!win.isDestroyed())win.contentView.removeChildView(view);
-            if(!view.webContents.isDestroyed())view.webContents.close();
+            wc?.close();
         }
-        if(!win.isDestroyed())activeVideo()?.webContents.focus();
+        if(!win.isDestroyed())liveContents(activeVideo())?.focus();
     }
     async function showEpisodes() {
         if (openingEpisodes || !current) return false;

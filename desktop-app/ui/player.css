@@ -1,7 +1,7 @@
 :root{color-scheme:dark;font-family:'Segoe UI','Microsoft YaHei',sans-serif;background:#090c12;color:#dde6f2}
-*{box-sizing:border-box}body{margin:0}main{height:calc(100vh - 46px);position:relative}video{width:100%;height:100%;background:#000;object-fit:contain}
+*{box-sizing:border-box}html,body{width:100%;height:100%;overflow:hidden}body{margin:0}main{height:calc(100vh - 46px);position:relative}video{display:block;width:100%;height:100%;background:#000;object-fit:contain}
 #notice{position:absolute;left:24px;right:24px;top:20px;padding:14px 18px;border-radius:10px;background:#182338ed;font-size:14px;line-height:1.7;pointer-events:none}
 #notice[hidden]{display:none}footer{height:46px;display:flex;align-items:center;gap:16px;padding:0 18px;font-size:12px;color:#94a6bf}#quality{flex:1}
 button,select{background:#182338;color:#dbe6f5;border:1px solid #36465c;border-radius:6px;padding:5px 8px;font:inherit}
 body.full main{height:100vh}body.full footer{position:fixed;bottom:64px;right:12px;height:auto;padding:10px;background:#182338ed;border-radius:10px;opacity:0;pointer-events:none}
-body.full.show-controls footer,body.full footer:focus-within{opacity:1;pointer-events:auto}body.full #quality{display:none}
+body.full.show-controls footer,body.full.keyboard-controls footer:focus-within{opacity:1;pointer-events:auto}body.full #quality{display:none}
