@@ -15,7 +15,7 @@ app.whenReady().then(async()=>{
     let logs='';server.stdout.on('data',b=>logs=(logs+b).slice(-4000));server.stderr.on('data',b=>logs=(logs+b).slice(-4000));
     try{
         await until(async()=>{try{return(await fetch(origin+'/api/danmaku/status')).ok;}catch{return false;}},'server');
-        const p={source:'huarw',item:'123',episode:'123-1'};
+        const p={source:'cupfox',item:'123',episode:'ep1'};
         const room=await(await fetch(origin+'/api/watch-rooms',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({selection:p})})).json();
         assert.ok(room.room);
         const errors=[];
@@ -58,7 +58,7 @@ app.whenReady().then(async()=>{
         await until(()=>guest.webContents.executeJavaScript('fixture.time>=119 && lastOverlay.items.length===0'),'seek clears old comments');
         await guest.webContents.executeJavaScript('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
         fs.writeFileSync(path.join(output,'room-settings.png'),(await guest.webContents.capturePage()).toPNG());
-        await fetch(origin+'/api/watch-rooms/'+room.room+'/program',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+room.owner},body:JSON.stringify({selection:{...p,episode:'123-2'}})});
+        await fetch(origin+'/api/watch-rooms/'+room.room+'/program',{method:'PUT',headers:{'Content-Type':'application/json','Authorization':'Bearer '+room.owner},body:JSON.stringify({selection:{...p,episode:'ep2'}})});
         await until(()=>guest.webContents.executeJavaScript('TogetherWatchMobile.program().revision===2'),'episode changed');
         assert.equal(await guest.webContents.executeJavaScript('TogetherWatchMobile.drain().overlay.items.length'),0);
         await host.webContents.executeJavaScript('clearInterval(fixtureTick)');
@@ -71,6 +71,18 @@ app.whenReady().then(async()=>{
         fs.writeFileSync(path.join(output,'history-mobile.png'),(await host.webContents.capturePage()).toPNG());
         await host.webContents.executeJavaScript("document.querySelector('#watchHistoryList article>button').click()");
         assert.equal(await host.webContents.executeJavaScript('TogetherWatchHistory.store.list().length'),0);
+        await host.webContents.executeJavaScript(`(()=>{
+            const retired={source:'huarw',item:'123',episode:'123-1'};
+            TogetherWatchHistory.store.remember(retired,{title:'已停用来源的旧记录',label:'第1集'});
+            TogetherWatchHistory.store.record(retired,{ready:true,time:90});
+            dispatchEvent(new Event('tw-history-change'));
+        })()`);
+        assert.equal(await host.webContents.executeJavaScript('TogetherWatchHistory.store.list().length'),1,'retiring a source preserves history');
+        assert.equal(await host.webContents.executeJavaScript('document.querySelectorAll("#watchHistoryList a").length'),0,'retired history must not launch a native room');
+        assert.ok(await host.webContents.executeJavaScript('document.getElementById("watchHistoryList").textContent.includes("来源已移除或未启用")'));
+        assert.equal(await host.webContents.executeJavaScript('document.getElementById("continueWatching").hidden'),true);
+        await host.webContents.executeJavaScript("document.querySelector('#watchHistoryList article>button').click()");
+        assert.equal(await host.webContents.executeJavaScript('TogetherWatchHistory.store.list().length'),0,'retired records can still be deleted');
         await host.webContents.executeJavaScript(`TogetherWatchHistory.store.remember(${JSON.stringify(p)},{title:'集成测试影片',label:'第1集'});TogetherWatchHistory.store.record(${JSON.stringify(p)},{ready:true,time:90});document.getElementById('watchHistoryClear').click();`);
         assert.equal(await host.webContents.executeJavaScript('TogetherWatchHistory.store.list().length'),1,'clear requires explicit confirmation');
         await host.webContents.executeJavaScript("document.getElementById('watchHistoryConfirmYes').click()");

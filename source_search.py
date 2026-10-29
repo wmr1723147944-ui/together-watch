@@ -19,10 +19,10 @@ import catalog_sources
 from poster_policy import poster_candidates, poster_attribute_candidates
 
 
-SEARCH_VERSION = "20261024-source-cleanup"
+SEARCH_VERSION = "20261029-retire-huarw"
 # Withdrawn from discovery and new room selection. Keep old identity parsers
 # readable so existing room records do not become corrupt or change source.
-RETIRED_PROVIDERS = frozenset({"ddys", "fcma"})
+RETIRED_PROVIDERS = frozenset({"ddys", "fcma", "huarw"})
 PROVIDERS = {
     "blender": {"id": "blender", "name": "Blender 开放电影", "host": "video.blender.org",
                 "path": "/api/v1/search/videos", "param": "search", "kind": "official_catalog",

@@ -19,7 +19,7 @@ exports.run=async({createDesktop,server,output,until})=>{
             if(u.hostname!==host)return new Response('fixture blocked',{status:404});
             // The search DOM is ready while its image is still pending. The
             // metadata reader must not wait for the whole page's load event.
-            if(source==='huarw' && u.pathname==='/covers/fixture.jpg') {
+            if(source==='pkavi' && u.pathname==='/covers/fixture.jpg') {
                 await delay(14000);return new Response('',{headers:{'content-type':'image/jpeg'}});
             }
             if(u.pathname==='/sample.mp4'){
@@ -56,7 +56,7 @@ exports.run=async({createDesktop,server,output,until})=>{
         await wc.debugger.sendCommand('Input.dispatchKeyEvent',{type:'keyUp',key:'q',code:'KeyQ',windowsVirtualKeyCode:81});
     }
     try {
-        for(const [source,item] of [['huarw','179144'],['233dm','251f681f349a5832bcb61768'],['pkavi','514960'],['kanju','variant:test-123']]) {
+        for(const [source,item] of [['233dm','251f681f349a5832bcb61768'],['pkavi','514960'],['kanju','variant:test-123']]) {
             const episode=n=>source==='huarw'?item+'-'+n:source==='kanju'?'ep-episode:'+n:'3-'+n;
             const host=await client('host-'+source,source,item),a=host.c;
             const finder=a.state().discoveryView.webContents;

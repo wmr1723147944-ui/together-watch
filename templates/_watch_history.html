@@ -2,7 +2,7 @@
     <div class="history-heading"><h2>继续观看</h2><button type="button" data-watch-history>全部历史 →</button></div>
     <div id="continueWatchingList" class="history-strip"></div>
 </section>
-<dialog id="watchHistoryDialog" class="history-dialog" aria-labelledby="watchHistoryTitle">
+<dialog id="watchHistoryDialog" class="history-dialog" aria-labelledby="watchHistoryTitle" data-enabled-sources="{{ discovery_search_sources|map(attribute='id')|join(',') }}">
     <div class="history-heading"><h2 id="watchHistoryTitle">观看历史</h2><button type="button" id="watchHistoryClose" aria-label="关闭观看历史">关闭</button></div>
     <p id="watchHistoryScope">未登录：记录只在这台设备。登录后可同步到账号；本机记录不会自动上传。</p>
     <p>加入朋友房间时仍跟随房间进度。<button type="button" class="history-nav" data-account-open>管理账号 / 登录</button></p>

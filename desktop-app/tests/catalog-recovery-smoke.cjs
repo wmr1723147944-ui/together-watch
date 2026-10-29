@@ -15,7 +15,7 @@ async function run(){
 import app as module
 import catalog_recommendations
 def search(source, query):
-    return dict(source_id=source, status='ok', results=[dict(title=query+label,year='2024',page_url=f'https://huarw.com/movie/{i+1}',poster_url=f'https://image.tmdb.org/fixture-{i}.png') for i,label in enumerate([' 竖版海报',' 横版剧照',' 方形封面'])] if source=='huarw' else [])
+    return dict(source_id=source, status='ok', results=[dict(title=query+label,year='2024',page_url=f'https://www.233dm.com/anime/{i+1:024x}.html',poster_url=f'https://image.tmdb.org/fixture-{i}.png') for i,label in enumerate([' 竖版海报',' 横版剧照',' 方形封面'])] if source=='233dm' else [])
 module.search_provider=search
 catalog_recommendations.load_page=lambda source,category,page: dict(source_id=source,category=category,page=page,status='ok',results=[],has_more=False,next_page=None)
 module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
@@ -42,7 +42,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
             __twMetadataQueue.complete(batch.token,r.id,reply);
         }
     },25);
-    for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['huarw','kanju','pkavi'].includes(c.dataset.liveSource);
+    for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['233dm','kanju','pkavi'].includes(c.dataset.liveSource);
     document.getElementById('discoveryQuery').value='元气少女';document.getElementById('discoveryForm').requestSubmit();`);
     await until(()=>js(`document.getElementById('discoveryLive').getAttribute('aria-busy')==='false' && document.querySelectorAll('#discoveryLiveResults .catalog-film').length===3`));
     await until(()=>js(`Array.from(document.querySelectorAll('#discoveryLiveResults img')).every(i=>i.naturalWidth>0)`));
@@ -50,7 +50,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     const notes=await js(`Array.from(document.querySelectorAll('.catalog-query-note')).map(n=>n.textContent)`);
     assert.ok(notes.some(n=>n.includes('看剧')&&n.includes('重试此来源')&&n.includes('打开原站检查')));
     assert.ok(notes.some(n=>n.includes('七味')&&n.includes('手动验证')));
-    assert.ok(!notes.some(n=>n.includes('华人')),'server fallback recovers Huarw without an error card');
+    assert.ok(!notes.some(n=>n.includes('233')),'server fallback recovers 233dm without an error card');
     for(const width of [320,390,768,1440]) {
         win.setContentSize(width,844);await delay(200);
         const sizes=await js(`Array.from(document.querySelectorAll('#discoveryLiveResults .catalog-film-poster')).map(el=>{

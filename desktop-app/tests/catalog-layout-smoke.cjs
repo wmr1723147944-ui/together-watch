@@ -23,7 +23,7 @@ posters = source_search.parse_results(source_search.PROVIDERS['ddys'], Path('tes
 rows = [dict(row, page_url=f'https://yhdmoe.com/watch/{1000+i}') for i, row in enumerate(posters)]
 def search(source, query):
     matching = rows if source == 'yhdmoe' else [dict(title='绿色星球',year='2022',page_url='https://www.cupfox.in/vod-detail/1234.html')] if source == 'cupfox' else []
-    return dict(source_id=source, status='unavailable' if source == 'huarw' else 'ok', results=matching, cached=False)
+    return dict(source_id=source, status='unavailable' if source == 'pkavi' else 'ok', results=matching, cached=False)
 def detail(source, page):
     if source == 'cupfox':
         return dict(source_id=source,page_url=page,item_id='1234',status='ok',description='本地第二来源测试',episodes=[dict(id='ep1',title='第 1 集',launch_path='/discover/play/cupfox/1234/ep1')])
@@ -91,7 +91,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await until('feed detail',()=>js('document.getElementById("discoveryDetail").open'));
     assert.ok(await js('!document.getElementById("catalogFindOtherSources").hidden'));
     await js('document.getElementById("discoveryDetailClose").click()');
-    await js(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['yhdmoe','huarw','blender','cupfox'].includes(c.dataset.liveSource);document.getElementById('discoveryQuery').value='星';document.getElementById('discoveryForm').requestSubmit();`);
+    await js(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=['yhdmoe','pkavi','blender','cupfox'].includes(c.dataset.liveSource);document.getElementById('discoveryQuery').value='星';document.getElementById('discoveryForm').requestSubmit();`);
     await until('eight poster results',()=>js('document.querySelectorAll(".discovery-title-card").length===8'));
     await until('loaded cover',()=>js('Array.from(document.querySelectorAll(".discovery-poster-image")).filter(i=>i.complete && i.naturalWidth>0).length>=6'),30000);
     await until('completed query',()=>js('document.getElementById("discoveryLive").getAttribute("aria-busy")==="false"'));

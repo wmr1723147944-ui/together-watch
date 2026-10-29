@@ -60,6 +60,9 @@
         root.TogetherWatchHistory = api;
         root.document.addEventListener('DOMContentLoaded', () => {
             const doc = root.document, dialog = doc.getElementById('watchHistoryDialog'); if (!dialog) return;
+            // Preserve old records, but only current server-enabled sources may
+            // create a new room. Never launch a retired source through history.
+            const available = new Set((dialog.dataset.enabledSources || '').split(',').filter(Boolean));
             const list = doc.getElementById('watchHistoryList'), shelf = doc.getElementById('continueWatching');
             const enabled = doc.getElementById('watchHistoryEnabled');
             const format = seconds => `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2,'0')}`;
@@ -70,23 +73,27 @@
                 if(clearHint)clearHint.textContent=account?.user?'确定清空这个账号在所有设备上的观看历史？':'确定清空这台设备的观看历史？';
                 enabled.checked = api.store.enabled(); list.replaceChildren();
                 const recent = doc.getElementById('continueWatchingList'); recent?.replaceChildren();
-                const rows = api.store.list(); if (shelf) shelf.hidden = !rows.length;
+                const rows = api.store.list(); let recentCount = 0;
+                const launchPath = row => {
+                    const path = `/discover/play/${row.source}/${row.item}/${row.episode}`;
+                    return available.has(row.source) && root.TogetherWatchDiscovery?.safeLaunchPath(row.source,row.item,row.episode,path) ? path : '';
+                };
+                if (shelf) shelf.hidden = !rows.some(launchPath);
                 if (!rows.length) list.textContent = '还没有观看记录。播放已确认集数的视频后，会在这里记住进度。';
-                for (const [index, row] of rows.entries()) {
+                for (const row of rows) {
                     function card(removable) {
-                        const article = doc.createElement('article'), link = doc.createElement('a'); article.className = 'history-card';
-                        const path = `/discover/play/${row.source}/${row.item}/${row.episode}`;
-                        if (!root.TogetherWatchDiscovery?.safeLaunchPath(row.source,row.item,row.episode,path)) return article;
-                        link.href = path; link.addEventListener('click', () => { api.store.remember(row,row); api.store.prepare(row); });
+                        const path = launchPath(row);
+                        const article = doc.createElement('article'), link = doc.createElement(path ? 'a' : 'div'); article.className = 'history-card';
+                        if (path) { link.href = path; link.addEventListener('click', () => { api.store.remember(row,row); api.store.prepare(row); }); }
                         const art = doc.createElement('div'); art.className = 'history-cover';
-                        root.TogetherWatchDiscovery?.addPoster(doc,art,row.poster,'',row.title);
+                        root.TogetherWatchDiscovery?.addPoster(doc,art,path ? row.poster : '', '',row.title);
                         const title = doc.createElement('strong'); title.textContent = row.title;
-                        const info = doc.createElement('small'); info.textContent = `${row.label} · 看到 ${format(row.time)}${row.duration ? ' / '+format(row.duration) : ''}`;
+                        const info = doc.createElement('small'); info.textContent = `${path ? '' : '来源已移除或未启用 · '}${row.label} · 看到 ${format(row.time)}${row.duration ? ' / '+format(row.duration) : ''}`;
                         link.append(art,title,info); article.append(link);
                         if (removable) { const remove = doc.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.onclick = () => { api.store.remove(row); render(); }; article.append(remove); }
                         return article;
                     }
-                    list.append(card(true)); if (index < 8) recent?.append(card(false));
+                    list.append(card(true)); if (launchPath(row) && recentCount++ < 8) recent?.append(card(false));
                 }
             }
             for (const button of doc.querySelectorAll('[data-watch-history]')) button.addEventListener('click', () => { render(); dialog.showModal(); });
