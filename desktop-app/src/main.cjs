@@ -8,6 +8,7 @@ const policy = require('./policy.cjs');
 const {liveContents,requestBelongsToView}=require('./view-lifecycle.cjs');
 const siteDirectory = require('./site-directory.cjs');
 const {createMetadataBrowser}=require('./metadata-browser.cjs');
+const {readPlayingMetadata}=require('./playing-metadata.cjs');
 const {script:CATALOG_SCRIPT,api:catalogAdapters}=require('./catalog-adapters.cjs');
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
 const AGENT = fs.readFileSync(path.join(__dirname, 'danmaku-overlay.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
@@ -765,13 +766,29 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             const view=new WebContentsView({webPreferences:securePreferences({session:roomPartition,backgroundThrottling:false,preload:path.join(__dirname,'discovery-preload.cjs')})});
             episodeView=view;const wc=view.webContents,id=wc.id;
             const alive=()=>episodeView===view && epoch===episodeGeneration && program===currentProgram && !wc.isDestroyed();
+            const pendingReads=new Map();
             metadataControls.set(id,{
                 trusted:event=>alive() && event.sender===wc && event.senderFrame===wc.mainFrame && policy.isDiscoveryUrl(event.senderFrame.url,server),
-                request:data=>{
+                request:async data=>{
                     const req=catalogAdapters.request(data?.kind,data?.payload);
-                    return alive() && data?.kind==='detail' && req?.source===program.source && req.item===program.item
-                        ? episodeMetadataBrowser.run(data.id,data.kind,data.payload,data.interactive) : {status:'unavailable'};
-                },cancel:id=>{if(alive())episodeMetadataBrowser.cancel(id);return true;}
+                    if(!alive() || data?.kind!=='detail' || req?.source!==program.source || req.item!==program.item
+                        || typeof data.id!=='string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(data.id)
+                        || typeof data.interactive!=='boolean')return {status:'unavailable'};
+                    if(pendingReads.size>=2 || pendingReads.has(data.id))return catalogAdapters.normalizeResult(req,{status:'busy'});
+                    const token={};pendingReads.set(data.id,token);
+                    const valid=()=>alive() && pendingReads.get(data.id)===token;
+                    try {
+                        if(!data.interactive && req.source==='kanju') {
+                            const playing=liveContents(video);
+                            const pageEpoch=videoGeneration;
+                            const result=await timeout(readPlayingMetadata(playing,req,()=>valid() && pageEpoch===videoGeneration && liveContents(video)===playing),2000).catch(()=>null);
+                            if(!valid())return catalogAdapters.normalizeResult(req,{status:'cancelled'});
+                            if(result?.status==='ok' && result.episodes?.length)return result;
+                        }
+                        if(!valid())return catalogAdapters.normalizeResult(req,{status:'cancelled'});
+                        return await episodeMetadataBrowser.run(data.id,data.kind,data.payload,data.interactive);
+                    } finally {if(pendingReads.get(data.id)===token)pendingReads.delete(data.id);}
+                },cancel:id=>{pendingReads.delete(id);if(alive())episodeMetadataBrowser.cancel(id);return true;}
             });
             wc.on('destroyed',()=>metadataControls.delete(id));
             wc.on('before-input-event',keyHandler);

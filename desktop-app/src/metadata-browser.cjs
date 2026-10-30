@@ -51,7 +51,7 @@ function createMetadataBrowser(parent,session,{hidden=false}={}) {
         return new Promise(resolve=>{
             const page=getPage(req),{window,wc,allowed}=page;
             let done=false, timer=null, readTimer=null, reading=false, resumed=false, emptySince=0, posterSince=0, partial=null, lastStatus='unavailable';
-            const deadline=Date.now()+(interactive?180000:10000);
+            const deadline=Date.now()+(interactive?180000:kind==='detail'?20000:10000);
             function finish(result) {
                 if(done) return; done=true; clearTimeout(timer); clearTimeout(readTimer); active.delete(id);
                 page.job=null;

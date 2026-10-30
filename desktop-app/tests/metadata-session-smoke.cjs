@@ -20,13 +20,14 @@ app.whenReady().then(async()=>{
         counter++;
         const item=source==='233dm'?'251f681f349a5832bcb61768':source==='kanju'?'test':'12';
         const detail=source==='233dm'?'/anime/'+item+'.html':source==='kanju'?'/player/'+item:source==='huarw'?'/movie/'+item:'/mv/'+item+'.html';
-        const isDetail=u.pathname===detail;
+        const delayedDetail=source==='kanju' && u.pathname==='/player/slow-detail';
+        const isDetail=u.pathname===detail || delayedDetail;
         const content=isDetail?(source==='kanju'?'<button data-directory-episode="one">第1集</button>':`<a href="${api.selection(source,item,source==='huarw'?item+'-1':'1-1').page}">第1集</a>`)
             :`<h3><a id="film" href="${detail}" title="测试">测试</a></h3><form hidden><input type="password"></form>${source==='pkavi'?'<img src="/slow-cover.jpg">':''}`;
         const html=`<!doctype html><body><script>
             function show(){document.title='影片目录';document.body.innerHTML=${JSON.stringify(content)};
                 ${!isDetail && ['huarw','kanju'].includes(source)?'setTimeout(()=>document.getElementById("film")?.setAttribute("data-original","/poster.jpg"),900);':''}}
-            if(sessionStorage.getItem('mock-approved'))show();
+            if(sessionStorage.getItem('mock-approved'))${delayedDetail?'setTimeout(show,12000)':'show()'};
             else{document.title='系统安全验证';document.body.innerHTML='<button id="mock-human">Mock verification</button>';document.getElementById('mock-human').onclick=()=>{sessionStorage.setItem('mock-approved','yes');show()}}
         </script></body>`;
         return new Response(html,{headers:{'content-type':'text/html; charset=utf-8'}});
@@ -59,6 +60,10 @@ app.whenReady().then(async()=>{
             assert.equal(await window.webContents.executeJavaScript('typeof require'),'undefined');
             console.log('PASS '+source+': manual challenge, no reload, retained sessionStorage, details, return search, no privileged bridge');
         }
+        const delayed=await browser.run('slow-detail','detail',{source:'kanju',page_url:'https://www.kanju.ai/player/slow-detail'});
+        assert.equal(delayed.status,'ok','detail DOM appearing after 12 seconds must not hit the old 10-second timeout');
+        assert.equal(delayed.episodes.length,1);
+        console.log('PASS delayed episode directory after 12 seconds');
         const pending=browser.run('cancel-case','search',{source:'pkavi',q:'没有匹配'});
         browser.cancel('cancel-case');assert.equal((await pending).status,'cancelled');
         assert.equal(browser.active.size,0);

@@ -310,6 +310,14 @@
             if (!panel.open) panel.showModal();
             const active = new AbortController(); controller = active;
             const timer = setTimeout(() => active.abort(), metadataTimeout(source,interactive));
+            function retryActions(allowOriginal=true) {
+                const retry=doc.createElement('button'); retry.type='button'; retry.textContent='重试读取集数';
+                retry.addEventListener('click',()=>open(source,row,trigger,false)); list.append(retry);
+                if(allowOriginal && nativeMetadata(source)) {
+                    const manual=doc.createElement('button'); manual.type='button'; manual.textContent='打开原站并继续读取集数';
+                    manual.addEventListener('click',()=>open(source,row,trigger,true)); list.append(manual);
+                }
+            }
             try {
                 const response = await metadataRequest('detail',{source,page_url:url},fetcher,active.signal,interactive);
                 if (!response.ok) throw new Error('unavailable');
@@ -319,8 +327,7 @@
                 if((data.status==='verification_required' || data.status==='unavailable') && nativeMetadata(source)) {
                     status.textContent=data.status==='verification_required' ? '原站实际要求登录或验证；在软件内完成后，会继续显示选集。'
                         : '原站尚未加载出集数，不代表需要验证。可打开原站检查网络或展开选集后继续。';
-                    const retry=doc.createElement('button'); retry.type='button'; retry.textContent='打开原站并继续读取集数';
-                    retry.addEventListener('click',()=>open(source,row,trigger,true)); list.append(retry); return;
+                    retryActions(); return;
                 }
                 const parts = new URL(url).pathname.split('/');
                 const item = hasAdapter(source) ? adapters.detail(source,url)?.item : source === 'fcma' ? parts.slice(2).join('-') : parts.pop().replace(/\.html$/, '');
@@ -348,8 +355,12 @@
                 if (data.truncated === true) status.textContent += ' 已达选集数量上限，其余请用原站选集。';
                 if (data.selection_scope==='loaded_page') status.textContent += ' 这里只显示原站当前已加载的集数，其余请在原站选择；不表示已验证可播放。';
                 if (found && row.current_episode) status.textContent='选择另一集后，会在当前房间换集，朋友自动跟随。'+(data.selection_scope==='loaded_page'?' 仅显示原站已加载的集数。':'');
+                if (!found) retryActions(data.status!=='client_required');
             } catch (_) {
-                if (generation === current) status.textContent = '集数读取失败或超时，可关闭后重试；没有切换当前影片。';
+                if (generation === current) {
+                    status.textContent = '集数读取失败或超时，可以在这里重试；没有切换当前影片。';
+                    retryActions();
+                }
             } finally { clearTimeout(timer); }
         }
         return { open, close };

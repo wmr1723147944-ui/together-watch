@@ -9,7 +9,7 @@ exports.run=async({createDesktop,server,output,until})=>{
     async function client(name,source,item) {
         const c=await createDesktop({server,visible:false});clients.push(c);
         assert.ok((await c.start({nickname:name,consent:true})).browsing);
-        let verified=source!=='233dm',verifications=0;
+        let verified=source!=='233dm',verifications=0,detailLoads=0;
         const host=api.sources[source].host;
         const detail=source==='huarw'?`/movie/${item}`:source==='kanju'?`/player/${encodeURIComponent(item)}`:source==='233dm'?`/anime/${item}.html`:`/mv/${item}.html`;
         // Catalogue and original-site readers now use isolated partitions.
@@ -35,6 +35,7 @@ exports.run=async({createDesktop,server,output,until})=>{
                     : source==='kanju' ? `<title>看剧 AI</title><div id="results"></div><script>setTimeout(()=>document.getElementById('results').innerHTML='<a href="${detail}?from=collection" aria-label="打开播放器：测试动画"><img src="/covers/fixture.jpg">封面</a>',600)</script>`
                     : `<title>搜索结果</title><div class="search-box"><h3><a href="${detail}" title="测试动画"><img src="/covers/fixture.jpg">测试动画</a></h3></div>`;
             } else if(u.pathname===detail) {
+                if(!u.searchParams.has('episode'))detailLoads++;
                 html=source==='kanju' ? `<title>测试动画 · 看剧 AI</title><h1>测试动画</h1><div id="episodes"></div>`
                     + (u.searchParams.has('episode')?'<style>body{margin:0}video{width:100%;height:90vh}</style><video controls muted preload="auto" src="/sample.mp4"></video>':'')
                     + `<script>setTimeout(()=>{document.getElementById('episodes').innerHTML=[1,2].map(n=>'<button data-directory-episode="episode:'+n+'" title="第'+n+'集" class="'+(new URL(location.href).searchParams.get('episode')==='episode:'+n?'movie-button-primary':'movie-button-secondary')+'">第'+n+'集</button>').join('')},1200)</script>`
@@ -45,7 +46,7 @@ exports.run=async({createDesktop,server,output,until})=>{
             } else return new Response('fixture not found',{status:404});
             return new Response(html,{headers:{'content-type':'text/html; charset=utf-8'}});
         });
-        return {c,verifications:()=>verifications};
+        return {c,verifications:()=>verifications,detailLoads:()=>detailLoads};
     }
     const read=(c,js)=>c.state().video.webContents.executeJavaScript(js);
     async function gesture(c,js){
@@ -126,10 +127,23 @@ exports.run=async({createDesktop,server,output,until})=>{
             await until('peer pause and seek',()=>read(b,'document.querySelector("video").paused && Math.abs(document.querySelector("video").currentTime-18)<1'));
             const next=server+api.selection(source,item,episode(2)).path;
             assert.equal((await b.action({type:'source',source:next})).ok,false);
+            const beforeDetail=host.detailLoads();
             assert.equal(await a.action('episodes'),true);
-            const picker=a.state().episodeView.webContents;
+            let picker=a.state().episodeView.webContents;
             assert.equal(a.state().browsing,false);
             await until('native in-player episode directory '+source,()=>picker.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===2'));
+            if(source==='kanju') {
+                assert.equal(host.detailLoads(),beforeDetail,'use playing page without loading a second Kanju page');
+                const playing=a.state().video.webContents;
+                assert.equal(await read(a,'document.querySelector("video").currentTime'),18,'reading episodes does not seek');
+                await picker.executeJavaScript('document.getElementById("discoveryDetailClose").click()');
+                await until('close current-page picker',()=>!a.state().episodeView);
+                await read(a,'document.getElementById("episodes").replaceChildren()');
+                await a.action('episodes');picker=a.state().episodeView.webContents;
+                await until('fallback directory after original controls unmount',()=>picker.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===2'));
+                assert.ok(host.detailLoads()>beforeDetail,'missing DOM falls back to bounded metadata reader');
+                assert.equal(a.state().video.webContents,playing,'fallback keeps original playback view');
+            }
             assert.equal((await picker.executeJavaScript('twSourceMetadata.request("not-search","search",{source:"kanju",q:"test"})')).status,'unavailable');
             assert.equal(await picker.executeJavaScript('document.querySelector("#discoveryEpisodes [aria-current]").getAttribute("href")'),api.selection(source,item,episode(1)).path);
             await picker.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a")[1].click()');
