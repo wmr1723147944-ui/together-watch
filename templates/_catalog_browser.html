@@ -1,4 +1,5 @@
 <section id="sourceDiscovery" class="source-discovery catalog-browser" data-catalog-mode="films" aria-label="发现影片">
+    {% include '_catalog_sidebar.html' %}
     {# Client metadata IPC reads this allowlist; it is not a source directory. #}
     <div hidden aria-hidden="true">
         {% for source in discovery_search_sources %}<input type="checkbox" data-live-source="{{ source.id }}" data-source-name="{{ source.name }}" checked tabindex="-1">{% endfor %}
@@ -16,9 +17,10 @@
         </div>
         <div class="catalog-spotlight">
         <div class="catalog-hero" id="catalogHero">
+            <div id="catalogHeroBackdrop" class="catalog-hero-backdrop" aria-hidden="true" hidden></div>
             <div class="catalog-hero-image" id="catalogHeroImage" aria-hidden="true" hidden></div>
             <div class="catalog-hero-copy">
-                <span class="catalog-eyebrow">片单速览</span>
+                <span class="catalog-eyebrow">今晚，一起看</span>
                 <h1 id="catalogHeroTitle">今天，想看点什么？</h1>
                 <p class="hero-tagline" id="catalogHeroTagline">找一部喜欢的，留个位置给朋友。</p>
                 <p class="hero-facts" id="catalogHeroFacts">电影 · 剧集 · 动漫 · 纪录片</p>
@@ -26,7 +28,7 @@
             </div>
             <span class="hero-caption">来自公开片单</span>
         </div>
-        <div id="catalogSpotlightGrid" class="catalog-spotlight-grid" aria-label="片单速览中的其他影片" hidden></div>
+        <div id="catalogSpotlightGrid" class="catalog-spotlight-grid" aria-label="切换推荐影片预览" hidden></div>
         </div>
         <header class="catalog-section-title"><div><h2 id="recommendationTitle">发现更多好片</h2><span class="section-description">好故事，慢慢挑</span></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh"><span aria-hidden="true">↻</span> 刷新片单</button></header>
         <p id="catalogFeedStatus" class="catalog-feed-status" role="status" aria-live="polite">正在读取公开片单…</p>

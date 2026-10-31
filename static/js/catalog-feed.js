@@ -44,7 +44,7 @@
         function renderSpotlight() {
             const preview = $('catalogSpotlightGrid');
             if (!preview) return;
-            const groups = [...entries.values()].map(entry => entry.group).filter(group => group !== featured).slice(0, 4);
+            const groups = [...entries.values()].map(entry => entry.group).slice(0, 5);
             const keep = new Set(groups.map(group => group.key));
             for (const [key, item] of spotlightCards) if (!keep.has(key)) { item.card.remove(); spotlightCards.delete(key); }
             for (const group of groups) {
@@ -52,14 +52,17 @@
                 if (!item) {
                     const card = el('article', null, 'catalog-film catalog-spotlight-film');
                     const cover = el('button', null, 'catalog-film-poster'); cover.type = 'button';
-                    cover.setAttribute('aria-label', '查看 ' + group.title + ' 的来源和集数');
+                    cover.setAttribute('aria-label', '预览 ' + group.title);
                     const title = el('button', group.title, 'catalog-title'); title.type = 'button';
                     card.append(cover, title); preview.append(card);
-                    item = { card, cover, group, poster: null }; spotlightCards.set(group.key, item);
-                    cover.addEventListener('click', () => openGroup(item.group, cover, true));
-                    title.addEventListener('click', () => openGroup(item.group, title, true));
+                    item = { card, cover, title, group, poster: null }; spotlightCards.set(group.key, item);
+                    const previewFilm=()=>{setHero(item.group);renderSpotlight();};
+                    cover.addEventListener('click', previewFilm);
+                    title.addEventListener('click', previewFilm);
                 }
                 item.group = group;
+                item.cover.setAttribute('aria-pressed',String(group===featured));
+                item.title.setAttribute('aria-pressed',String(group===featured));
                 if (item.poster !== group.poster) {
                     item.cover.replaceChildren();
                     addPoster(doc, item.cover, group.poster, group.choices[0].row.page_url, group.title,group);
@@ -76,6 +79,8 @@
             $('catalogHeroFacts').textContent = [group.year, group.choices[0].row.genre].filter(Boolean).join(' · ') || '年份与版本请在详情中核对';
             const art = $('catalogHeroImage'); art.hidden = false;art.replaceChildren();
             addPoster(doc,art,group.poster,group.choices[0].row.page_url,group.title,group);
+            const backdrop=$('catalogHeroBackdrop');
+            if(backdrop){backdrop.hidden=false;backdrop.replaceChildren();addPoster(doc,backdrop,group.poster,group.choices[0].row.page_url,group.title,group);}
             $('catalogHeroOpen').hidden = false;
         }
         function append(source, rows) {
@@ -180,6 +185,7 @@
             cancel(); category = nextCategory; started = true; autoPaused = false; emptyBatches = 0; total = 0; trimMessage = '';
             entries.clear(); seen.clear(); grid.replaceChildren(); featured = null;
             $('catalogHeroImage').hidden = true; $('catalogHeroOpen').hidden = true;
+            if($('catalogHeroBackdrop'))$('catalogHeroBackdrop').hidden=true;
             $('catalogHeroTitle').textContent = '今天，想看点什么？';
             $('catalogHeroTagline').textContent = '找一部喜欢的，留个位置给朋友。';
             $('catalogHeroFacts').textContent = '电影 · 剧集 · 动漫 · 纪录片';

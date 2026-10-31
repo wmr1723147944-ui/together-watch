@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=fs.mkdtempSync(path.join(require('node:os').tmpdir(),'together-watch-catalog-qa-'));
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/theater-20261031');
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
@@ -66,8 +66,9 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     assert.ok(await js('!document.querySelector("vite-error-overlay, #webpack-dev-server-client-overlay, nextjs-portal")'));
     await until('visible recommendation images',()=>js('Array.from(document.querySelectorAll("#catalogFeedGrid img")).slice(0,8).every(i=>i.complete)'),30000);
     await noOverflow();await shot('desktop-welcome');
-    assert.equal(await js('document.querySelectorAll(".catalog-spotlight-film").length'),4);
-    assert.equal(await js('getComputedStyle(document.body).backgroundColor'),'rgb(255, 255, 255)');
+    assert.equal(await js('document.querySelectorAll(".catalog-spotlight-film").length'),5);
+    assert.equal(await js('getComputedStyle(document.body).backgroundColor'),'rgb(16, 17, 19)');
+    assert.equal(await js('getComputedStyle(document.querySelector(".cinema-sidebar")).position'),'fixed');
     assert.ok(await js('document.querySelector(".site-nav #discoveryForm") !== null'));
     assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).display'),'none','desktop must not gain mobile navigation');
     assert.ok(await js(`(()=>{
@@ -75,11 +76,13 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
         const lum=c=>c.map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
         const contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
         return ['.nav-room-link','.catalog-primary','#catalogFeedStatus','.catalog-feed-film > p'].every(selector=>{
-            const s=getComputedStyle(document.querySelector(selector)),bg=s.backgroundColor==='rgba(0, 0, 0, 0)'?[255,255,255]:rgb(s.backgroundColor);
+            const s=getComputedStyle(document.querySelector(selector)),rgba=s.backgroundColor.match(/[0-9.]+/g).map(Number),a=rgba[3]??1,bg=rgba.slice(0,3).map((v,i)=>v*a+[16,17,19][i]*(1-a));
             return contrast(rgb(s.color),bg)>=4.5;
         });
     })()`),'key catalogue text has readable contrast');
     await js('document.querySelector("#catalogSpotlightGrid .catalog-film-poster").click()');
+    assert.equal(await js('document.getElementById("discoveryDetail").open'),false);
+    await js('document.getElementById("catalogHeroOpen").click()');
     await until('spotlight opens real detail',()=>js('document.getElementById("discoveryDetail").open'));
     await js('document.getElementById("discoveryDetailClose").click()');
     assert.equal(await js('document.querySelectorAll(".catalog-feed-film").length'),24,'next page must wait for scroll');
@@ -109,7 +112,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     for(const width of [1920,1024,768,390,320]){
         win.setContentSize(width,1000);await delay(400);await noOverflow();
         const cols=await js(`getComputedStyle(document.querySelector('#discoveryLiveResults')).gridTemplateColumns.split(' ').length`);
-        assert.equal(cols,width>1190?6:width>900?5:width>680?4:2);
+        assert.equal(cols,width>=1700?6:width>1150?5:width>680?4:2);
         assert.ok(await js('(()=>{const r=document.getElementById("discoveryForm").getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.width>150})()'),'search remains within viewport');
         if(width<=390) {
             assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).position'),'fixed');
@@ -119,8 +122,9 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
         }
         if(width===390)await shot('mobile-results');
     }
-    await js(`const i=document.querySelector('#discoveryLiveResults .discovery-poster-image');i.dispatchEvent(new Event('error'));`);
-    assert.ok(await js(`!document.querySelector('#discoveryLiveResults .discovery-poster-fallback').hidden && document.querySelector('#discoveryLiveResults .discovery-poster-image').hidden`));
+    await js(`window.failedCover=document.querySelector('#discoveryLiveResults .discovery-poster-image');window.failedCover.dispatchEvent(new Event('error'));`);
+    assert.ok(await js(`!failedCover.isConnected || failedCover.hidden`),'failed artwork is removed or hidden');
+    await until('fallback or healthy replacement',()=>js(`!document.querySelector('#discoveryLiveResults .discovery-poster-fallback').hidden || !!document.querySelector('#discoveryLiveResults img[data-loading="false"]:not([hidden])')`));
     await js(`document.querySelector('.discovery-title-art').click()`);
     await until('failed-cover still opens',()=>js('document.getElementById("discoveryDetail").open'));await noOverflow();
     await js('document.getElementById("discoveryDetailClose").click();document.getElementById("discoveryClear").click()');
@@ -140,8 +144,8 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await js('document.getElementById("catalogMobileHome").click()');
     assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).display'),'flex','bottom tabs restore after input blur / viewport shrink');
     await shot('mobile-welcome');
-    assert.equal(await js('getComputedStyle(document.getElementById("catalogSpotlightGrid")).display'),'none','mobile avoids duplicate preview cards');
-    assert.ok(await js('document.getElementById("catalogHero").getBoundingClientRect().height<=170'),'compact app banner');
+    assert.equal(await js('getComputedStyle(document.getElementById("catalogSpotlightGrid")).display'),'flex','mobile has touchable film previews');
+    assert.ok(await js('document.getElementById("catalogHero").getBoundingClientRect().height<=400'),'mobile hero stays bounded');
     await js('document.getElementById("catalogMobileSearch").click()');
     assert.equal(await js('document.activeElement.id'),'discoveryQuery');
     assert.equal(await js('document.querySelectorAll(".catalog-feed-film").length'),24,'search tab must not reset or query the feed');
@@ -152,7 +156,9 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await until('mobile detail sheet',()=>js('document.getElementById("discoveryDetail").open'));
     assert.ok(await js('(()=>{const r=document.getElementById("discoveryDetail").getBoundingClientRect();return Math.abs(r.bottom-innerHeight)<2 && r.width<=innerWidth && r.top>=0})()'));
     await shot('mobile-detail');await js('document.getElementById("discoveryDetailClose").click()');
-    await win.loadURL(server+'/');await delay(500);await noOverflow();await shot('mobile-home');
+    await win.loadURL(server+'/');await delay(500);
+    await until('fresh hero cover',()=>js('!!document.querySelector("#catalogHeroImage img[data-loading=false]")'));
+    await noOverflow();await shot('mobile-home');
     assert.equal(await js('document.getElementById("roomEntry").open'),false);
     assert.equal(await js('document.querySelectorAll(".discovery-live-source, .recommended-sites, .discovery-search-options").length'),0);
     await js('document.querySelector(".catalog-mobile-nav a").click()');
@@ -161,6 +167,12 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await win.loadURL(server+'/?room=4ccfa3f3db24a52c2b5c68bc');
     await until('invitation opens join form',()=>js('document.getElementById("roomEntry").open'));
     assert.equal(await js('document.getElementById("roomId").value'),'4ccfa3f3db24a52c2b5c68bc');
+    await js('document.getElementById("roomEntryClose").click();document.querySelector(".catalog-mobile-nav [data-watch-history]").click()');
+    assert.equal(await js('document.getElementById("watchHistoryDialog").open'),true);await noOverflow();await shot('mobile-history');
+    await js('document.getElementById("watchHistoryDialog").close();document.querySelector(".catalog-mobile-nav [data-account-open]").click()');
+    await until('account dialog',()=>js('document.getElementById("accountDialog").open'));
+    assert.equal(await js('getComputedStyle(document.getElementById("accountDialog")).backgroundColor'),'rgb(26, 29, 33)');
+    await noOverflow();await shot('mobile-account');await js('document.getElementById("accountClose").click()');
     const appErrors=errors.filter(e=>!/net::|Failed to load resource|Electron Security Warning/.test(e));
     assert.deepEqual(appErrors,[],'runtime console errors');
     console.log('External cover errors (fallback tested):',errors.filter(e=>/net::|Failed to load resource/.test(e)).length);

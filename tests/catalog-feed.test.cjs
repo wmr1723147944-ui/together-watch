@@ -43,7 +43,7 @@ test('feed mixes real pages with at most two requests and does not cut a page to
     f.grid.children[0].children[0].handlers.click();assert.equal(f.hooks.opened[2],true);
 });
 
-test('spotlight uses at most four real feed entries without extra requests, and resets with its category',async()=>{
+test('spotlight previews five real films without querying or opening rooms, and resets with its category',async()=>{
     const f=fixture(['cupfox']);
     const preview=f.doc.createElement('div');f.elements.set('catalogSpotlightGrid',preview);
     let calls=0;
@@ -52,10 +52,15 @@ test('spotlight uses at most four real feed entries without extra requests, and 
         return reply(url,category==='all'?Array.from({length:8},(_,i)=>row('cupfox',i+1)):[]);
     },f.hooks);
     await feed.setVisible(true);
-    assert.equal(calls,1);assert.equal(preview.children.length,4);assert.equal(preview.hidden,false);
+    assert.equal(calls,1);assert.equal(preview.children.length,5);assert.equal(preview.hidden,false);
     assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片1');
-    assert.equal(preview.children[0].children[1].textContent,'影片2');
-    preview.children[0].children[0].handlers.click();
+    assert.equal(preview.children[0].children[1].textContent,'影片1');
+    preview.children[1].children[0].handlers.click();
+    assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片2');
+    assert.equal(preview.children[1].children[0].attributes['aria-pressed'],'true');
+    assert.equal(preview.children[0].children[0].attributes['aria-pressed'],'false');
+    assert.equal(calls,1);assert.equal(f.hooks.opened,undefined);
+    f.elements.get('catalogHeroOpen').handlers.click();
     assert.equal(f.hooks.opened[0].title,'影片2');assert.equal(f.hooks.opened[2],true);
     await feed.reset('movie');
     assert.equal(calls,2);assert.equal(preview.children.length,0);assert.equal(preview.hidden,true);

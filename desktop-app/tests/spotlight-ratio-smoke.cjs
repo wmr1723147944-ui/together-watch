@@ -40,13 +40,13 @@ m.app.run(host='127.0.0.1',port=${port},use_reloader=False)
         return new Response(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="100%" height="100%" fill="#395c7a"/><rect x="12" y="12" width="${w-24}" height="${h-24}" fill="none" stroke="#f0cf8b" stroke-width="12"/><circle cx="${w/2}" cy="${h/2}" r="100" fill="#c86b76"/><text x="50%" y="28%" text-anchor="middle" font-size="44" fill="white">${w} × ${h}</text></svg>`,{headers:{'content-type':'image/svg+xml'}});
     });
     await win.loadURL(server+'/discover');
-    await until('spotlight shapes',()=>js('document.querySelectorAll("#catalogSpotlightGrid [data-poster-shape]").length===4 && document.getElementById("catalogHeroImage").dataset.posterShape==="portrait"'));
+    await until('spotlight shapes',()=>js('document.querySelectorAll("#catalogSpotlightGrid [data-poster-shape]").length===5 && document.getElementById("catalogHeroImage").dataset.posterShape==="portrait"'));
     async function inspect(){
         const result=await js(`(()=>{
             const art=document.getElementById('catalogHeroImage'),image=art.querySelector('img:not([data-loading="true"])'),hero=document.getElementById('catalogHero'),copy=hero.querySelector('.catalog-hero-copy');
             const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
             return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth+1,shape:art.dataset.posterShape,art:rect(art),hero:rect(hero),copy:rect(copy),ratio:image.naturalWidth/image.naturalHeight,
-                cards:Array.from(document.querySelectorAll('#catalogSpotlightGrid .catalog-film-poster')).map(el=>({rect:rect(el),ratio:+el.style.getPropertyValue('--poster-ratio')||2/3}))};
+                cards:Array.from(document.querySelectorAll('#catalogFeedGrid .catalog-film-poster')).map(el=>({rect:rect(el),ratio:+el.style.getPropertyValue('--poster-ratio')||2/3}))};
         })()`);
         assert.equal(result.overflow,false,'no horizontal overflow');
         if(result.shape!=='landscape'){
@@ -68,6 +68,8 @@ m.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     }
     win.setContentSize(1440,950);await delay(200);
     await js('document.querySelector("#catalogSpotlightGrid .catalog-film-poster").click()');
+    assert.equal(await js('document.getElementById("discoveryDetail").open'),false,'preview must not navigate or open details');
+    await js('document.getElementById("catalogHeroOpen").click()');
     await until('detail remains functional',()=>js('document.querySelectorAll("#discoveryEpisodes a").length===1'));
     await js('document.getElementById("discoveryDetailClose").click(); document.querySelector("#catalogSpotlightGrid .discovery-poster-image").dispatchEvent(new Event("error"))');
     assert.equal(await js('document.querySelector("#catalogSpotlightGrid .catalog-film-poster").dataset.posterShape'),undefined);

@@ -83,13 +83,15 @@ class MediaLayoutTests(unittest.TestCase):
         self.assertIn("client-room-theme.css", room)
         self.assertIn('<details class="room-audio-options">', room)
 
-    def test_light_catalog_keeps_one_navigation_search_and_does_not_retheme_playback(self):
+    def test_catalog_keeps_one_navigation_search_and_does_not_retheme_playback(self):
         for path in ('/', '/discover?q=测试'):
             html = self.client.get(path).text
             self.assertEqual(html.count('id="discoveryForm"'), 1)
             self.assertEqual(html.count('id="discoveryQuery"'), 1)
             self.assertLess(html.index('id="discoveryForm"'), html.index('<main'))
             self.assertIn('catalog-browser-light.css', html)
+            self.assertIn('catalog-theater.css', html)
+            self.assertEqual(html.count('class="cinema-sidebar"'), 1)
             self.assertNotIn('catalog-cinema.css', html)
             self.assertIn('id="catalogSpotlightGrid"', html)
             self.assertIn('aria-label="筛选推荐片单"', html)
@@ -97,6 +99,7 @@ class MediaLayoutTests(unittest.TestCase):
             self.assertNotIn('data-live-source="ddys"', html)
         room = self.client.get('/room/layout-light-isolation').text
         self.assertNotIn('catalog-browser-light.css', room)
+        self.assertNotIn('catalog-theater.css', room)
 
     def test_mobile_catalog_has_three_working_entries_not_fake_social_tabs(self):
         for path in ('/', '/discover'):

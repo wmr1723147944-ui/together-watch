@@ -87,6 +87,20 @@ function fixture(sources=['ddys','huarw','cupfox']) {
     root.querySelectorAll=selector=>selector==='[data-live-source]'?choices:[];
     return {elements,doc:{getElementById:id=>elements.get(id),createElement:tag=>node(tag)}};
 }
+test('sidebar category exits search and keeps duplicate mobile tabs selected by category',async()=>{
+    const f=fixture(['cupfox']),root=f.elements.get('sourceDiscovery'),original=root.querySelectorAll;
+    const tabs=['movie','series','movie','all'].map(category=>Object.assign(f.doc.createElement('button'),{dataset:{catalogCategory:category,categoryLabel:category==='movie'?'电影':'剧集'},textContent:'图标文字'}));
+    root.querySelectorAll=selector=>selector==='[data-catalog-category]'?tabs:original(selector);
+    let calls=0;
+    const browser=createBrowser(f.doc,async()=>{calls++;return {ok:true,json:async()=>({source_id:'cupfox',status:'ok',results:[]})};});
+    f.elements.get('discoveryQuery').value='星';await browser.run();
+    tabs[0].handlers.click();
+    assert.equal(f.elements.get('discoveryLive').hidden,true);assert.equal(f.elements.get('discoveryWelcome').hidden,false);
+    assert.equal(f.elements.get('recommendationTitle').textContent,'电影片单');
+    assert.deepEqual(tabs.map(tab=>tab.attributes['aria-pressed']),['true','false','true','false']);
+    assert.equal(calls,1,'category navigation must not repeat the title search');
+});
+
 test('search shows one flat grid, max two requests, folds failures away and never loads details automatically',async()=>{
     const f=fixture();let active=0,peak=0;const requests=[];
     const browser=createBrowser(f.doc,async(url,options)=>{

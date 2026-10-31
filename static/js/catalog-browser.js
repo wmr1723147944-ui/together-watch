@@ -244,9 +244,11 @@
         });
         for (const button of root.querySelectorAll('[data-catalog-category]')) button.addEventListener('click', () => {
             const category = button.dataset.catalogCategory;
-            for (const tab of root.querySelectorAll('[data-catalog-category]')) tab.setAttribute('aria-pressed', String(tab === button));
-            $('recommendationTitle').textContent = category === 'all' ? '发现更多好片' : button.textContent + '片单';
+            if (activeQuery) home(false);
+            for (const tab of root.querySelectorAll('[data-catalog-category]')) tab.setAttribute('aria-pressed', String(tab.dataset.catalogCategory === category));
+            $('recommendationTitle').textContent = category === 'all' ? '发现更多好片' : (button.dataset.categoryLabel || button.textContent.trim()) + '片单';
             feed?.reset(category);
+            doc.defaultView?.scrollTo?.({top:0,behavior:'instant'});
         });
         for (const img of root.querySelectorAll('.catalog-film-poster img, .catalog-hero-image')) {
             const failed = () => { img.hidden = true; };
