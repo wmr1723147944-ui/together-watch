@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/theater-20261031');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/programme-v2');
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
@@ -80,7 +80,9 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
             return contrast(rgb(s.color),bg)>=4.5;
         });
     })()`),'key catalogue text has readable contrast');
-    await js('document.querySelector("#catalogSpotlightGrid .catalog-film-poster").click()');
+    await js('document.querySelectorAll("#catalogSpotlightGrid .programme-choice")[1].click()');
+    assert.equal(await js('document.getElementById("catalogHeroPosition").textContent'),'02 / 05');
+    await js('document.querySelector("#catalogSpotlightGrid .programme-choice").click()');
     assert.equal(await js('document.getElementById("discoveryDetail").open'),false);
     await js('document.getElementById("catalogHeroOpen").click()');
     await until('spotlight opens real detail',()=>js('document.getElementById("discoveryDetail").open'));

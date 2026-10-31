@@ -41,47 +41,86 @@
         }
         // A bounded, real-metadata preview. No invented rankings or extra queries.
         const spotlightCards = new Map();
+        let programme = [], previewPicked = false;
+        function programmeGroups() {
+            if (programme.length === 5 && programme.includes(featured) && programme.every(g=>entries.get(g.key)?.group===g)) return programme;
+            const pool = [];
+            for (const entry of entries.values()) {
+                pool.push(entry.group);
+                if (pool.length === 40) break;
+            }
+            if (!pool.length) return programme = [];
+            if (!featured || !entries.has(featured.key)) setHero(pool[0]);
+            // Keep the current title in place; sample across distinct covers
+            // already on the shelf instead of mirroring its first row.
+            const chosen = programme.filter(g=>entries.get(g.key)?.group===g);
+            if (!chosen.includes(featured)) {
+                if(chosen.length===5)chosen.pop();
+                chosen.push(featured);
+            }
+            const covers = new Set(chosen.map(g=>g.poster).filter(Boolean));
+            const available = pool.filter(g=>!chosen.includes(g));
+            const pictured = available.filter(g=>{
+                if (!g.poster || covers.has(g.poster)) return false;
+                covers.add(g.poster); return true;
+            });
+            const take = Math.min(5-chosen.length,pictured.length);
+            for(let i=0;i<take;i++)chosen.push(pictured[Math.ceil((i+1)*pictured.length/take)-1]);
+            for(const g of available){if(chosen.length>=5)break;if(!chosen.includes(g))chosen.push(g);}
+            return programme = chosen;
+        }
         function renderSpotlight() {
             const preview = $('catalogSpotlightGrid');
             if (!preview) return;
-            const groups = [...entries.values()].map(entry => entry.group).slice(0, 5);
+            const groups = programmeGroups();
             const keep = new Set(groups.map(group => group.key));
             for (const [key, item] of spotlightCards) if (!keep.has(key)) { item.card.remove(); spotlightCards.delete(key); }
             for (const group of groups) {
                 let item = spotlightCards.get(group.key);
                 if (!item) {
                     const card = el('article', null, 'catalog-film catalog-spotlight-film');
-                    const cover = el('button', null, 'catalog-film-poster'); cover.type = 'button';
-                    cover.setAttribute('aria-label', '预览 ' + group.title);
-                    const title = el('button', group.title, 'catalog-title'); title.type = 'button';
-                    card.append(cover, title); preview.append(card);
-                    item = { card, cover, title, group, poster: null }; spotlightCards.set(group.key, item);
-                    const previewFilm=()=>{setHero(item.group);renderSpotlight();};
-                    cover.addEventListener('click', previewFilm);
-                    title.addEventListener('click', previewFilm);
+                    const button = el('button', null, 'programme-choice'); button.type = 'button';
+                    button.setAttribute('aria-label', '预览 ' + group.title);
+                    const cover = el('span', null, 'catalog-film-poster');
+                    const index = el('span', null, 'programme-number');
+                    index.setAttribute('aria-hidden','true');
+                    const title = el('span', group.title, 'catalog-title');
+                    button.append(cover, index, title); card.append(button); preview.append(card);
+                    item = { card, button, cover, index, group, poster: null }; spotlightCards.set(group.key, item);
+                    button.addEventListener('click', ()=>{previewPicked=true;if(featured!==item.group){setHero(item.group);renderSpotlight();}});
                 }
                 item.group = group;
-                item.cover.setAttribute('aria-pressed',String(group===featured));
-                item.title.setAttribute('aria-pressed',String(group===featured));
+                item.button.setAttribute('aria-pressed',String(group===featured));
+                item.index.textContent = String(groups.indexOf(group)+1).padStart(2,'0');
                 if (item.poster !== group.poster) {
                     item.cover.replaceChildren();
                     addPoster(doc, item.cover, group.poster, group.choices[0].row.page_url, group.title,group);
-                    item.cover.append(el('span', group.year || '查看详情', 'catalog-film-badge'));
                     item.poster = group.poster;
                 }
             }
             preview.hidden = groups.length === 0;
+            const position=$('catalogHeroPosition');
+            if(position)position.textContent=groups.includes(featured)
+                ? String(groups.indexOf(featured)+1).padStart(2,'0')+' / '+String(groups.length).padStart(2,'0') : '';
         }
         function setHero(group) {
             featured = group;
             $('catalogHeroTitle').textContent = group.title;
-            $('catalogHeroTagline').textContent = '选好这一部，邀请朋友一起看';
-            $('catalogHeroFacts').textContent = [group.year, group.choices[0].row.genre].filter(Boolean).join(' · ') || '年份与版本请在详情中核对';
+            const row=group.choices[0].row;
+            // Do not fetch a detail page just to fill decorative copy.
+            const synopsis=typeof row.description==='string' ? row.description.trim() : '';
+            $('catalogHeroTagline').textContent = synopsis.slice(0,110);
+            $('catalogHeroFacts').textContent = [group.year,row.genre].filter(Boolean).join('  /  ');
             const art = $('catalogHeroImage'); art.hidden = false;art.replaceChildren();
             addPoster(doc,art,group.poster,group.choices[0].row.page_url,group.title,group);
             const backdrop=$('catalogHeroBackdrop');
             if(backdrop){backdrop.hidden=false;backdrop.replaceChildren();addPoster(doc,backdrop,group.poster,group.choices[0].row.page_url,group.title,group);}
             $('catalogHeroOpen').hidden = false;
+        }
+        function cardFacts(group) {
+            const genre=group.choices.find(choice=>choice.row.genre)?.row.genre;
+            const count=new Set(group.choices.map(choice=>choice.source)).size;
+            return [group.year, genre, count>1 ? count+' 个片源' : ''].filter(Boolean).join(' · ');
         }
         function append(source, rows) {
             const fresh = rows.filter(row => {
@@ -105,7 +144,7 @@
                         old.cover.append(el('span', '查看影片 / 选集 →', 'catalog-hover-action'));
                         if (featured === old.group) setHero(old.group);
                     }
-                    old.facts.textContent = (old.group.year || '年份待核对') + ' · ' + old.group.choices.length + ' 个来源条目';
+                    old.facts.textContent = cardFacts(old.group);
                     continue;
                 }
                 const card = el('article', null, 'catalog-film catalog-feed-film');
@@ -115,12 +154,12 @@
                 if (group.choices[0].row.genre) cover.append(el('span', group.choices[0].row.genre, 'catalog-film-badge'));
                 cover.append(el('span', '查看影片 / 选集 →', 'catalog-hover-action'));
                 const title = el('button', group.title, 'catalog-title'); title.type = 'button';
-                const facts = el('p', (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个来源条目');
+                const facts = el('p', cardFacts(group));
                 card.append(cover, title, facts); grid.append(card);
                 cover.addEventListener('click', () => openGroup(group, cover, true));
                 title.addEventListener('click', () => openGroup(group, title, true));
                 entries.set(group.key, { group, card, cover, facts }); total++;
-                if (!featured || !featured.poster && group.poster) setHero(group);
+                if (!featured || !previewPicked && !featured.poster && group.poster) setHero(group);
             }
             return fresh.length;
         }
@@ -183,7 +222,7 @@
         }
         function reset(nextCategory = category) {
             cancel(); category = nextCategory; started = true; autoPaused = false; emptyBatches = 0; total = 0; trimMessage = '';
-            entries.clear(); seen.clear(); grid.replaceChildren(); featured = null;
+            entries.clear(); seen.clear(); grid.replaceChildren(); featured = null; programme = []; previewPicked = false;
             $('catalogHeroImage').hidden = true; $('catalogHeroOpen').hidden = true;
             if($('catalogHeroBackdrop'))$('catalogHeroBackdrop').hidden=true;
             $('catalogHeroTitle').textContent = '今天，想看点什么？';

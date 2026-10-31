@@ -46,6 +46,7 @@ test('feed mixes real pages with at most two requests and does not cut a page to
 test('spotlight previews five real films without querying or opening rooms, and resets with its category',async()=>{
     const f=fixture(['cupfox']);
     const preview=f.doc.createElement('div');f.elements.set('catalogSpotlightGrid',preview);
+    const counter=f.doc.createElement('b');f.elements.set('catalogHeroPosition',counter);
     let calls=0;
     const feed=createFeed(f.doc,async url=>{
         calls++;const category=new URL(url,'http://localhost').searchParams.get('category');
@@ -54,17 +55,36 @@ test('spotlight previews five real films without querying or opening rooms, and 
     await feed.setVisible(true);
     assert.equal(calls,1);assert.equal(preview.children.length,5);assert.equal(preview.hidden,false);
     assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片1');
-    assert.equal(preview.children[0].children[1].textContent,'影片1');
+    assert.equal(counter.textContent,'01 / 05');
+    assert.equal(preview.children[0].children[0].attributes['aria-label'],'预览 影片1');
     preview.children[1].children[0].handlers.click();
     assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片2');
     assert.equal(preview.children[1].children[0].attributes['aria-pressed'],'true');
     assert.equal(preview.children[0].children[0].attributes['aria-pressed'],'false');
+    assert.equal(counter.textContent,'02 / 05');
     assert.equal(calls,1);assert.equal(f.hooks.opened,undefined);
     f.elements.get('catalogHeroOpen').handlers.click();
     assert.equal(f.hooks.opened[0].title,'影片2');assert.equal(f.hooks.opened[2],true);
     await feed.reset('movie');
     assert.equal(calls,2);assert.equal(preview.children.length,0);assert.equal(preview.hidden,true);
-    assert.equal(f.elements.get('catalogHeroOpen').hidden,true);
+    assert.equal(f.elements.get('catalogHeroOpen').hidden,true);assert.equal(counter.textContent,'');
+});
+
+test('preview samples distinct covers across a batch and preserves the selection when the feed grows',async()=>{
+    const f=fixture(['cupfox']);
+    const preview=f.doc.createElement('div'); f.elements.set('catalogSpotlightGrid',preview);
+    const feed=createFeed(f.doc,async url=>{
+        const page=+new URL(url,'http://localhost').searchParams.get('page');
+        return reply(url,Array.from({length:12},(_,i)=>({...row('cupfox',(page-1)*12+i+1),
+            poster_url:'https://image.tmdb.org/t/p/w500/show'+i+'.jpg'})),page===1);
+    },f.hooks);
+    await feed.setVisible(true);
+    const choices=preview.children.map(card=>card.children[0]);
+    assert.equal(choices.length,5);assert.equal(choices[4].attributes['aria-label'],'预览 影片12');
+    choices[3].handlers.click(); const selected=f.elements.get('catalogHeroTitle').textContent;
+    await feed.load(true);
+    assert.equal(f.elements.get('catalogHeroTitle').textContent,selected);
+    assert.deepEqual(preview.children.map(card=>card.children[0]),choices);
 });
 
 test('equal known title/year merges source choices and receives a later valid cover',async()=>{

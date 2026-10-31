@@ -20,24 +20,24 @@
             <div id="catalogHeroBackdrop" class="catalog-hero-backdrop" aria-hidden="true" hidden></div>
             <div class="catalog-hero-image" id="catalogHeroImage" aria-hidden="true" hidden></div>
             <div class="catalog-hero-copy">
-                <span class="catalog-eyebrow">今晚，一起看</span>
+                <span class="catalog-eyebrow"><i aria-hidden="true"></i> 本场放映 <b aria-hidden="true">/</b> <span lang="en">SPOTLIGHT</span></span>
                 <h1 id="catalogHeroTitle">今天，想看点什么？</h1>
                 <p class="hero-tagline" id="catalogHeroTagline">找一部喜欢的，留个位置给朋友。</p>
                 <p class="hero-facts" id="catalogHeroFacts">电影 · 剧集 · 动漫 · 纪录片</p>
-                <button type="button" class="catalog-primary" id="catalogHeroOpen" hidden>查看详情 <span aria-hidden="true">→</span></button>
+                <button type="button" class="catalog-primary" id="catalogHeroOpen" hidden><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 2.7c0-.6.7-1 1.2-.7l9 5.3c.5.3.5 1.1 0 1.4l-9 5.3c-.5.3-1.2-.1-1.2-.7z"/></svg>查看详情</button>
             </div>
-            <span class="hero-caption">来自公开片单</span>
+            <span class="hero-caption" aria-label="片单位置"><span lang="en" aria-hidden="true">PROGRAMME</span> <b id="catalogHeroPosition"></b></span>
         </div>
         <div id="catalogSpotlightGrid" class="catalog-spotlight-grid" aria-label="切换推荐影片预览" hidden></div>
         </div>
-        <header class="catalog-section-title"><div><h2 id="recommendationTitle">发现更多好片</h2><span class="section-description">好故事，慢慢挑</span></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh"><span aria-hidden="true">↻</span> 刷新片单</button></header>
-        <p id="catalogFeedStatus" class="catalog-feed-status" role="status" aria-live="polite">正在读取公开片单…</p>
+        <header class="catalog-section-title programme-heading"><div><small aria-hidden="true" lang="en">FILM LIBRARY</small><h2 id="recommendationTitle">发现更多好片</h2></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh"><span aria-hidden="true">↻</span> 刷新片单</button></header>
         <div id="catalogFeedGrid" class="catalog-grid catalog-recommendations" aria-busy="true"></div>
         <div id="catalogFeedSkeleton" class="catalog-grid" aria-hidden="true">{% for i in range(8) %}<div class="catalog-skeleton"></div>{% endfor %}</div>
         <div id="catalogFeedSentinel" class="catalog-feed-more"><button type="button" id="catalogFeedMore">加载更多影片</button></div>
         <p id="catalogFeedEmpty" class="catalog-empty" hidden>暂时没有取得片单，可以重试，也可以直接搜索剧名。</p>
+        <p id="catalogFeedStatus" class="catalog-feed-status" role="status" aria-live="polite">正在读取公开片单…</p>
         <details id="catalogFeedNotes" class="catalog-search-notes" hidden><summary>部分目录暂不可用</summary><div id="catalogFeedNotesBody"></div></details>
-        <p class="catalog-footnote">片单来自已接入来源的公开目录，向下滚动继续加载；不代表已验证可播放。清晰度与观看权限以原站为准。</p>
+        <p class="catalog-footnote">影片来自公开片单，向下滚动继续加载；不代表已验证可播放。清晰度与观看权限以原站为准。</p>
     </section>
     <section id="discoveryLive" class="catalog-results" hidden aria-busy="false" aria-labelledby="catalogResultTitle">
         <header class="catalog-section-title"><div><button id="catalogBack" type="button" class="catalog-back">← 返回推荐</button><h2 id="catalogResultTitle">搜索结果</h2></div><span id="catalogResultCount"></span></header>
