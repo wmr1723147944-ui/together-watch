@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/handset-home');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/handset-polish');
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
@@ -172,7 +172,14 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     assert.equal(await js('getComputedStyle(document.body).backgroundColor'),'rgb(255, 255, 255)','handset shelf uses the light theme');
     assert.equal(await js('getComputedStyle(document.querySelector(".hero-browse")).display'),'none','mobile uses dots instead of desktop arrows');
     assert.ok(await js('parseFloat(getComputedStyle(document.querySelector(".catalog-spotlight")).borderRadius)>=16'),'handset feature is rounded');
-    assert.ok(await js('(()=>{const a=document.querySelector("#catalogHeroOpen").getBoundingClientRect(),d=document.querySelector("#catalogSpotlightGrid").getBoundingClientRect();return a.right<d.left && d.width>=140})()'),'detail action and touchable dots never overlap');
+    assert.ok(await js('(()=>{const a=document.querySelector("#catalogHeroOpen").getBoundingClientRect(),d=document.querySelector("#catalogSpotlightGrid").getBoundingClientRect();return d.bottom<a.top && d.width>=140 && a.width>=44 && a.height>=44})()'),'detail action and touchable dots never overlap');
+    assert.ok(await js('getComputedStyle(document.querySelector("#catalogHeroFacts")).display!=="none" && document.querySelector("#catalogHeroFacts").textContent.includes("2022")'),'hero shows actual metadata, not invented ratings');
+    assert.ok(await js(`(()=>{
+        const rgb=s=>s.match(/[0-9.]+/g).slice(0,3).map(Number);
+        const lum=c=>c.map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
+        const contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
+        return [['.catalog-search input',[245,233,223]],['.catalog-channels button',[245,233,223]],['.catalog-film .catalog-title',[255,255,255]],['.catalog-film > p',[255,255,255]],['.catalog-mobile-nav [aria-current=page]',[255,255,255]]].every(([selector,surface])=>contrast(rgb(getComputedStyle(document.querySelector(selector)).color),surface)>=4.5);
+    })()`),'mobile text remains readable on the warm light surface');
     const startY=await js('scrollY');
     await js('document.querySelectorAll("#catalogSpotlightGrid .programme-choice")[4].click()');
     assert.equal(await js('document.getElementById("catalogHeroPosition").textContent'),'05 / 05');

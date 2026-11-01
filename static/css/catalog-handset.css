@@ -1,68 +1,73 @@
-/* Handset catalogue: a warm header, rounded feature and a clean white shelf.
+/* Handset catalogue: a light warm header, clear feature and a quiet white shelf.
    Deliberately separate from the Windows theatre and the player episode drawer. */
 @media (max-width:680px) {
     .catalog-cinema:not(.episode-picker) {
         --cinema-bg:#fff; --cinema-text:#242629; --cinema-muted:#69717a; --cinema-accent:#a34f32;
         --mobile-accent:#a34f32; color-scheme:light; color:#242629;
-        background:#fff linear-gradient(180deg,#57473d 0,#96867b 150px,#e7e0da 290px,#fff 420px) no-repeat;
-        background-size:100% 420px;
+        background:#fff linear-gradient(180deg,#f5e9df 0,#faf4ee 170px,#fff 440px) no-repeat;
+        background-size:100% 440px;
     }
     .catalog-cinema:not(.episode-picker):has(#discoveryLive:not([hidden])) { background-image:none }
     .catalog-cinema:not(.episode-picker) .catalog-browser {
         --d-bg:#fff; --d-soft:#f5f6f7; --d-border:#e5e7eb; --d-muted:#69717a; --d-text:#242629; --d-accent:#a34f32;
     }
     .catalog-cinema:not(.episode-picker) .site-nav-catalog {
-        background:#57473de8; border:0; backdrop-filter:blur(18px); gap:10px;
+        background:#f7eee6ed; border:0; backdrop-filter:blur(18px); gap:12px;
     }
     .catalog-cinema:not(.episode-picker) .site-nav .catalog-search {
-        background:#ffffff26; border:1px solid #ffffff22; height:42px; padding-left:17px;
+        background:#ffffffb8; border:1px solid #ffffffc9; height:42px; padding-left:17px;
+        box-shadow:0 2px 8px #68452c04;
     }
-    .catalog-cinema:not(.episode-picker) .catalog-search:focus-within { background:#ffffff36; border-color:#ffffff80 }
-    .catalog-cinema:not(.episode-picker) .catalog-search input { color:#fff; caret-color:#fff }
-    .catalog-cinema:not(.episode-picker) .catalog-search input::placeholder { color:#f0ece8 }
-    .catalog-cinema:not(.episode-picker) .catalog-search button { color:#fff }
+    .catalog-cinema:not(.episode-picker) .catalog-search:focus-within { background:#fff; border-color:#c98768 }
+    .catalog-cinema:not(.episode-picker) .catalog-search input { color:#34302e; caret-color:#a34f32 }
+    .catalog-cinema:not(.episode-picker) .catalog-search input::placeholder { color:#79716c }
+    .catalog-cinema:not(.episode-picker) .catalog-search button { color:#625b55 }
     .catalog-cinema:not(.episode-picker) .catalog-channel-bar {
-        background:#796a5fed; border:0; height:52px; margin-inline:-16px; padding-inline:16px;
+        background:#faf3edee; border:0; height:52px; margin-inline:-16px; padding-inline:16px;
         backdrop-filter:blur(14px);
     }
     .catalog-cinema:not(.episode-picker) .catalog-channels { gap:3px }
-    .catalog-cinema:not(.episode-picker) .catalog-channels button { color:#f3eeea; font-size:15px; padding-inline:8px }
-    .catalog-cinema:not(.episode-picker) .catalog-channels button[aria-pressed=true] { color:#fff; font-size:18px; font-weight:700 }
-    .catalog-cinema:not(.episode-picker) .catalog-channels button[aria-pressed=true]::after { background:#fff; width:14px; left:calc(50% - 7px); height:2px }
+    .catalog-cinema:not(.episode-picker) .catalog-channels button { color:#6d625a; font-size:15px; padding-inline:8px }
+    .catalog-cinema:not(.episode-picker) .catalog-channels button[aria-pressed=true] { color:#302721; font-size:18px; font-weight:700 }
+    .catalog-cinema:not(.episode-picker) .catalog-channels button[aria-pressed=true]::after { background:#c06b48; width:16px; left:calc(50% - 8px); height:3px; border-radius:3px }
 
     /* The image belongs to the rounded feature only on handsets. Five existing
        preview buttons become dots; they retain names, focus and selected state. */
     .catalog-cinema:not(.episode-picker) .catalog-spotlight {
-        --stage:clamp(210px,56.25vw,320px); min-height:var(--stage); margin:12px 0 25px;
-        border-radius:18px; overflow:hidden; background:#443d38;
+        --stage:clamp(226px,65vw,320px); min-height:var(--stage); margin:14px 0 28px;
+        border-radius:22px; overflow:hidden; background:#443d38;
     }
     .catalog-cinema:not(.episode-picker) .catalog-spotlight > .catalog-hero-image {
         mask-image:none; -webkit-mask-image:none; opacity:1;
     }
     .catalog-cinema:not(.episode-picker) .catalog-spotlight > .catalog-hero-image img { object-position:center 32% }
     .catalog-cinema:not(.episode-picker) .catalog-spotlight::before {
-        background:linear-gradient(0deg,#0a0a0bd9, #0a0a0b8c 35%,#0a0a0b12 75%);
+        background:linear-gradient(0deg,#101411ed 0,#101411a3 26%,#1014111a 65%,#1014110a 100%);
     }
     .catalog-cinema:not(.episode-picker) .catalog-hero-copy {
-        min-height:var(--stage); max-width:100%; padding:24px 16px 66px; justify-content:flex-end;
+        min-height:var(--stage); max-width:100%; padding:58px 80px 22px 20px; justify-content:flex-end; gap:8px;
     }
     .catalog-cinema:not(.episode-picker) .catalog-hero h1 {
-        margin:0; padding:0; font-size:clamp(21px,5.8vw,29px); font-weight:650; line-height:1.35;
+        margin:0; padding:0; font-size:clamp(23px,6.3vw,30px); font-weight:700; line-height:1.3;
         -webkit-line-clamp:2; color:#fff; text-shadow:0 1px 8px #0006;
     }
-    .catalog-cinema:not(.episode-picker) .catalog-hero :is(.catalog-eyebrow,.hero-tagline,.hero-facts,.hero-browse) { display:none }
+    .catalog-cinema:not(.episode-picker) .catalog-hero :is(.catalog-eyebrow,.hero-tagline,.hero-browse) { display:none }
+    .catalog-cinema:not(.episode-picker) .catalog-hero .hero-facts { color:#eee9e3; font-size:12px; letter-spacing:.04em; margin:0; max-width:100% }
     .catalog-cinema:not(.episode-picker) .catalog-hero .catalog-primary {
-        position:absolute; left:16px; right:auto; bottom:14px; width:max-content; margin:0; min-height:36px; padding:7px 13px;
-        border:1px solid #ffffff40; background:#ffffff1c; color:#fff; font-size:12px!important;
+        position:absolute; left:auto; right:20px; bottom:24px; width:46px; height:46px; margin:0; min-height:46px; padding:0;
+        display:flex; align-items:center; justify-content:center; gap:0; border:1px solid #ffffffbf; border-radius:50%; background:#fffffff0; color:#303933;
+        font-size:0!important; box-shadow:0 3px 12px #0002;
     }
-    .catalog-cinema:not(.episode-picker) .catalog-hero .catalog-primary svg { color:#fff }
+    .catalog-cinema:not(.episode-picker) .catalog-hero .catalog-primary svg { color:#303933; width:19px; height:19px; margin-left:3px }
+    .catalog-cinema:not(.episode-picker) .catalog-hero .catalog-primary:is(:hover,:focus-visible) { background:#fff; border-color:#fff; outline:2px solid #fff; outline-offset:3px }
     .catalog-cinema:not(.episode-picker) .catalog-spotlight-grid {
-        position:absolute; right:9px; bottom:14px; display:flex; flex-direction:row;
-        width:auto; height:36px; margin:0; padding:0; gap:0; overflow:visible;
+        position:absolute; right:12px; top:12px; bottom:auto; display:flex; flex-direction:row;
+        width:auto; height:28px; margin:0; padding:0 4px; gap:0; overflow:visible;
+        border-radius:20px; background:#10141140; backdrop-filter:blur(10px);
     }
     .catalog-cinema:not(.episode-picker) .catalog-spotlight-film { flex:0 0 28px; width:28px; min-width:0 }
     .catalog-cinema:not(.episode-picker) .programme-choice {
-        display:grid; grid-template:1fr / 1fr; place-items:center; width:28px; height:36px; min-height:36px; padding:0;
+        display:grid; grid-template:1fr / 1fr; place-items:center; width:28px; height:28px; min-height:28px; padding:0;
         border:0; border-radius:6px; background:transparent;
     }
     .catalog-cinema:not(.episode-picker) .programme-choice > * { display:none }
@@ -73,19 +78,19 @@
     .catalog-cinema:not(.episode-picker) .programme-choice::after { content:none }
     .catalog-cinema:not(.episode-picker) .programme-choice:focus-visible { outline:2px solid white; outline-offset:-2px }
 
-    .catalog-cinema:not(.episode-picker) .programme-heading { margin:23px 0 16px }
+    .catalog-cinema:not(.episode-picker) .programme-heading { margin:26px 0 17px }
     .catalog-cinema:not(.episode-picker) #discoveryLive { margin-top:12px }
     .catalog-cinema:not(.episode-picker) .catalog-results .catalog-section-title { margin-top:12px }
-    .catalog-cinema:not(.episode-picker) .catalog-section-title h2 { color:#242629; font-size:20px }
+    .catalog-cinema:not(.episode-picker) .catalog-section-title h2 { color:#242629; font-size:20px; font-weight:700; letter-spacing:-.02em }
     .catalog-cinema:not(.episode-picker) .catalog-refresh { color:#656b73 }
-    .catalog-cinema:not(.episode-picker) .catalog-grid { gap:22px 12px }
+    .catalog-cinema:not(.episode-picker) .catalog-grid { gap:24px 12px }
     .catalog-cinema:not(.episode-picker) .catalog-grid .catalog-film-poster,
     .catalog-cinema:not(.episode-picker) .catalog-grid .catalog-film-poster[data-poster-shape] {
-        aspect-ratio:16/10; height:auto; border:0; border-radius:12px; margin-bottom:9px; background:#f1f2f4;
+        aspect-ratio:16/10; height:auto; border:0; border-radius:14px; margin-bottom:10px; background:#f1f2f4;
     }
     .catalog-cinema:not(.episode-picker) .catalog-grid .catalog-film-poster img { object-fit:cover; object-position:center 28% }
-    .catalog-cinema:not(.episode-picker) .catalog-film .catalog-title { color:#242629; font-size:15px; line-height:1.45; padding:0; min-height:22px }
-    .catalog-cinema:not(.episode-picker) .catalog-film > p { color:#72777e; font-size:11px; padding:0; margin-top:5px }
+    .catalog-cinema:not(.episode-picker) .catalog-film .catalog-title { color:#242629; font-size:15px; font-weight:550; line-height:1.45; padding:0; min-height:22px }
+    .catalog-cinema:not(.episode-picker) .catalog-film > p { color:#6a717a; font-size:12px; padding:0; margin-top:5px }
     .catalog-cinema:not(.episode-picker) .discovery-poster-fallback { background:linear-gradient(135deg,#eee9e4,#f5f6f8); color:#68717b }
     .catalog-cinema:not(.episode-picker) .discovery-poster-fallback strong { font-size:13px }
     .catalog-cinema:not(.episode-picker) .discovery-poster-fallback small { color:#747b83; font-size:10px }
@@ -97,8 +102,8 @@
     .catalog-cinema:not(.episode-picker) .catalog-empty { background:#f7f8f9; color:#68717b; border-color:#e2e5e9 }
     .catalog-cinema:not(.episode-picker) .catalog-mobile-nav { background:#fffffff5; border-color:#eceef0; backdrop-filter:blur(16px) }
     .catalog-cinema:not(.episode-picker) .catalog-mobile-nav :is(button,a) { color:#72777e }
-    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav [aria-current=page] { color:#232629 }
-    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav [aria-current=page] svg { fill:#2426290d; stroke-width:2 }
+    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav [aria-current=page] { color:#a34f32 }
+    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav [aria-current=page] svg { fill:#f7e7dd; stroke-width:2 }
 
     /* Keep all first-party sheets coherent with the light shelf. The dedicated
        player picker is explicitly excluded, including in landscape playback. */

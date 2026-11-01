@@ -98,6 +98,7 @@ class MediaLayoutTests(unittest.TestCase):
             self.assertNotIn('id="catalogHeroBackdrop"', html)
             self.assertIn('20261101-full-stage', html)
             self.assertIn('catalog-handset.css', html)
+            self.assertIn('20261101-handset-polish', html)
             self.assertLess(html.index('catalog-theater.css'), html.index('catalog-handset.css'))
             self.assertIn('aria-label="筛选推荐片单"', html)
             self.assertNotIn('data-live-source="fcma"', html)
