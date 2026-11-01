@@ -87,7 +87,7 @@
                     const title = el('span', group.title, 'catalog-title');
                     button.append(cover, index, title); card.append(button); preview.append(card);
                     item = { card, button, cover, index, group, poster: null }; spotlightCards.set(group.key, item);
-                    button.addEventListener('click', ()=>{previewPicked=true;if(featured!==item.group){setHero(item.group);renderSpotlight();}});
+                    button.addEventListener('click', ()=>selectPreview(item.group));
                 }
                 item.group = group;
                 item.button.setAttribute('aria-pressed',String(group===featured));
@@ -102,6 +102,26 @@
             const position=$('catalogHeroPosition');
             if(position)position.textContent=groups.includes(featured)
                 ? String(groups.indexOf(featured)+1).padStart(2,'0')+' / '+String(groups.length).padStart(2,'0') : '';
+            for(const id of ['catalogHeroPrevious','catalogHeroNext']) {
+                const control=$(id); if(control)control.disabled=groups.length<2;
+            }
+        }
+        function selectPreview(group) {
+            previewPicked=true;
+            if(featured!==group){setHero(group);renderSpotlight();}
+            // Scroll only the thumbnail strip, never the page or the document.
+            const strip=$('catalogSpotlightGrid'), card=spotlightCards.get(group.key)?.card;
+            if(strip?.scrollWidth>strip?.clientWidth && card?.getBoundingClientRect) {
+                const bounds=strip.getBoundingClientRect(),target=card.getBoundingClientRect();
+                if(target.left<bounds.left || target.right>bounds.right) {
+                    strip.scrollTo?.({left:strip.scrollLeft+target.left-bounds.left,behavior:'instant'});
+                }
+            }
+        }
+        function advancePreview(direction) {
+            if(programme.length<2)return;
+            const index=programme.indexOf(featured);
+            selectPreview(programme[(index+direction+programme.length)%programme.length]);
         }
         function setHero(group) {
             featured = group;
@@ -240,6 +260,8 @@
         $('catalogFeedMore').addEventListener('click', () => load(true));
         $('catalogFeedRefresh').addEventListener('click', () => reset());
         $('catalogHeroOpen').addEventListener('click', () => { if (featured) openGroup(featured, $('catalogHeroOpen'), true); });
+        $('catalogHeroPrevious')?.addEventListener('click',()=>advancePreview(-1));
+        $('catalogHeroNext')?.addEventListener('click',()=>advancePreview(1));
         let scrollQueued = false;
         win.addEventListener?.('scroll', () => {
             if (scrollQueued) return; scrollQueued = true;

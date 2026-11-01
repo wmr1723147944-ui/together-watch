@@ -60,6 +60,10 @@ m.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     for(const width of [1920,1440,1024,768,390,320]){
         win.setContentSize(width,width<=390?844:950);await delay(250);await inspect();
         if([1440,768,390,320].includes(width))fs.writeFileSync(path.join(output,`portrait-${width}.png`),(await wc.capturePage()).toPNG());
+        await js('document.getElementById("catalogHeroTitle").textContent="这是一个用于检查换行的超长影片名称：特别篇与全新故事的延续（完整版）"');
+        await inspect();
+        assert.ok(await js('(()=>{const h=document.getElementById("catalogHero").getBoundingClientRect(),c=document.querySelector(".catalog-hero-copy").getBoundingClientRect();return c.top>=h.top && c.bottom<=h.bottom})()'),'long title stays within hero');
+        await js('document.getElementById("catalogHeroTitle").textContent="比例测试影片 1"');
     }
     for(const [category,shape] of [['movie','landscape'],['series','square'],['all','portrait']]){
         await js(`document.querySelector('[data-catalog-category=${category}]').click()`);

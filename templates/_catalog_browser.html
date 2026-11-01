@@ -20,17 +20,21 @@
             <div id="catalogHeroBackdrop" class="catalog-hero-backdrop" aria-hidden="true" hidden></div>
             <div class="catalog-hero-image" id="catalogHeroImage" aria-hidden="true" hidden></div>
             <div class="catalog-hero-copy">
-                <span class="catalog-eyebrow"><i aria-hidden="true"></i> 本场放映 <b aria-hidden="true">/</b> <span lang="en">SPOTLIGHT</span></span>
+                <span class="catalog-eyebrow"><i aria-hidden="true"></i> 找一部，和喜欢的人一起看</span>
                 <h1 id="catalogHeroTitle">今天，想看点什么？</h1>
                 <p class="hero-tagline" id="catalogHeroTagline">找一部喜欢的，留个位置给朋友。</p>
                 <p class="hero-facts" id="catalogHeroFacts">电影 · 剧集 · 动漫 · 纪录片</p>
                 <button type="button" class="catalog-primary" id="catalogHeroOpen" hidden><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M3 2.7c0-.6.7-1 1.2-.7l9 5.3c.5.3.5 1.1 0 1.4l-9 5.3c-.5.3-1.2-.1-1.2-.7z"/></svg>查看详情</button>
             </div>
-            <span class="hero-caption" aria-label="片单位置"><span lang="en" aria-hidden="true">PROGRAMME</span> <b id="catalogHeroPosition"></b></span>
+            <div class="hero-browse" role="group" aria-label="浏览推荐影片">
+                <span class="hero-caption" aria-label="片单位置"><b id="catalogHeroPosition" aria-live="polite"></b></span>
+                <button type="button" id="catalogHeroPrevious" aria-label="预览上一部影片" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg></button>
+                <button type="button" id="catalogHeroNext" aria-label="预览下一部影片" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg></button>
+            </div>
         </div>
         <div id="catalogSpotlightGrid" class="catalog-spotlight-grid" aria-label="切换推荐影片预览" hidden></div>
         </div>
-        <header class="catalog-section-title programme-heading"><div><small aria-hidden="true" lang="en">FILM LIBRARY</small><h2 id="recommendationTitle">发现更多好片</h2></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh"><span aria-hidden="true">↻</span> 刷新片单</button></header>
+        <header class="catalog-section-title programme-heading"><div><h2 id="recommendationTitle">发现更多好片</h2></div><button type="button" id="catalogFeedRefresh" class="catalog-refresh"><span aria-hidden="true">↻</span> 刷新片单</button></header>
         <div id="catalogFeedGrid" class="catalog-grid catalog-recommendations" aria-busy="true"></div>
         <div id="catalogFeedSkeleton" class="catalog-grid" aria-hidden="true">{% for i in range(8) %}<div class="catalog-skeleton"></div>{% endfor %}</div>
         <div id="catalogFeedSentinel" class="catalog-feed-more"><button type="button" id="catalogFeedMore">加载更多影片</button></div>

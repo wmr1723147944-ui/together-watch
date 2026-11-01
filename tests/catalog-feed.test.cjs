@@ -13,7 +13,7 @@ function fixture(ids=['ddys','cupfox','yhdmoe']) {
     const elements=new Map();
     for(const id of ['catalogFeedGrid','catalogFeedSkeleton','catalogFeedEmpty','catalogFeedMore','catalogFeedStatus',
         'catalogFeedNotesBody','catalogFeedNotes','catalogHeroTitle','catalogHeroTagline','catalogHeroFacts','catalogHeroImage',
-        'catalogHeroOpen','catalogFeedRefresh','catalogFeedSentinel','discoveryWelcome','discoveryDetail'])elements.set(id,node());
+        'catalogHeroOpen','catalogHeroPrevious','catalogHeroNext','catalogFeedRefresh','catalogFeedSentinel','discoveryWelcome','discoveryDetail'])elements.set(id,node());
     const configs=ids.map(id=>({dataset:{feedSource:id,sourceName:id,categories:id==='yhdmoe'?'all,animation':'all,movie,series,animation,documentary'}}));
     const win={innerHeight:900,handlers:{},timers:[],addEventListener(k,f){this.handlers[k]=f;},setTimeout(f){this.timers.push(f);}};
     const doc={getElementById:id=>elements.get(id),querySelectorAll:()=>configs,createElement:node,defaultView:win,visibilityState:'visible',addEventListener(){}};
@@ -85,6 +85,23 @@ test('preview samples distinct covers across a batch and preserves the selection
     await feed.load(true);
     assert.equal(f.elements.get('catalogHeroTitle').textContent,selected);
     assert.deepEqual(preview.children.map(card=>card.children[0]),choices);
+});
+
+test('manual hero controls wrap, remain preview-only and disable for empty or single-film catalogues',async()=>{
+    const f=fixture(['cupfox']),preview=f.doc.createElement('div');
+    f.elements.set('catalogSpotlightGrid',preview);
+    const previous=f.elements.get('catalogHeroPrevious'),next=f.elements.get('catalogHeroNext');
+    let calls=0,count=3;
+    const feed=createFeed(f.doc,async url=>{calls++;return reply(url,Array.from({length:count},(_,i)=>row('cupfox',i+1)));},f.hooks);
+    await feed.setVisible(true);
+    assert.equal(previous.disabled,false);assert.equal(next.disabled,false);
+    previous.handlers.click();assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片3');
+    next.handlers.click();assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片1');
+    next.handlers.click();assert.equal(f.elements.get('catalogHeroTitle').textContent,'影片2');
+    assert.equal(calls,1);assert.equal(f.hooks.opened,undefined);
+    count=1;await feed.reset();assert.equal(previous.disabled,true);assert.equal(next.disabled,true);
+    count=0;await feed.reset();assert.equal(previous.disabled,true);assert.equal(next.disabled,true);
+    next.handlers.click();assert.equal(f.elements.get('catalogHeroOpen').hidden,true);
 });
 
 test('equal known title/year merges source choices and receives a later valid cover',async()=>{
