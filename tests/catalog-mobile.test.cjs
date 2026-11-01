@@ -51,3 +51,30 @@ test('mobile helper is optional and never blurs desktop search submission',()=>{
     f.nodes.discoveryQuery.focus();f.nodes.discoveryForm.handlers.submit();
     assert.equal(f.doc.activeElement,f.nodes.discoveryQuery);
 });
+
+test('atmosphere follows only healthy loaded hero images and clears stale / desktop copies',()=>{
+    const f=fixture(),attributes={};
+    const copy={hidden:true,setAttribute(k,v){attributes[k]=v;},getAttribute:k=>attributes[k],removeAttribute(k){delete attributes[k];}};
+    const picture={currentSrc:'https://images.example/first.jpg',complete:true,naturalWidth:800};
+    let healthy=true,mobile=true;
+    f.nodes.catalogMobileAtmosphere={querySelector:()=>copy};
+    f.nodes.catalogHeroImage={hidden:false,querySelector:()=>healthy?picture:null,addEventListener(){}};
+    f.doc.defaultView.matchMedia=()=>({matches:mobile});
+    const api=init(f.doc);
+    assert.equal(copy.hidden,false);assert.equal(attributes.src,picture.currentSrc);
+    picture.currentSrc='https://images.example/replacement.jpg';api.syncAtmosphere();
+    assert.equal(attributes.src,picture.currentSrc);
+    healthy=false;api.syncAtmosphere();assert.equal(copy.hidden,true);assert.equal(attributes.src,undefined);
+    healthy=true;picture.naturalWidth=0;api.syncAtmosphere();assert.equal(attributes.src,undefined);
+    picture.naturalWidth=800;picture.currentSrc='javascript:alert(1)';api.syncAtmosphere();assert.equal(attributes.src,undefined);
+    picture.currentSrc='https://images.example/last.jpg';api.syncAtmosphere();assert.equal(copy.hidden,false);
+    mobile=false;api.syncAtmosphere();assert.equal(copy.hidden,true);assert.equal(attributes.src,undefined);
+    mobile=true;f.nodes.catalogHeroImage.hidden=true;api.syncAtmosphere();assert.equal(attributes.src,undefined);
+});
+
+test('sticky masthead is opaque only after scrolling and restores at the top',()=>{
+    const f=fixture();init(f.doc);
+    assert.equal(f.classes.has('catalog-scrolled'),false);
+    f.doc.defaultView.scrollY=140;f.events.scroll();assert.equal(f.classes.has('catalog-scrolled'),true);
+    f.doc.defaultView.scrollY=0;f.events.scroll();assert.equal(f.classes.has('catalog-scrolled'),false);
+});

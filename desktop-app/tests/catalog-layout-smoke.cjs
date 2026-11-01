@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/handset-polish');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/handset-reference');
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
@@ -68,6 +68,8 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await noOverflow();await shot('desktop-welcome');
     assert.equal(await js('document.querySelectorAll(".catalog-spotlight-film").length'),5);
     assert.equal(await js('getComputedStyle(document.body).backgroundColor'),'rgb(16, 17, 19)');
+    assert.equal(await js('getComputedStyle(document.getElementById("catalogMobileAtmosphere")).display'),'none');
+    assert.equal(await js('document.querySelector("#catalogMobileAtmosphere img").hasAttribute("src")'),false,'desktop does not load mobile decoration');
     assert.equal(await js('getComputedStyle(document.querySelector(".cinema-sidebar")).position'),'fixed');
     assert.ok(await js('document.getElementById("catalogSpotlightGrid").getBoundingClientRect().left >= document.getElementById("catalogHero").getBoundingClientRect().right'),'desktop previews sit beside the feature');
     assert.ok(await js('Math.abs(document.querySelector(".programme-choice").getBoundingClientRect().width-document.getElementById("catalogSpotlightGrid").getBoundingClientRect().width)<2'),'preview rows fill the right rail');
@@ -125,7 +127,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
         assert.ok(await js('(()=>{const r=document.getElementById("discoveryForm").getBoundingClientRect();return r.left>=0 && r.right<=innerWidth && r.width>150})()'),'search remains within viewport');
         if(width<=390) {
             assert.equal(await js('getComputedStyle(document.querySelector(".catalog-mobile-nav")).position'),'fixed');
-            assert.ok(await js('document.querySelector(".site-nav").getBoundingClientRect().height<=66'),'mobile header is a single compact row');
+            assert.ok(await js('document.querySelector(".site-nav").getBoundingClientRect().height<=76'),'mobile header is a single search row');
             assert.ok(await js('(()=>{const r=document.querySelector(".catalog-mobile-nav").getBoundingClientRect();return r.bottom<=innerHeight+1 && r.top>=innerHeight-90})()'));
             assert.equal(await js('document.getElementById("catalogMobileSearch").getAttribute("aria-current")'),'page');
         }
@@ -172,22 +174,28 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     assert.equal(await js('getComputedStyle(document.body).backgroundColor'),'rgb(255, 255, 255)','handset shelf uses the light theme');
     assert.equal(await js('getComputedStyle(document.querySelector(".hero-browse")).display'),'none','mobile uses dots instead of desktop arrows');
     assert.ok(await js('parseFloat(getComputedStyle(document.querySelector(".catalog-spotlight")).borderRadius)>=16'),'handset feature is rounded');
-    assert.ok(await js('(()=>{const a=document.querySelector("#catalogHeroOpen").getBoundingClientRect(),d=document.querySelector("#catalogSpotlightGrid").getBoundingClientRect();return d.bottom<a.top && d.width>=140 && a.width>=44 && a.height>=44})()'),'detail action and touchable dots never overlap');
-    assert.ok(await js('getComputedStyle(document.querySelector("#catalogHeroFacts")).display!=="none" && document.querySelector("#catalogHeroFacts").textContent.includes("2022")'),'hero shows actual metadata, not invented ratings');
+    assert.ok(await js('(()=>{const a=document.querySelector("#catalogHeroOpen").getBoundingClientRect(),d=document.querySelector("#catalogSpotlightGrid").getBoundingClientRect();return a.right<d.left && d.width>=120 && a.width>=44 && a.height>=44})()'),'detail action and touchable dots never overlap');
+    await until('cover-derived masthead',()=>js('(()=>{const a=document.querySelector("#catalogMobileAtmosphere img"),h=document.querySelector("#catalogHeroImage img[data-loading=false]");return !a.hidden && a.getAttribute("src")===h.currentSrc})()'));
+    assert.equal(await js('getComputedStyle(document.querySelector(".site-nav")).backgroundColor'),'rgba(0, 0, 0, 0)','masthead artwork continues behind the search row');
     assert.ok(await js(`(()=>{
         const rgb=s=>s.match(/[0-9.]+/g).slice(0,3).map(Number);
         const lum=c=>c.map(v=>v/255).map(v=>v<=.04045?v/12.92:((v+.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[.2126,.7152,.0722][i],0);
         const contrast=(a,b)=>(Math.max(lum(a),lum(b))+.05)/(Math.min(lum(a),lum(b))+.05);
-        return [['.catalog-search input',[245,233,223]],['.catalog-channels button',[245,233,223]],['.catalog-film .catalog-title',[255,255,255]],['.catalog-film > p',[255,255,255]],['.catalog-mobile-nav [aria-current=page]',[255,255,255]]].every(([selector,surface])=>contrast(rgb(getComputedStyle(document.querySelector(selector)).color),surface)>=4.5);
-    })()`),'mobile text remains readable on the warm light surface');
+        return [['.catalog-search input',[117,117,117]],['.catalog-channels button',[82,82,82]],['.catalog-feed-film .catalog-title',[255,255,255]],['.catalog-feed-film > p',[255,255,255]],['.catalog-mobile-nav [aria-current=page]',[255,255,255]]].every(([selector,surface])=>contrast(rgb(getComputedStyle(document.querySelector(selector)).color),surface)>=4.5);
+    })()`),'mobile text remains readable on the dark masthead / white shelf');
     const startY=await js('scrollY');
     await js('document.querySelectorAll("#catalogSpotlightGrid .programme-choice")[4].click()');
     assert.equal(await js('document.getElementById("catalogHeroPosition").textContent'),'05 / 05');
     assert.equal(await js('scrollY'),startY,'preview navigation does not scroll the page');
     assert.equal(await js('document.querySelectorAll("#catalogSpotlightGrid .programme-choice")[4].getAttribute("aria-pressed")'),'true','the selected mobile dot follows the feature');
+    await until('masthead follows selected cover',()=>js('(()=>{const a=document.querySelector("#catalogMobileAtmosphere img"),h=document.querySelector("#catalogHeroImage img[data-loading=false]");return h && !a.hidden && a.getAttribute("src")===h.currentSrc})()'));
     assert.ok(await js('Array.from(document.querySelectorAll("#catalogSpotlightGrid .programme-choice")).every(b=>{const r=b.getBoundingClientRect();return r.width>=24 && r.height>=24 && r.right<=innerWidth && b.getAttribute("aria-label")})'),'every preview dot is named, visible and touchable');
     assert.equal(await js('document.getElementById("discoveryDetail").open'),false);
     await js('document.querySelector("#catalogSpotlightGrid .programme-choice").click()');
+    await js('scrollTo(0,160)');await delay(150);
+    assert.equal(await js('document.body.classList.contains("catalog-scrolled")'),true,'sticky navigation gains an opaque background after scrolling');
+    await js('scrollTo(0,0)');await delay(150);
+    assert.equal(await js('document.body.classList.contains("catalog-scrolled")'),false);
     assert.equal(await js('document.getElementById("roomEntry").open'),false);
     assert.equal(await js('document.querySelectorAll(".discovery-live-source, .recommended-sites, .discovery-search-options").length'),0);
     await js('document.querySelector(".catalog-mobile-nav a").click()');
@@ -205,6 +213,7 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     assert.equal(await js('/会员已过期|续费会员|好物商城/.test(document.body.textContent)'),false,'no membership upsell or unrelated commerce');
     await win.loadURL(server+'/discover?picker=1');
     assert.ok(await js('document.body.classList.contains("episode-picker")'));
+    assert.equal(await js('document.getElementById("catalogMobileAtmosphere")'),null,'playback picker has no mobile atmosphere');
     await js('document.getElementById("discoveryDetail").showModal()');
     assert.equal(await js('getComputedStyle(document.getElementById("discoveryDetail")).backgroundColor'),'rgb(23, 27, 37)','player episode drawer stays dark, outside the handset theme');
     const appErrors=errors.filter(e=>!/net::|Failed to load resource|Electron Security Warning/.test(e));

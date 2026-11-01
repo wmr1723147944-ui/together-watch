@@ -14,7 +14,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser-light.css', v='20261028-spotlight-ratio') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-mobile.css', v='20261028-spotlight-ratio') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-theater.css', v='20261101-full-stage') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-handset.css', v='20261101-handset-polish') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-handset.css', v='20261101-cover-masthead') }}">
     {% if request.args.get('picker') == '1' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/episode-picker.css', v='20261028') }}">{% endif %}
 </head>
 <body class="media-app catalog-cinema{{ ' episode-picker' if request.args.get('picker') == '1' else '' }}">
@@ -32,6 +32,6 @@
     <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261030-episode-retry') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261101-clear-cover') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261031-theater') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-mobile.js', v='20261024-mobile-app') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-mobile.js', v='20261101-cover-masthead') }}" defer></script>
 </body>
 </html>

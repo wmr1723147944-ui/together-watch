@@ -4,7 +4,7 @@ const {app,BrowserWindow}=require('electron');
 const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict'),{setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/handset-polish/ratio');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/handset-reference/ratio');
 let backend,win,log='';
 async function until(name,fn){const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await delay(100);}throw Error('Timeout: '+name);}
 async function run(){
@@ -68,13 +68,14 @@ m.app.run(host='127.0.0.1',port=${port},use_reloader=False)
         assert.ok(result.copy.x>=result.hero.x && result.copy.right<=result.hero.right,'copy stays inside hero');
         if(result.width>680)assert.ok(result.primary.bottom<=result.browse.y,'long titles never push the action behind preview controls');
         else {
-            assert.ok(result.dots.bottom<result.primary.y,'mobile dots sit above the detail action: '+JSON.stringify({action:result.primary,dots:result.dots}));
+            assert.ok(result.primary.right<result.dots.x,'mobile detail action and dots stay apart: '+JSON.stringify({action:result.primary,dots:result.dots}));
             assert.ok(result.primary.width>=44 && result.primary.height>=44,'mobile detail action is touchable');
             assert.ok(Math.abs(result.primary.y+result.primary.height/2-result.icon.y-result.icon.height/2)<1,'mobile action icon stays vertically centered with its accessible text');
             assert.ok(result.primary.right<=result.stage.right && result.primary.bottom<=result.stage.bottom,'mobile detail action stays inside the image');
-            assert.ok(result.title.right<result.primary.x && result.title.y>result.dots.bottom,'long mobile titles never overlap the action or preview dots');
+            assert.ok(result.title.bottom<result.primary.y,'long mobile titles stay above the action and preview dots');
+            assert.ok(Math.abs(result.stage.width/result.stage.height-16/9)<.02,'handset feature follows the reference 16:9 proportions: '+JSON.stringify(result.stage));
         }
-        for(const card of result.cards)assert.ok(Math.abs(card.rect.width/card.rect.height-(result.width>680?card.ratio:1.6))<.015,'desktop poster ratio / mobile landscape shelf');
+        for(const card of result.cards)assert.ok(Math.abs(card.rect.width/card.rect.height-(result.width>680?card.ratio:16/9))<.015,'desktop poster ratio / mobile landscape shelf');
         console.log('PASS layout',result.width,result.shape);
     }
     for(const width of [1920,1440,1024,768,390,320]){
