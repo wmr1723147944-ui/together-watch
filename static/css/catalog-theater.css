@@ -16,44 +16,43 @@
 .cinema-sidebar :is(button,a):hover{background:#ffffff07;color:white}.cinema-sidebar button[aria-pressed=true]{color:var(--cinema-accent);background:linear-gradient(90deg,#ffa78616,transparent);font-weight:600}
 .cinema-sidebar svg{width:19px;height:19px;flex-shrink:0;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
 .cinema-sidebar-note{border-top:1px solid #ffffff0b;margin:26px 12px 0;padding-top:22px;font-size:12px;color:#babfc8;line-height:1.8}.cinema-sidebar-note small{display:block;color:#777e89;font-size:10px}
-/* One clear cover fades into the page. No enlarged, blurred duplicate and no
-   opaque poster panel. Portrait artwork keeps its own ratio behind the copy. */
+/* Full-stage artwork spans the title, open space and preview rail. The source
+   is cropped proportionally here only; shelf/detail posters remain complete. */
 .catalog-cinema .catalog-channel-bar { display:none }
 .catalog-cinema .catalog-spotlight {
     --stage:460px; --ink:#f8f6f1;
+    position:relative; isolation:isolate;
     display:grid; grid-template-columns:minmax(0,1fr) 228px; gap:30px;
     align-items:stretch; margin:0 0 28px;
 }
 .catalog-cinema .catalog-spotlight:has(.catalog-spotlight-grid[hidden]) { grid-template-columns:1fr }
-.catalog-cinema .catalog-hero,
-.catalog-cinema .catalog-hero:has(.catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square])) {
-    display:block; min-height:var(--stage); padding:0; border-radius:0; background:transparent;
+.catalog-cinema .catalog-hero {
+    display:block; isolation:auto; min-height:var(--stage); padding:0; border-radius:0; background:transparent;
 }
 .catalog-cinema .catalog-hero-image,
 .catalog-cinema .catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square]) {
-    position:absolute; inset:0 0 auto auto; width:82%; height:100%; z-index:-2;
+    position:absolute; inset:0; grid-area:auto; width:100%; height:100%; aspect-ratio:auto; z-index:-2;
     border-radius:0; box-shadow:none; opacity:.9; pointer-events:none;
-    -webkit-mask-image:linear-gradient(90deg,transparent,#000 28%,#000 85%,transparent),linear-gradient(180deg,transparent,#000 12%,#000 66%,transparent);
-    mask-image:linear-gradient(90deg,transparent,#000 28%,#000 85%,transparent),linear-gradient(180deg,transparent,#000 12%,#000 66%,transparent);
+    -webkit-mask-image:linear-gradient(90deg,#000b,#000 12%,#000 85%,#000b),linear-gradient(180deg,transparent,#000 12%,#000 66%,transparent);
+    mask-image:linear-gradient(90deg,#000b,#000 12%,#000 85%,#000b),linear-gradient(180deg,transparent,#000 12%,#000 66%,transparent);
     -webkit-mask-composite:source-in; mask-composite:intersect;
 }
-.catalog-cinema .catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square]) {
-    width:min(72%,calc(var(--stage) * var(--poster-ratio))); height:auto; aspect-ratio:var(--poster-ratio);
+.catalog-cinema .catalog-spotlight > .catalog-hero-image img {
+    object-fit:cover; object-position:center 35%;
 }
 .catalog-cinema .catalog-hero-image :is(.discovery-poster-fallback,.discovery-poster-credit) { display:none }
-.catalog-cinema .catalog-hero::after,
-.catalog-cinema .catalog-hero:has(.catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square]))::after {
-    background:linear-gradient(90deg,#101113 4%,#101113e6 28%,#10111365 52%,transparent 76%),linear-gradient(0deg,#101113,transparent 38%);
-    pointer-events:none;
+.catalog-cinema .catalog-hero::after { content:none }
+.catalog-cinema .catalog-spotlight::before {
+    content:''; position:absolute; inset:0; z-index:-1; pointer-events:none;
+    background:linear-gradient(90deg,#101113b8,#10111399 38%,#10111326 68%,#101113b3),linear-gradient(0deg,#101113,transparent 42%);
 }
-.catalog-cinema .catalog-hero-copy,
-.catalog-cinema .catalog-hero:has(.catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square])) .catalog-hero-copy {
+.catalog-cinema .catalog-hero-copy {
     position:relative; min-height:var(--stage); height:auto; max-width:62%; padding:44px 18px 86px;
     justify-content:center; min-width:0;
 }
 .catalog-cinema .catalog-hero .catalog-eyebrow {
     position:static; display:flex; align-items:center; gap:8px; margin:0;
-    font-size:11px; letter-spacing:.08em; color:#b6bebf; padding:0; border:0; background:none;
+    font-size:11px; letter-spacing:.08em; color:#d5dbdc; padding:0; border:0; background:none;
 }
 .catalog-eyebrow i { width:6px; height:6px; flex-shrink:0; border-radius:50%; background:#ffae88; box-shadow:0 0 12px #ffae8840 }
 .catalog-cinema .catalog-hero h1,.catalog-cinema .catalog-hero:has(.catalog-hero-image) h1 {
@@ -174,19 +173,17 @@
  .catalog-cinema .home-layout,.catalog-cinema .discovery-page{padding:0 max(16px,env(safe-area-inset-right)) calc(86px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}.catalog-cinema .catalog-channel-bar{top:64px;height:50px;padding:0}.catalog-cinema .catalog-channels{gap:3px}.catalog-cinema .catalog-channels button{padding:0 8px;font-size:14px;background:none!important}
  .catalog-cinema .catalog-spotlight { --stage:308px; display:block; margin:8px 0 24px }
  .catalog-cinema .catalog-spotlight .catalog-hero { min-height:var(--stage); height:auto; border-radius:0 }
- .catalog-cinema .catalog-hero-copy,
- .catalog-cinema .catalog-hero:has(.catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square])) .catalog-hero-copy { padding:24px 4px 72px; max-width:64% }
+ .catalog-cinema .catalog-hero-copy { padding:24px 4px 72px; max-width:64% }
  .catalog-cinema .catalog-hero-image { opacity:.8 }
- /* On small screens the title can meet the cover: protect its contrast even
-    with white artwork, without dimming the uncovered right-hand image. */
- .catalog-cinema .catalog-hero::after,
- .catalog-cinema .catalog-hero:has(.catalog-hero-image:is([data-poster-shape=portrait],[data-poster-shape=square]))::after {
-     background:linear-gradient(90deg,#101113 4%,#101113eb 28%,#101113d9 50%,#101113a6 64%,#10111326 80%,transparent),linear-gradient(0deg,#101113,transparent 38%);
+ /* The cover stays visible under the entire title area, with a translucent
+    scrim for light artwork and a bottom fade behind the mobile preview strip. */
+ .catalog-cinema .catalog-spotlight::before {
+     background:linear-gradient(90deg,#101113b8,#101113b3 54%,#10111399 64%,#10111333),linear-gradient(0deg,#101113,transparent 55%);
  }
  .catalog-cinema .catalog-hero h1,.catalog-cinema .catalog-hero:has(.catalog-hero-image) h1 {
      font-size:clamp(23px,6.2vw,33px); letter-spacing:-.02em; margin:14px 0 9px; -webkit-line-clamp:3;
  }
- .catalog-cinema .catalog-hero .catalog-eyebrow { font-size:10px; letter-spacing:0; gap:6px; max-width:130px; line-height:1.6 }
+ .catalog-cinema .catalog-hero .catalog-eyebrow { font-size:10px; letter-spacing:0; gap:6px; max-width:100%; line-height:1.6 }
  .catalog-cinema .catalog-hero .hero-facts { max-width:100%; font-size:11px }
  .catalog-cinema .catalog-hero .hero-tagline { display:none }
  .catalog-cinema .catalog-hero .catalog-primary { margin-top:18px; min-height:40px; font-size:12px!important; padding:8px 15px }

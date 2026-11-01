@@ -96,7 +96,7 @@ class MediaLayoutTests(unittest.TestCase):
             self.assertIn('id="catalogSpotlightGrid"', html)
             self.assertEqual(html.count('id="catalogHeroImage"'), 1)
             self.assertNotIn('id="catalogHeroBackdrop"', html)
-            self.assertIn('20261101-clear-cover', html)
+            self.assertIn('20261101-full-stage', html)
             self.assertIn('aria-label="筛选推荐片单"', html)
             self.assertNotIn('data-live-source="fcma"', html)
             self.assertNotIn('data-live-source="ddys"', html)

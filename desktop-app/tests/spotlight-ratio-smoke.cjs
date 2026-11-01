@@ -4,7 +4,7 @@ const {app,BrowserWindow}=require('electron');
 const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict'),{setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/clear-cover-ratio');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/full-stage-ratio');
 let backend,win,log='';
 async function until(name,fn){const end=Date.now()+15000;while(Date.now()<end){if(await fn())return;await delay(100);}throw Error('Timeout: '+name);}
 async function run(){
@@ -43,19 +43,17 @@ m.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     await until('spotlight shapes',()=>js('document.querySelectorAll("#catalogSpotlightGrid [data-poster-shape]").length===5 && document.getElementById("catalogHeroImage").dataset.posterShape==="portrait"'));
     async function inspect(){
         const result=await js(`(()=>{
-            const art=document.getElementById('catalogHeroImage'),image=art.querySelector('img:not([data-loading="true"])'),hero=document.getElementById('catalogHero'),copy=hero.querySelector('.catalog-hero-copy');
+            const art=document.getElementById('catalogHeroImage'),image=art.querySelector('img:not([data-loading="true"])'),hero=document.getElementById('catalogHero'),copy=hero.querySelector('.catalog-hero-copy'),stage=hero.closest('.catalog-spotlight');
             const rect=el=>{const r=el.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom,width:r.width,height:r.height};};
             const style=getComputedStyle(art);
-            return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth+1,shape:art.dataset.posterShape,art:rect(art),hero:rect(hero),copy:rect(copy),ratio:image.naturalWidth/image.naturalHeight,
+            return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth+1,shape:art.dataset.posterShape,art:rect(art),hero:rect(hero),copy:rect(copy),stage:rect(stage),imageFit:getComputedStyle(image).objectFit,
                 mask:style.maskImage,composite:style.maskComposite,opacity:+style.opacity,shadow:style.boxShadow,blur:style.filter,heroBackground:getComputedStyle(hero).backgroundColor,
                 primary:rect(document.getElementById('catalogHeroOpen')),browse:rect(hero.querySelector('.hero-browse')),
                 cards:Array.from(document.querySelectorAll('#catalogFeedGrid .catalog-film-poster')).map(el=>({rect:rect(el),ratio:+el.style.getPropertyValue('--poster-ratio')||2/3}))};
         })()`);
         assert.equal(result.overflow,false,'no horizontal overflow');
-        if(result.shape!=='landscape'){
-            assert.ok(Math.abs(result.art.width/result.art.height-result.ratio)<.015,'hero poster frame matches artwork');
-            assert.ok(result.art.bottom<=result.hero.bottom+1,'poster stays inside hero');
-        }
+        for(const edge of ['x','y','width','height'])assert.ok(Math.abs(result.art[edge]-result.stage[edge])<1,'cover spans the full stage, not only the right: '+edge);
+        assert.equal(result.imageFit,'cover','banner crops proportionally instead of stretching or containing a portrait on the right');
         assert.match(result.mask,/linear-gradient/,'cover fades into page rather than a solid framed panel');
         assert.match(result.composite,/intersect/,'horizontal and vertical edge fades intersect');
         assert.ok(result.opacity>.65 && result.opacity<1,'cover is translucent but remains legible');

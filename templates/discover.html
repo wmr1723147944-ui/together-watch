@@ -13,7 +13,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser-light.css', v='20261028-spotlight-ratio') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-mobile.css', v='20261028-spotlight-ratio') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-theater.css', v='20261101-clear-cover') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-theater.css', v='20261101-full-stage') }}">
     {% if request.args.get('picker') == '1' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/episode-picker.css', v='20261028') }}">{% endif %}
 </head>
 <body class="media-app catalog-cinema{{ ' episode-picker' if request.args.get('picker') == '1' else '' }}">

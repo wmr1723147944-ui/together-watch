@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/clear-cover');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/full-stage');
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
