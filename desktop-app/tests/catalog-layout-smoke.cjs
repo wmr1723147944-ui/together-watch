@@ -5,7 +5,7 @@ const {spawn}=require('node:child_process');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http');
 const assert=require('node:assert/strict');
 const {setTimeout:delay}=require('node:timers/promises');
-const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/cinema-polish');
+const root=path.resolve(__dirname,'../..'),output=path.join(root,'.review-artifacts/clear-cover');
 let backend,win,log='';
 async function until(name,fn,ms=18000){const end=Date.now()+ms;while(Date.now()<end){if(await fn())return;await delay(150);}throw Error('Timeout: '+name);}
 async function run(){
@@ -71,6 +71,8 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     assert.equal(await js('getComputedStyle(document.querySelector(".cinema-sidebar")).position'),'fixed');
     assert.ok(await js('document.getElementById("catalogSpotlightGrid").getBoundingClientRect().left >= document.getElementById("catalogHero").getBoundingClientRect().right'),'desktop previews sit beside the feature');
     assert.ok(await js('Math.abs(document.querySelector(".programme-choice").getBoundingClientRect().width-document.getElementById("catalogSpotlightGrid").getBoundingClientRect().width)<2'),'preview rows fill the right rail');
+    assert.equal(await js('document.querySelectorAll("#catalogHeroBackdrop").length'),0,'no duplicate blurred artwork');
+    assert.match(await js('getComputedStyle(document.getElementById("catalogHeroImage")).maskImage'),/linear-gradient/,'hero artwork has graduated transparency');
     await js('document.getElementById("catalogHeroNext").click()');
     assert.equal(await js('document.getElementById("catalogHeroPosition").textContent'),'02 / 05');
     await js('document.getElementById("catalogHeroPrevious").click()');

@@ -133,8 +133,6 @@
             $('catalogHeroFacts').textContent = [group.year,row.genre].filter(Boolean).join('  /  ');
             const art = $('catalogHeroImage'); art.hidden = false;art.replaceChildren();
             addPoster(doc,art,group.poster,group.choices[0].row.page_url,group.title,group);
-            const backdrop=$('catalogHeroBackdrop');
-            if(backdrop){backdrop.hidden=false;backdrop.replaceChildren();addPoster(doc,backdrop,group.poster,group.choices[0].row.page_url,group.title,group);}
             $('catalogHeroOpen').hidden = false;
         }
         function cardFacts(group) {
@@ -244,7 +242,6 @@
             cancel(); category = nextCategory; started = true; autoPaused = false; emptyBatches = 0; total = 0; trimMessage = '';
             entries.clear(); seen.clear(); grid.replaceChildren(); featured = null; programme = []; previewPicked = false;
             $('catalogHeroImage').hidden = true; $('catalogHeroOpen').hidden = true;
-            if($('catalogHeroBackdrop'))$('catalogHeroBackdrop').hidden=true;
             $('catalogHeroTitle').textContent = '今天，想看点什么？';
             $('catalogHeroTagline').textContent = '找一部喜欢的，留个位置给朋友。';
             $('catalogHeroFacts').textContent = '电影 · 剧集 · 动漫 · 纪录片';
