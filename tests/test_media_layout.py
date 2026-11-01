@@ -97,12 +97,15 @@ class MediaLayoutTests(unittest.TestCase):
             self.assertEqual(html.count('id="catalogHeroImage"'), 1)
             self.assertNotIn('id="catalogHeroBackdrop"', html)
             self.assertIn('20261101-full-stage', html)
+            self.assertIn('catalog-handset.css', html)
+            self.assertLess(html.index('catalog-theater.css'), html.index('catalog-handset.css'))
             self.assertIn('aria-label="筛选推荐片单"', html)
             self.assertNotIn('data-live-source="fcma"', html)
             self.assertNotIn('data-live-source="ddys"', html)
         room = self.client.get('/room/layout-light-isolation').text
         self.assertNotIn('catalog-browser-light.css', room)
         self.assertNotIn('catalog-theater.css', room)
+        self.assertNotIn('catalog-handset.css', room)
 
     def test_mobile_catalog_has_three_working_entries_not_fake_social_tabs(self):
         for path in ('/', '/discover'):

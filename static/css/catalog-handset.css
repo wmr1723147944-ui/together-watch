@@ -1,0 +1,136 @@
+/* Handset catalogue: a warm header, rounded feature and a clean white shelf.
+   Deliberately separate from the Windows theatre and the player episode drawer. */
+@media (max-width:680px) {
+    .catalog-cinema:not(.episode-picker) {
+        --cinema-bg:#fff; --cinema-text:#242629; --cinema-muted:#69717a; --cinema-accent:#a34f32;
+        --mobile-accent:#a34f32; color-scheme:light; color:#242629;
+        background:#fff linear-gradient(180deg,#57473d 0,#96867b 150px,#e7e0da 290px,#fff 420px) no-repeat;
+        background-size:100% 420px;
+    }
+    .catalog-cinema:not(.episode-picker):has(#discoveryLive:not([hidden])) { background-image:none }
+    .catalog-cinema:not(.episode-picker) .catalog-browser {
+        --d-bg:#fff; --d-soft:#f5f6f7; --d-border:#e5e7eb; --d-muted:#69717a; --d-text:#242629; --d-accent:#a34f32;
+    }
+    .catalog-cinema:not(.episode-picker) .site-nav-catalog {
+        background:#57473de8; border:0; backdrop-filter:blur(18px); gap:10px;
+    }
+    .catalog-cinema:not(.episode-picker) .site-nav .catalog-search {
+        background:#ffffff26; border:1px solid #ffffff22; height:42px; padding-left:17px;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-search:focus-within { background:#ffffff36; border-color:#ffffff80 }
+    .catalog-cinema:not(.episode-picker) .catalog-search input { color:#fff; caret-color:#fff }
+    .catalog-cinema:not(.episode-picker) .catalog-search input::placeholder { color:#f0ece8 }
+    .catalog-cinema:not(.episode-picker) .catalog-search button { color:#fff }
+    .catalog-cinema:not(.episode-picker) .catalog-channel-bar {
+        background:#796a5fed; border:0; height:52px; margin-inline:-16px; padding-inline:16px;
+        backdrop-filter:blur(14px);
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-channels { gap:3px }
+    .catalog-cinema:not(.episode-picker) .catalog-channels button { color:#f3eeea; font-size:15px; padding-inline:8px }
+    .catalog-cinema:not(.episode-picker) .catalog-channels button[aria-pressed=true] { color:#fff; font-size:18px; font-weight:700 }
+    .catalog-cinema:not(.episode-picker) .catalog-channels button[aria-pressed=true]::after { background:#fff; width:14px; left:calc(50% - 7px); height:2px }
+
+    /* The image belongs to the rounded feature only on handsets. Five existing
+       preview buttons become dots; they retain names, focus and selected state. */
+    .catalog-cinema:not(.episode-picker) .catalog-spotlight {
+        --stage:clamp(210px,56.25vw,320px); min-height:var(--stage); margin:12px 0 25px;
+        border-radius:18px; overflow:hidden; background:#443d38;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-spotlight > .catalog-hero-image {
+        mask-image:none; -webkit-mask-image:none; opacity:1;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-spotlight > .catalog-hero-image img { object-position:center 32% }
+    .catalog-cinema:not(.episode-picker) .catalog-spotlight::before {
+        background:linear-gradient(0deg,#0a0a0bd9, #0a0a0b8c 35%,#0a0a0b12 75%);
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-hero-copy {
+        min-height:var(--stage); max-width:100%; padding:24px 16px 66px; justify-content:flex-end;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-hero h1 {
+        margin:0; padding:0; font-size:clamp(21px,5.8vw,29px); font-weight:650; line-height:1.35;
+        -webkit-line-clamp:2; color:#fff; text-shadow:0 1px 8px #0006;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-hero :is(.catalog-eyebrow,.hero-tagline,.hero-facts,.hero-browse) { display:none }
+    .catalog-cinema:not(.episode-picker) .catalog-hero .catalog-primary {
+        position:absolute; left:16px; right:auto; bottom:14px; width:max-content; margin:0; min-height:36px; padding:7px 13px;
+        border:1px solid #ffffff40; background:#ffffff1c; color:#fff; font-size:12px!important;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-hero .catalog-primary svg { color:#fff }
+    .catalog-cinema:not(.episode-picker) .catalog-spotlight-grid {
+        position:absolute; right:9px; bottom:14px; display:flex; flex-direction:row;
+        width:auto; height:36px; margin:0; padding:0; gap:0; overflow:visible;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-spotlight-film { flex:0 0 28px; width:28px; min-width:0 }
+    .catalog-cinema:not(.episode-picker) .programme-choice {
+        display:grid; grid-template:1fr / 1fr; place-items:center; width:28px; height:36px; min-height:36px; padding:0;
+        border:0; border-radius:6px; background:transparent;
+    }
+    .catalog-cinema:not(.episode-picker) .programme-choice > * { display:none }
+    .catalog-cinema:not(.episode-picker) .programme-choice::before {
+        content:''; width:6px; height:6px; border-radius:5px; background:#ffffff80;
+    }
+    .catalog-cinema:not(.episode-picker) .programme-choice[aria-pressed=true]::before { width:15px; background:#fff }
+    .catalog-cinema:not(.episode-picker) .programme-choice::after { content:none }
+    .catalog-cinema:not(.episode-picker) .programme-choice:focus-visible { outline:2px solid white; outline-offset:-2px }
+
+    .catalog-cinema:not(.episode-picker) .programme-heading { margin:23px 0 16px }
+    .catalog-cinema:not(.episode-picker) #discoveryLive { margin-top:12px }
+    .catalog-cinema:not(.episode-picker) .catalog-results .catalog-section-title { margin-top:12px }
+    .catalog-cinema:not(.episode-picker) .catalog-section-title h2 { color:#242629; font-size:20px }
+    .catalog-cinema:not(.episode-picker) .catalog-refresh { color:#656b73 }
+    .catalog-cinema:not(.episode-picker) .catalog-grid { gap:22px 12px }
+    .catalog-cinema:not(.episode-picker) .catalog-grid .catalog-film-poster,
+    .catalog-cinema:not(.episode-picker) .catalog-grid .catalog-film-poster[data-poster-shape] {
+        aspect-ratio:16/10; height:auto; border:0; border-radius:12px; margin-bottom:9px; background:#f1f2f4;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-grid .catalog-film-poster img { object-fit:cover; object-position:center 28% }
+    .catalog-cinema:not(.episode-picker) .catalog-film .catalog-title { color:#242629; font-size:15px; line-height:1.45; padding:0; min-height:22px }
+    .catalog-cinema:not(.episode-picker) .catalog-film > p { color:#72777e; font-size:11px; padding:0; margin-top:5px }
+    .catalog-cinema:not(.episode-picker) .discovery-poster-fallback { background:linear-gradient(135deg,#eee9e4,#f5f6f8); color:#68717b }
+    .catalog-cinema:not(.episode-picker) .discovery-poster-fallback strong { font-size:13px }
+    .catalog-cinema:not(.episode-picker) .discovery-poster-fallback small { color:#747b83; font-size:10px }
+    .catalog-cinema:not(.episode-picker) .catalog-skeleton { aspect-ratio:16/10; background:linear-gradient(110deg,#f1f2f4,#e9ebee,#f1f2f4) }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-search-notes,.home-footer) { border-color:#e8e9ec }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-search-notes summary,.catalog-back,.catalog-query-note,.home-footer,.home-footer a) { color:#68717b }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-query-note button,.catalog-feed-more button) { color:#8b4229; border-color:#e8d7cd; background:#faf5f1 }
+    .catalog-cinema:not(.episode-picker) .catalog-query-note a { color:#8b4229 }
+    .catalog-cinema:not(.episode-picker) .catalog-empty { background:#f7f8f9; color:#68717b; border-color:#e2e5e9 }
+    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav { background:#fffffff5; border-color:#eceef0; backdrop-filter:blur(16px) }
+    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav :is(button,a) { color:#72777e }
+    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav [aria-current=page] { color:#232629 }
+    .catalog-cinema:not(.episode-picker) .catalog-mobile-nav [aria-current=page] svg { fill:#2426290d; stroke-width:2 }
+
+    /* Keep all first-party sheets coherent with the light shelf. The dedicated
+       player picker is explicitly excluded, including in landscape playback. */
+    .catalog-cinema:not(.episode-picker) :is(.catalog-detail,.room-entry-dialog,.history-dialog,.account-dialog) {
+        background:#fff; color:#242629; border-color:#e7e9ec; box-shadow:0 18px 60px #17202b22;
+    }
+    .catalog-cinema:not(.episode-picker) dialog::backdrop { background:#171b2580; backdrop-filter:blur(5px) }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-detail,.room-entry-dialog,.history-dialog,.account-dialog) :is(h1,h2,h3,label) { color:#242629 }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-detail,.room-entry-dialog,.history-dialog,.account-dialog) :is(p,small,summary),
+    .catalog-cinema:not(.episode-picker) #catalogDetailFacts { color:#68717b }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-detail,.room-entry-dialog,.history-dialog,.account-dialog) :is(input:not([type=checkbox]),select) {
+        background:#f7f8fa; border-color:#dfe3e8; color:#242629;
+    }
+    .catalog-cinema:not(.episode-picker) :is(.catalog-detail,.room-entry-dialog,.history-dialog,.account-dialog) button,
+    .catalog-cinema:not(.episode-picker) .catalog-detail :is(.discovery-episode,#discoveryDetailClose,#discoveryEpisodeMore) {
+        background:#f5f6f8; border-color:#dfe3e8; color:#424b57;
+    }
+    .catalog-cinema:not(.episode-picker) .catalog-source-choices { border-color:#e7e9ec }
+    .catalog-cinema:not(.episode-picker) .catalog-source-choices button[aria-pressed=true],
+    .catalog-cinema:not(.episode-picker) .catalog-detail .discovery-episode[aria-current=true] { background:#faf1eb; border-color:#d9ac94; color:#8b4229 }
+    .catalog-cinema:not(.episode-picker) .catalog-detail::before { background:#dfe3e8 }
+    .catalog-cinema:not(.episode-picker) :is(.account-dialog a,#discoveryDetailOriginal) { color:#944727 }
+    .catalog-cinema:not(.episode-picker) :is(.account-import,.account-avatar) { background:#f7f4f1; color:#8b4229 }
+    .catalog-cinema:not(.episode-picker) .account-dialog details { border-color:#e6e9ed }
+    .catalog-cinema:not(.episode-picker) .account-dialog .account-primary,
+    .catalog-cinema:not(.episode-picker) .room-entry-dialog #joinRoomBtn { background:#a34f32; color:#fff; border-color:#a34f32 }
+    .catalog-cinema:not(.episode-picker) #accountMessage { color:#a13b4d }
+    .catalog-cinema:not(.episode-picker) .account-dialog .account-text-button,
+    .catalog-cinema:not(.episode-picker) .catalog-detail #catalogFindOtherSources { border:0; background:none; color:#944727 }
+    .catalog-cinema:not(.episode-picker) .account-dialog .account-danger { color:#a13b4d; background:#fff3f5; border-color:#eccbd1 }
+    .catalog-cinema:not(.episode-picker) .history-heading h2 { color:#242629 }
+    .catalog-cinema:not(.episode-picker) :is(.history-heading button,.history-card>button) { background:#f5f6f8; border-color:#dfe3e8; color:#424b57 }
+    .catalog-cinema:not(.episode-picker) .history-card small { color:#68717b }
+    .catalog-cinema:not(.episode-picker) .history-cover { background:#f0f2f4 }
+}
