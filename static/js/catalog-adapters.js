@@ -12,7 +12,7 @@
     function safePosterUrl(value, base) {
         if (typeof value!=='string' || !value || value.length>2048 || /[\s\\\x00-\x1f\x7f]/.test(value)) return null;
         try {
-            const u=new URL(value,base);
+            const u=new URL(value,base || undefined);
             if(u.protocol!=='https:' || u.username || u.password || u.port || u.hash) return null;
             // Only the observed public cover format, never a general image proxy.
             if(u.hostname==='gimg0.baidu.com') return !u.search && /^\/gimg\/app=2001&n=0&g=0n&fmt=webp&src=img\.baipiaozhe\.com\/assets\/images\/[a-f0-9]{2}\/[a-f0-9]{64}\.webp$/.test(u.pathname) ? u.href : null;

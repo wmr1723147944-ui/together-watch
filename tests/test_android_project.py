@@ -184,8 +184,13 @@ class AndroidProjectTests(unittest.TestCase):
         layout = ET.fromstring((ANDROID / 'app/src/main/res/layout/activity_main.xml').read_text(encoding='utf-8'))
         attr = '{http://schemas.android.com/apk/res/android}'
         panel = next(el for el in layout.iter('ScrollView') if el.get(attr+'id') == '@+id/setupPanel')
-        self.assertEqual(panel.get(attr+'layout_height'), 'wrap_content')
+        self.assertEqual(panel.get(attr+'layout_height'), 'match_parent')
+        self.assertEqual(panel.get(attr+'fillViewport'), 'true')
         self.assertEqual(panel.get(attr+'layout_gravity'), 'center')
+        fields = [el.get(attr+'id') for el in panel.iter('EditText')]
+        self.assertLess(fields.index('@+id/roomInput'), fields.index('@+id/nicknameInput'))
+        primary = next(el for el in panel.iter('Button') if el.get(attr+'id') == '@+id/openVideoButton')
+        self.assertEqual(primary.get(attr+'background'), '@drawable/entry_primary')
         selection = activity.split('private void chooseSelection(', 1)[1].split('private void openProgramPage', 1)[0]
         self.assertIn('configureEntry(true)', selection)
         self.assertIn('!consentCheck.isChecked()', selection)

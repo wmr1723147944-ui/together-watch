@@ -1,12 +1,13 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'none'; frame-src 'none'">
 <title>一起看 · Windows</title><link rel="stylesheet" href="shell.css"></head><body>
-<header><div class="brand"><img class="mark" src="app-icon.svg" width="42" height="42" alt=""><div>一起看<small>WINDOWS · 0.6.17 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
+<header><div class="brand"><img class="mark" src="app-icon.svg" width="42" height="42" alt=""><div>一起看<small>WINDOWS · 0.6.18 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
 <dialog id="setup" hidden aria-labelledby="entryTitle">
-<div class="entry-heading"><h1 id="entryTitle">加入朋友房间</h1><button id="cancelEntry" aria-label="关闭，返回选片">关闭</button></div>
+<div class="entry-heading"><div class="entry-brand"><img src="app-icon.svg" width="44" height="44" alt=""><span>一起看<small>好片，有人陪你看</small></span></div><button id="cancelEntry" aria-label="关闭，返回选片">×</button></div>
+<h1 id="entryTitle">加入房间</h1>
 <p id="entryHint" class="intro">粘贴邀请，自动打开朋友正在看的影片。</p>
 <form id="startForm">
-<label id="roomField">邀请链接或房间号<input id="room" maxlength="256" placeholder="粘贴朋友发来的邀请"></label>
+<label id="roomField">邀请链接 / 房间号<input id="room" maxlength="256" placeholder="粘贴朋友发来的邀请" autocomplete="off" spellcheck="false" aria-describedby="roomHint"><small id="roomHint">无需再找影片，加入后跟随房主进度。</small></label>
 <details id="profileFields"><summary>昵称与使用说明</summary>
 <label>你的昵称<input id="nickname" maxlength="32" value="观影成员" required></label>
 <label class="consent"><input id="consent" type="checkbox" required>我同意<a href="https://watchtogethernow.cloud/terms" id="terms">用户协议</a>与<a href="https://watchtogethernow.cloud/privacy" id="privacy">隐私政策</a>，只同步本人有权观看的内容。</label>

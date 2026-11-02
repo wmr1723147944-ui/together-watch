@@ -121,6 +121,18 @@ class AccountTests(unittest.TestCase):
         cleared=self.post('history',dict(revision=4,clear=True))
         self.assertEqual(cleared.json['rows'],[])
 
+    def test_history_keeps_safe_cover_fallbacks_across_account_reload(self):
+        self.register()
+        backup = 'https://image.tmdb.org/t/p/w780/backup.jpg'
+        item = row(poster_candidates=[backup, backup, 'https://evil.test/x.jpg', backup+'?token=secret'], year='2025')
+        response = self.post('history', dict(revision=0, upserts=[item]))
+        self.assertEqual(response.status_code, 200)
+        saved = self.history().json['rows'][0]
+        self.assertEqual(saved['poster_candidates'], [item['poster'], backup])
+        self.assertEqual(saved['year'], '2025')
+        self.assertNotIn('secret', json.dumps(saved))
+        self.assertEqual(accounts.clean_history(dict(item, poster_candidates='invalid', year='<script>'))['year'], '')
+
     def test_history_bounds_sanitization_and_no_older_rewind(self):
         self.register()
         for item in [dict(row(),time=float('inf')),dict(row(),time=True),dict(row(),source='unknown'),dict(row(),item='../private'),dict(row(),updated=1e30)]:

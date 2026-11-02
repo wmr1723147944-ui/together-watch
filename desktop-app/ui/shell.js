@@ -87,7 +87,7 @@ window.desktop.onStatus(data => {
         entryMode=data.pendingSource?'watch':'join'; $('setup').dataset.mode=entryMode;
         $('roomField').hidden=entryMode==='watch'; $('manualEntry').hidden=entryMode==='watch'; $('manualEntry').open=false;
         $('profileFields').open=entryMode==='watch' || !$('consent').checked;
-        $('entryTitle').textContent=entryMode==='watch'?'开始一起看':'加入朋友房间';
+        $('entryTitle').textContent=entryMode==='watch'?'开始一起看':'加入房间';
         $('entryHint').textContent=entryMode==='watch'?'首次使用确认一下即可。以后选好影片直接进入房间。':'粘贴邀请，自动打开朋友正在看的影片。';
         $('start').textContent=entryMode==='watch'?'开始观看':'加入房间';
         if(entryMode==='watch' && $('consent').checked && $('nickname').value.trim()) {closeEntry();enterRoom();}

@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const legalVersion = form.dataset.legalVersion || '';
     const entry = document.getElementById('roomEntry');
     function showEntry() {
-        if (typeof entry?.showModal === 'function' && !entry.open) entry.showModal();
+        if (typeof entry?.showModal === 'function' && !entry.open) { entry.showModal(); roomInput.focus(); }
     }
     document.getElementById('roomEntryClose')?.addEventListener('click', () => entry.close());
     document.querySelectorAll?.('a[href="/#roomEntry"]').forEach(link => link.addEventListener('click', event => {

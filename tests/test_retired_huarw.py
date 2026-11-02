@@ -29,7 +29,7 @@ class RetiredHuarwTests(unittest.TestCase):
                 html = self.client.get(url).text
                 enabled = html.split('data-enabled-sources="', 1)[1].split('"', 1)[0].split(',')
                 self.assertEqual(set(enabled), ids)
-                self.assertIn('watch-history.js?v=20261029-retire-huarw', html)
+                self.assertIn('watch-history.js?v=20261102-history-covers', html)
 
     def test_stale_links_cannot_fetch_search_detail_feed_or_create_rooms(self):
         selection = {'source': 'huarw', 'item': '123', 'episode': '123-1'}

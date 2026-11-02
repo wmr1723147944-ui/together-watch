@@ -15,7 +15,7 @@ from pathlib import Path
 from flask import Blueprint, current_app, g, jsonify, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from poster_policy import poster_url
+from poster_policy import poster_url, poster_candidates
 
 SOURCES = {'kanju', 'huarw', 'cupfox', 'blender', 'yhdmoe', '233dm', 'pkavi'}
 HASH_SLOTS = threading.BoundedSemaphore(2)
@@ -133,6 +133,10 @@ def clean_history(row):
         result[name] = value
     result.update(title=str(row.get('title', '观看记录'))[:160], label=str(row.get('label', '上次观看的集数'))[:80],
                   poster=poster_url(row.get('poster'), 'https://watchtogethernow.cloud') or '')
+    candidates = row.get('poster_candidates')
+    result['poster_candidates'] = poster_candidates([result['poster']] + (candidates[:48] if isinstance(candidates, list) else []), '')
+    result['poster'] = next(iter(result['poster_candidates']), '')
+    result['year'] = str(row.get('year', '')) if re.fullmatch(r'(19|20)\d{2}', str(row.get('year', ''))) else ''
     return result
 
 

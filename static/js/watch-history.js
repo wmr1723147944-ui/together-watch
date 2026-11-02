@@ -3,6 +3,19 @@
     'use strict';
     const KEY = 'tw_watch_history_v1';
     const sources = new Set(['kanju', 'huarw', 'cupfox', 'blender', 'yhdmoe', '233dm', 'pkavi']);
+    const adapters = typeof module === 'object' && module.exports ? require('./catalog-adapters.js') : null;
+    function covers(values) {
+        const policy = adapters || root.TogetherWatchCatalogAdapters;
+        return [...new Set(values.slice(0, 48).map(v => policy?.safePosterUrl(v)).filter(Boolean))].slice(0, 6);
+    }
+    function posterMetadata(row) {
+        const pages = { kanju:'https://www.kanju.ai/player/', huarw:'https://huarw.com/movie/',
+            cupfox:'https://www.cupfox.in/vod-detail/', yhdmoe:'https://yhdmoe.com/watch/',
+            '233dm':'https://www.233dm.com/anime/', pkavi:'https://www.pkavi.com/mv/', blender:'https://video.blender.org/videos/watch/' };
+        if (!identity(row)) return {};
+        return {source_id:row.source, page_url:pages[row.source]+encodeURIComponent(row.item)+(['cupfox','233dm','pkavi'].includes(row.source)?'.html':''),
+            title:row.title, year:row.year, poster_url:row.poster, poster_candidates:row.poster_candidates};
+    }
     function identity(p) {
         if (!p || !sources.has(p.source) || p.exact_episode === false || p.episode === 'page') return '';
         if (![p.item, p.episode].every(v => typeof v === 'string' && /^[A-Za-z0-9_.-]{1,240}$/.test(v) && !v.includes('..'))) return '';
@@ -16,10 +29,10 @@
         }
         function write(s) { try { storage.setItem(storageKey, JSON.stringify(s)); return true; } catch { return false; } }
         function cleanMeta(p, meta = {}) {
-            let poster = '';
-            try { const u = new URL(meta.poster); if (u.protocol === 'https:' && !u.username && !u.password && u.href.length < 2048) poster = u.href; } catch {}
+            const candidates = covers([meta.poster, ...(Array.isArray(meta.poster_candidates) ? meta.poster_candidates : [])]);
             return { source:p.source, item:p.item, episode:p.episode,
-                title:String(meta.title || p.source + ' · 观看记录').slice(0, 160), label:String(meta.label || '上次观看的集数').slice(0, 80), poster };
+                title:String(meta.title || p.source + ' · 观看记录').slice(0, 160), label:String(meta.label || '上次观看的集数').slice(0, 80),
+                poster:candidates[0] || '', poster_candidates:candidates, year:/^(19|20)\d{2}$/.test(String(meta.year)) ? String(meta.year) : '' };
         }
         return {
             enabled: () => read().enabled !== false,
@@ -28,7 +41,15 @@
             metadata(p) { const key = identity(p), s = read(); return s.meta[key] || s.rows.find(r => identity(r) === key) || null; },
             remember(p, meta) {
                 const key = identity(p), s = read(); if (!key || s.enabled === false) return;
-                delete s.meta[key]; s.meta[key] = cleanMeta(p, meta); s.deleted = s.deleted.filter(k => k !== key);
+                const previous = s.meta[key] || s.rows.find(r => identity(r) === key) || {};
+                const next = cleanMeta(p, meta), old = cleanMeta(p, previous);
+                // Re-opening an episode without artwork must not erase a saved cover.
+                next.poster_candidates = covers([...next.poster_candidates, ...old.poster_candidates]);
+                next.poster = next.poster_candidates[0] || '';
+                if (!meta?.title) next.title = old.title;
+                if (!meta?.label) next.label = old.label;
+                if (!next.year) next.year = old.year;
+                delete s.meta[key]; s.meta[key] = next; s.deleted = s.deleted.filter(k => k !== key);
                 for (const old of Object.keys(s.meta).slice(0, -150)) delete s.meta[old]; write(s);
             },
             record(p, sample) {
@@ -52,7 +73,7 @@
             },
         };
     }
-    const api = { identity, createStore, KEY };
+    const api = { identity, createStore, posterMetadata, KEY };
     if (typeof module === 'object' && module.exports) module.exports = api;
     else {
         try { api.store = createStore(root.localStorage); } catch { api.store = createStore({ getItem() {}, setItem() { throw Error('storage unavailable'); } }); }
@@ -86,7 +107,8 @@
                         const article = doc.createElement('article'), link = doc.createElement(path ? 'a' : 'div'); article.className = 'history-card';
                         if (path) { link.href = path; link.addEventListener('click', () => { api.store.remember(row,row); api.store.prepare(row); }); }
                         const art = doc.createElement('div'); art.className = 'history-cover';
-                        root.TogetherWatchDiscovery?.addPoster(doc,art,path ? row.poster : '', '',row.title);
+                        const metadata = path ? posterMetadata(row) : {};
+                        root.TogetherWatchDiscovery?.addPoster(doc,art,path ? row.poster : '',metadata.page_url,row.title,metadata);
                         const title = doc.createElement('strong'); title.textContent = row.title;
                         const info = doc.createElement('small'); info.textContent = `${path ? '' : '来源已移除或未启用 · '}${row.label} · 看到 ${format(row.time)}${row.duration ? ' / '+format(row.duration) : ''}`;
                         link.append(art,title,info); article.append(link);

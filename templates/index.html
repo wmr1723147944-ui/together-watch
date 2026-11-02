@@ -15,14 +15,16 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-mobile.css', v='20261028-spotlight-ratio') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-theater.css', v='20261101-full-stage') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-handset.css', v='20261101-cover-masthead') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/room-entry.css', v='20261102-join') }}">
 </head>
 <body class="media-app catalog-cinema">
     {% include "_site_nav.html" %}
     <main id="mainContent" class="home-layout">
         <dialog id="roomEntry" class="room-entry room-entry-dialog" aria-labelledby="roomEntryTitle">
             <button type="button" id="roomEntryClose" class="dialog-close" aria-label="关闭房间入口">×</button>
-            <div class="entry-heading"><span class="entry-icon" aria-hidden="true">▶</span><div><span class="section-kicker">WATCH WITH FRIENDS</span><h2 id="roomEntryTitle">朋友已经留好了位置</h2></div></div>
-            <p class="entry-description">粘贴邀请或房间号，加入同一个放映室。自己选片？关闭这里，从首页开始。</p>
+            <div class="entry-brand"><img src="{{ url_for('static', filename='favicon.svg') }}" width="44" height="44" alt=""><span>一起看<span class="entry-brand-note">好片，有人陪你看</span></span></div>
+            <h2 id="roomEntryTitle">加入房间</h2>
+            <p class="entry-description">把朋友的邀请粘贴在这里，接着一起看。</p>
             {% if show_deployment_warning %}
             <div class="deployment-warning" role="alert">
                 生产环境的运营者和版权投诉邮箱尚未配置，目前仅供内部测试，暂不能添加视频来源。
@@ -31,12 +33,13 @@
 
             <form id="loginForm" data-legal-version="{{ legal_notice_version }}" novalidate>
                 <div class="input-group">
-                    <label class="field-label" for="username">你的昵称</label>
-                    <input type="text" id="username" placeholder="例如：小雨" required maxlength="32" autocomplete="nickname">
+                    <label class="field-label" for="roomId">邀请链接 / 房间号</label>
+                    <input type="text" id="roomId" placeholder="粘贴朋友发来的邀请" maxlength="300" autocomplete="off" spellcheck="false" aria-describedby="entryInviteHint">
+                    <small id="entryInviteHint">无需再找影片，加入后跟随房主进度。</small>
                 </div>
                 <div class="input-group">
-                    <label class="field-label" for="roomId">邀请链接 / 房间号</label>
-                    <input type="text" id="roomId" placeholder="粘贴邀请链接或输入房间号" maxlength="300" autocomplete="off">
+                    <label class="field-label" for="username">房间昵称</label>
+                    <input type="text" id="username" placeholder="朋友怎么称呼你？" required maxlength="32" autocomplete="nickname">
                 </div>
                 <label class="compliance-consent" for="complianceConsent">
                     <input type="checkbox" id="complianceConsent" required>
@@ -47,11 +50,10 @@
                 </label>
                 <p id="formError" class="form-error" role="alert" aria-live="polite"></p>
                 <div class="landing-actions">
-                    <button type="submit" id="joinRoomBtn" class="btn">加入朋友的房间</button>
-                    <button type="button" id="createRoomBtn" class="btn btn-secondary">先创建空房间</button>
+                    <button type="submit" id="joinRoomBtn" class="btn">加入房间 <span aria-hidden="true">→</span></button>
+                    <button type="button" id="createRoomBtn" class="btn btn-secondary">没有邀请？先建一个空房间</button>
                 </div>
             </form>
-            <p class="entry-tip">创建后复制邀请链接，发给一起看的人。</p>
         </dialog>
         <section class="home-discovery" aria-label="影片搜索">
             {% include "_watch_history.html" %}
@@ -69,11 +71,11 @@
     </main>
     {% include "_catalog_mobile_nav.html" %}
 
-    <script src="{{ url_for('static', filename='js/watch-history.js', v='20261029-retire-huarw') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/watch-history.js', v='20261102-history-covers') }}" defer></script>
     <script src="{{ url_for('static', filename='js/account.js', v='20261029-account') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/index.js', v='20261021-film-first') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261027-poster-quality') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261030-episode-retry') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/index.js', v='20261102-join') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261102-history-covers') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261102-history-covers') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261101-clear-cover') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261031-theater') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-mobile.js', v='20261101-cover-masthead') }}" defer></script>

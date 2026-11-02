@@ -1,0 +1,35 @@
+/* A focused invitation card; scoped so catalogue/player dialogs stay intact. */
+.catalog-cinema #roomEntry {
+    box-sizing: border-box; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 40px);
+    margin: auto; padding: 32px; border: 1px solid #e9e9ed; border-radius: 24px;
+    color: #23252c; background: #fff; box-shadow: 0 24px 100px #0005; text-align: left;
+    color-scheme: light;
+}
+#roomEntry::backdrop { background: #10131c85; backdrop-filter: blur(8px); }
+.catalog-cinema #roomEntryClose { top: 18px; right: 18px; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: #f3f4f6; color: #686c77; font-size: 24px; }
+#roomEntry .entry-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; font-size: 16px; font-weight: 700; }
+#roomEntry .entry-brand img { border-radius: 13px; flex: 0 0 auto; }
+#roomEntry .entry-brand-note { display: block; margin-top: 4px; color: #747985; font-size: 11px; font-weight: 400; letter-spacing: 1px; }
+.catalog-cinema #roomEntry h2 { margin: 0 0 8px; color: #23252c; font-size: 26px; line-height: 1.4; letter-spacing: -.6px; }
+.catalog-cinema #roomEntry .entry-description { margin: 0 0 26px; color: #737782; font-size: 13px; line-height: 1.7; }
+#roomEntry .input-group { margin: 0 0 18px; }
+.catalog-cinema #roomEntry .field-label { display: block; margin: 0 0 9px; color: #424650; font-size: 13px; font-weight: 600; }
+.catalog-cinema #roomEntry input:not([type=checkbox]) { box-sizing: border-box; width: 100%; min-width: 0; height: 52px; padding: 0 16px; border: 1px solid #e5e6eb; border-radius: 12px; background: #f7f8fa; color: #242730; font: inherit; font-size: 15px; box-shadow: none; }
+.catalog-cinema #roomEntry input::placeholder { color: #8a8e98; font-size: 14px; }
+.catalog-cinema #roomEntry input:focus-visible { outline: 2px solid #d15c43; outline-offset: 2px; background: #fff; }
+#entryInviteHint { display: block; margin-top: 9px; color: #7a7e88; font-size: 12px; line-height: 1.5; }
+.catalog-cinema #roomEntry .compliance-consent { display: flex; align-items: flex-start; gap: 8px; margin: 20px 0 0; padding: 0; border: 0; background: none; color: #737782; font-size: 11px; line-height: 1.8; }
+#roomEntry .compliance-consent input { flex: 0 0 auto; width: 15px; height: 15px; margin: 3px 0 0; accent-color: #c6533c; }
+.catalog-cinema #roomEntry a { color: #a64734; }
+.catalog-cinema #roomEntry .landing-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.catalog-cinema #roomEntry #joinRoomBtn { display: flex; align-items: center; justify-content: center; gap: 14px; width: 100%; min-height: 50px; margin: 0; border: 0; border-radius: 12px; background: #24262d; color: #fff; font-size: 15px; font-weight: 650; box-shadow: none; }
+.catalog-cinema #roomEntry #joinRoomBtn:hover { background: #3c3f48; transform: none; }
+.catalog-cinema #roomEntry #createRoomBtn { width: 100%; min-height: 40px; margin: 0; padding: 8px; border: 0; background: none; box-shadow: none; color: #777b85; font-size: 12px; font-weight: 400; }
+.catalog-cinema #roomEntry #createRoomBtn:hover { color: #a64734; transform: none; }
+#roomEntry .form-error { margin: 12px 0 0; color: #b1364c; font-size: 12px; }
+#roomEntry .form-error:empty { display: none; }
+@media (max-width: 700px) {
+    .catalog-cinema #roomEntry { width: 100%; max-height: calc(100dvh - 16px); margin: auto 0 0; padding: 28px 24px max(18px, env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; border: 0; }
+    #roomEntry .entry-brand { margin-bottom: 24px; }
+    .catalog-cinema #roomEntry h2 { font-size: 25px; }
+}

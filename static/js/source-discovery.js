@@ -286,7 +286,16 @@
                     link.setAttribute('aria-current','true'); link.textContent += ' · 正在看';
                     link.addEventListener('click', event=>event.preventDefault());
                 }
-                link.addEventListener('click', () => globalThis.TogetherWatchHistory?.store?.remember(episode.program, episode.meta));
+                link.addEventListener('click', () => {
+                    const meta = {...episode.meta};
+                    // Persist the cover that actually loaded, not only a failed
+                    // provider thumbnail. The picker has no detail artwork.
+                    const image = !meta.fromPicker && doc.getElementById('catalogDetailPoster')?.querySelector?.('img[data-loading="false"]:not([hidden])');
+                    const loaded = image && adapters.safePosterUrl(image.currentSrc || image.src);
+                    if (loaded) { meta.poster_candidates = safePosters([loaded,...meta.poster_candidates]); meta.poster = loaded; }
+                    delete meta.fromPicker;
+                    globalThis.TogetherWatchHistory?.store?.remember(episode.program, meta);
+                });
             }
             if (more) { more.hidden = matching.length <= visible; more.textContent = `再显示 100 个（共 ${matching.length} 个）`; }
         }
@@ -333,6 +342,10 @@
                 const item = hasAdapter(source) ? adapters.detail(source,url)?.item : source === 'fcma' ? parts.slice(2).join('-') : parts.pop().replace(/\.html$/, '');
                 if (data.source_id !== source || data.page_url !== url || data.item_id !== item || !Array.isArray(data.episodes)) throw new Error('invalid');
                 const detailTitle=row.current_episode && typeof data.title==='string' && data.title.trim() ? data.title.slice(0,160) : row.title;
+                const previous = row.current_episode && globalThis.TogetherWatchHistory?.store?.metadata({source,item,episode:row.current_episode});
+                const artwork = safePosters([row.poster_url,...(Array.isArray(row.poster_candidates)?row.poster_candidates:[]),
+                    previous?.poster,...(Array.isArray(previous?.poster_candidates)?previous.poster_candidates:[]),
+                    ...posterPool(doc).candidates(row.poster_url,url,detailTitle,row.year).map(c=>c.url)],url);
                 if (row.current_episode) title.textContent=detailTitle+' · 选集';
                 if (typeof data.description === 'string') description.textContent = data.description.slice(0, 500);
                 for (const episode of data.episodes.slice(0, 6000)) {
@@ -341,7 +354,8 @@
                     if (!path) continue;
                     const line = typeof episode.line === 'string' ? episode.line.slice(0, 30) : '';
                     const label = (line ? line + ' · ' : '') + episode.title.slice(0, 60);
-                    episodes.push({ path, label, current:episode.id===row.current_episode, program:{source,item,episode:episode.id}, meta:{title:detailTitle,label,poster:row.poster_url} });
+                    episodes.push({ path, label, current:episode.id===row.current_episode, program:{source,item,episode:episode.id},
+                        meta:{title:detailTitle,label,poster:artwork[0]||'',poster_candidates:artwork,year:row.year||previous?.year,fromPicker:!!row.current_episode} });
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;

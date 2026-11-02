@@ -743,7 +743,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void configureEntry(boolean selected) {
-        ((TextView)findViewById(R.id.setupTitle)).setText(selected?"开始一起看":"加入朋友房间");
+        ((TextView)findViewById(R.id.setupTitle)).setText(selected?"开始一起看":"加入房间");
         ((TextView)findViewById(R.id.setupHint)).setText(selected?"首次确认一下，以后选好影片直接观看。":"粘贴邀请，自动打开朋友正在看的影片。");
         ((TextView)findViewById(R.id.setupStatus)).setText("");
         ((Button)findViewById(R.id.openVideoButton)).setText(selected?"开始观看":"加入房间");
