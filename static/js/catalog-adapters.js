@@ -230,5 +230,41 @@
         return Array.from(doc.querySelectorAll('button[data-directory-episode]')).some(el=>el.getAttribute('data-directory-episode')===episode.slice(3)
             && (el.classList.contains('movie-button-primary') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-selected')==='true'));
     }
-    return {sources,text,publicId,urlFor,detail,selection,fromPage,request,expectedPage,normalizeResult,readDocument,episodeReady,posterDomains,safePosterUrl,posterCandidates,elementPosters};
+    // Read only public page identity and the selected episode label. Called on
+    // every native sample, not only at room entry. No media URL/credentials.
+    function historyContext(doc, href) {
+        let page;try{page=new URL(href);}catch{return null;}
+        let program=fromPage(href),label='';
+        const kanju=detail('kanju',href);
+        if(kanju){
+            const selected=Array.from(doc.querySelectorAll('button[data-directory-episode]'))
+                .slice(0,6000).filter(el=>publicId(el.getAttribute('data-directory-episode'))
+                    && (el.classList.contains('movie-button-primary') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-selected')==='true'));
+            const ids=[...new Set(selected.map(el=>'ep-'+el.getAttribute('data-directory-episode')))];
+            if(ids.length!==1)return null;
+            program=selection('kanju',kanju.item,ids[0]);
+            label=text(selected[0].getAttribute('title')||selected[0].textContent,80);
+        } else if(page.protocol==='https:' && !page.username && !page.password && !page.port){
+            const cup=['cupfox.in','www.cupfox.in'].includes(page.hostname) && /^\/vod-detail\/(\d{1,20})\.html$/.exec(page.pathname);
+            const sakura=['yhdmoe.com','www.yhdmoe.com'].includes(page.hostname) && /^\/watch\/(\d{1,20})$/.exec(page.pathname);
+            if(cup || sakura){
+                const active=Array.from(doc.querySelectorAll(cup?'span.play-btn[ep_slug]':'a.my-episode[play_ep]')).filter(el=>el.classList.contains(cup?'on':'disabled'));
+                const ids=[...new Set(active.map(el=>el.getAttribute(cup?'ep_slug':'play_ep')))];
+                if(ids.length!==1 || !(cup?/^ep\d{1,5}$/:/^EP\d{1,5}(?:\.\d{1,2})?$/).test(ids[0]))return null;
+                program={source:cup?'cupfox':'yhdmoe',item:(cup||sakura)[1],episode:ids[0]};
+                label=text(active[0].textContent,80);
+            }
+        }
+        if(!program && page.protocol==='https:' && page.host==='video.blender.org' && !page.username && !page.password){
+            const match=/^\/videos\/watch\/([0-9a-f-]{36})$/.exec(page.pathname);
+            if(match)program={source:'blender',item:match[1],episode:'video'};
+        }
+        if(!program)return null;
+        if(!label && ['233dm','pkavi'].includes(program.source)){
+            const [line,episode]=program.episode.split('-');label=`线路 ${line} · 第${episode}集`;
+        }
+        return {program:{source:program.source,item:program.item,episode:program.episode},
+            title:text(doc.querySelector('h1')?.textContent||'',160),label};
+    }
+    return {sources,text,publicId,urlFor,detail,selection,fromPage,request,expectedPage,normalizeResult,readDocument,episodeReady,historyContext,posterDomains,safePosterUrl,posterCandidates,elementPosters};
 });

@@ -63,7 +63,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     let builtin = null, scanning = null, lastScan = 0, lastOriginalPause = 0, sourcePage = '';
     let draft = null, managed = null, finderMode = 'catalog', selecting = false;
     let toolsExpanded = false;
-    let currentProgram = null, openingEpisodes = false;
+    let currentProgram = null, openingEpisodes = false, builtinHistory = null;
     let episodeView=null, episodeTimer=null, episodeGeneration=0;
     // Keep search context and the most recent original-site page, not a growing
     // collection of background tabs. Login state stays in videoPartition.
@@ -162,11 +162,13 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (!item) return { ok: false, error: catalog.reason || '候选已过期，请重新识别。' };
         closeBuiltin();
         const sourceEpoch = videoGeneration;
+        const history = await readHistoryContext();
         await focusPlayer(false);
         if (sourceEpoch !== videoGeneration || !video || !current || !catalog.get(id)) return { ok: false, error: '播放页已切换，请重新选择视频。' };
         selected = null; videoGeneration++;
         const epoch = videoGeneration;
         builtin = new WebContentsView({ webPreferences: securePreferences({ session: playerPartition, backgroundThrottling: false, preload:path.join(__dirname,'player-preload.cjs') }) });
+        builtinHistory = history;
         const view = builtin, wc = view.webContents;
         const playerId=wc.id;
         playerEpisodeControls.set(playerId,event=>event.sender===wc && event.senderFrame===wc.mainFrame
@@ -649,6 +651,11 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             return { ok: false, error: '无法连接新版房间页面，请确认网站已更新并检查网络' };
         }
     }
+    async function readHistoryContext() {
+        const wc=liveContents(video);if(!wc || wc.isLoadingMainFrame())return null;
+        try {return await timeout(wc.executeJavaScriptInIsolatedWorld(991,[{code:CATALOG_SCRIPT+';TogetherWatchCatalogAdapters.historyContext(document,location.href)'}]));}
+        catch{return null;}
+    }
     async function tick(epoch) {
         if (epoch !== generation || !current || !video || !roomTrusted(roomView.webContents)) return;
         const videoEpoch = videoGeneration;
@@ -716,6 +723,9 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 const sample = policy.timingSample(raw, playerSession);
                 if (!sample) throw new Error('invalid player data');
                 sample.title = video.webContents.getTitle().slice(0,160);
+                sample.history_context = builtin ? builtinHistory : await readHistoryContext();
+                sample.program_revision = managed?.revision || 0;
+                if(!stillCurrent())return;
                 if (builtin) {
                     const playback = await timeout(wc.executeJavaScript('window.__twBuiltin?.state()'));
                     if (playback?.error) { sample.error = playback.error; sample.ready = false; sample.events = []; }

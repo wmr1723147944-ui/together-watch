@@ -70,6 +70,27 @@ test('remote delete conflicts do not resurrect old progress; explicit fresh sele
     h.api.store.remember(p,{title:'重新打开'});record(h.api.store,p,70);await h.api.flush();assert.equal(remote.rows[0].time,70);
 });
 
+test('unrelated remote edits do not discard current episode progress on conflict',async()=>{
+    const h=harness();await h.api.refresh();await h.api.authenticate('login',{username:'alice'});
+    record(h.api.store,p,180);const remote=h.db.get('alice');remote.rows=[{...q,time:30,updated:1}];remote.revision++;
+    await h.api.flush();assert.equal(h.api.store.list().find(r=>H.identity(r)===H.identity(p)).time,180);
+    await h.api.flush();assert.equal(remote.rows.find(r=>H.identity(r)===H.identity(p)).time,180);
+});
+test('newer backward seek wins conflict while newer remote observation and disabled history win',async()=>{
+    const h=harness();await h.api.refresh();await h.api.authenticate('login',{username:'alice'});
+    record(h.api.store,p,30);const remote=h.db.get('alice');remote.rows=[{...p,time:180,updated:1}];remote.revision++;
+    await h.api.flush();await h.api.flush();assert.equal(remote.rows[0].time,30);
+    record(h.api.store,p,40);remote.rows=[{...p,time:250,updated:Date.now()+1000}];remote.revision++;
+    await h.api.flush();assert.equal(h.api.store.list()[0].time,250);
+    record(h.api.store,q,60);remote.enabled=false;remote.revision++;await h.api.flush();
+    assert.equal(h.api.store.list().some(r=>H.identity(r)===H.identity(q)),false);
+});
+test('small exit flush can survive navigation and retains account binding',async()=>{
+    const h=harness();await h.api.refresh();await h.api.authenticate('login',{username:'alice'});record(h.api.store);
+    await h.api.flush({keepalive:true});const call=h.calls.filter(c=>c.name==='history'&&c.options.method==='POST').at(-1);
+    assert.equal(call.options.keepalive,true);assert.equal(call.options.headers['X-Account-ID'],'alice');
+});
+
 test('disabled account history, delete, clear and cross-device refresh preserve local history',async()=>{
     const h=harness();record(h.local);await h.api.refresh();await h.api.authenticate('login',{username:'alice'});
     record(h.api.store);await h.api.flush();h.api.store.setEnabled(false);await h.api.flush();assert.equal(record(h.api.store,p,60),false);

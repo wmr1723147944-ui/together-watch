@@ -157,6 +157,8 @@ public final class MainActivity extends ComponentActivity {
     private ProgramPolicy.Selection programSelection;
     private String ownerKey = "";
     private String playerAgent = "", webSyncScript = "", catalogScript = "", pageLayoutScript = "";
+    private JSONObject currentHistoryContext, nativeHistoryContext;
+    private int historyContextPage = -1;
     private String playerBridgeNotice = "";
     private boolean roomBootstrapPending = false;
     private volatile int videoPageGeneration = 0;
@@ -810,10 +812,23 @@ public final class MainActivity extends ComponentActivity {
         return actual!=null && actual.source.equals(programSelection.source) && actual.item.equals(programSelection.item) && actual.episode.equals(programSelection.episode);
     }
     private void samplePlayer(int generation) {
+        if(nativePlayer.isActive()) {currentHistoryContext=nativeHistoryContext;samplePlayerWithHistory(generation);return;}
+        if(finding || awaitingEpisode || videoLoading) {currentHistoryContext=null;samplePlayerWithHistory(generation);return;}
+        final int page=videoPageGeneration;
+        final long revision=programRevision;
+        videoWebView.evaluateJavascript(catalogScript+";TogetherWatchCatalogAdapters.historyContext(document,location.href)",result->{
+            if(!bridgeCurrent(generation))return;
+            if(page!=videoPageGeneration || revision!=programRevision){scheduleBridge(generation);return;}
+            currentHistoryContext=null;historyContextPage=page;
+            try{if(result.length()<4096)currentHistoryContext=new JSONObject(result);}catch(Exception ignored){}
+            samplePlayerWithHistory(generation);
+        });
+    }
+    private void samplePlayerWithHistory(int generation) {
         final int page=videoPageGeneration;
         playerBridgeNotice="";
         if(finding || (programRevision>0 && programSelection==null)) {deliverSample(generation,page,new JSONObject(),-1);return;}
-        if(programRevision>0 && !nativePlayer.isActive() && (!currentProgramPage() || videoLoading)) {
+        if(programRevision>0 && !nativePlayer.isActive() && ((!currentProgramPage() && currentHistoryContext==null) || videoLoading)) {
             if(!videoLoading)setStatus("当前页面与房间片源不同。可在「更多」中核对当前集数并恢复同步。");
             deliverSample(generation,page,new JSONObject(),-1);return;
         }
@@ -858,7 +873,11 @@ public final class MainActivity extends ComponentActivity {
         danmakuPlaying=sample.optBoolean("active")&&sample.optBoolean("ready")&&sample.optBoolean("playing")&&!sample.optBoolean("seeking");
         danmakuSampleAt=android.os.SystemClock.elapsedRealtime();
         if(!sample.optBoolean("active")){lastDanmakuPacket=null;if(webFullscreenDanmaku!=null)webFullscreenDanmaku.update(null);}
-        try { sample.put("title",videoWebView.getTitle()==null?"":videoWebView.getTitle().substring(0,Math.min(160,videoWebView.getTitle().length()))); }catch(Exception ignored){}
+        try {
+            sample.put("title",videoWebView.getTitle()==null?"":videoWebView.getTitle().substring(0,Math.min(160,videoWebView.getTitle().length())));
+            sample.put("history_context",currentHistoryContext==null?JSONObject.NULL:currentHistoryContext);
+            sample.put("program_revision",revision);
+        }catch(Exception ignored){}
         boolean apply=revision>0 && appliedProgramRevision!=revision && !awaitingEpisode && !finding && programSelection!=null && sample.optBoolean("active");
         String script="(function(){const b=window.TogetherWatchMobile;if(!b)return null;b.context?.({owner:"+(!ownerKey.isEmpty())+"});"
             +(apply?"b.applyProgram("+revision+");":"")+"b.receive("+sample+");"
@@ -938,6 +957,13 @@ public final class MainActivity extends ComponentActivity {
     private void openNative(String url, double position) {
         if(finding || awaitingEpisode)return;
         if (!MediaSourcePolicy.isMedia(url) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage) return;
+        // Keep the confirmed public episode with this native player. Its source
+        // WebView is about to be unloaded, so its later title/URL is not evidence.
+        nativeHistoryContext=historyContextPage==videoPageGeneration?currentHistoryContext:null;
+        if(nativeHistoryContext==null && currentProgramPage() && programSelection!=null && programSelection.exact())try {
+            nativeHistoryContext=new JSONObject().put("program",new JSONObject().put("source",programSelection.source)
+                .put("item",programSelection.item).put("episode",programSelection.episode));
+        }catch(Exception ignored){}
         hideFullscreenVideo();
         destroyCompanion();
         ++videoPageGeneration;

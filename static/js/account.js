@@ -10,8 +10,9 @@
         root.setInterval(()=>api.sync(),15000);
         root.addEventListener('focus',()=>api.refresh());
         root.addEventListener('online',()=>api.refresh());
-        root.addEventListener('pagehide',()=>api.flush());
-        root.document.addEventListener('visibilitychange',()=>{if(root.document.hidden)api.flush();else api.refresh();});
+        const saveBeforeLeaving=()=>{root.dispatchEvent(new Event('tw-history-save'));api.flush({keepalive:true});};
+        root.addEventListener('pagehide',saveBeforeLeaving);
+        root.document.addEventListener('visibilitychange',()=>{if(root.document.hidden)saveBeforeLeaving();else api.refresh();});
         root.addEventListener('storage',e=>{if(e.key===api.ownerKey)api.ownerChanged();else if(e.key?.startsWith(api.prefix))api.changed();});
         root.document.addEventListener('DOMContentLoaded',()=>api.bind(root.document));
     }
@@ -71,13 +72,15 @@
         s.pending=[...pending,op].slice(-200);write(s);
         announce('等待同步');clearTimeout(timer);timer=setTimeout(()=>flush(),1200);changed();
     }
-    async function request(path,method='GET',body,expected=user?.id){
+    async function request(path,method='GET',body,expected=user?.id,keepalive=false){
         const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
         try{
             const headers={'X-CSRF-Token':token};if(expected)headers['X-Account-ID']=expected;
             if(method!=='GET')headers['Content-Type']='application/json';
+            const payload=body===undefined?undefined:JSON.stringify(body);
             const res=await env.fetch('/api/account/'+path,{method,headers,credentials:'same-origin',cache:'no-store',
-                signal:controller.signal,keepalive:false,...(body===undefined?{}:{body:JSON.stringify(body)})});
+                signal:controller.signal,keepalive:keepalive && !!payload && new TextEncoder().encode(payload).length<60000,
+                ...(payload===undefined?{}:{body:payload})});
             const data=await res.json();if(!res.ok)throw Object.assign(Error(data.error||'操作失败，请重试'),{status:res.status,data});return data;
         }finally{clearTimeout(timeout);}
     }
@@ -111,7 +114,7 @@
             select(null);ready=false;announce('登录已失效或已切换，请重新登录');changed();
         }else announce(e.name==='AbortError'?'同步超时，记录暂存本机，联网后重试':e.message||'同步失败，记录暂存本机');
     }
-    async function flush(){
+    async function flush({keepalive=false}={}){
         clearTimeout(timer);
         if(flushing)return flushing;
         if(!user||!ready)return;
@@ -128,13 +131,24 @@
         }
         flushing=(async()=>{
             try{
-                const data=await request('history','POST',{revision:initial.revision,upserts:[...puts.values()].slice(-100),deletes:[...deletes].slice(-100),clear,...(enabled===undefined?{}:{enabled})},uid);
+                const data=await request('history','POST',{revision:initial.revision,upserts:[...puts.values()].slice(-100),deletes:[...deletes].slice(-100),clear,...(enabled===undefined?{}:{enabled})},uid,keepalive);
                 if(current!==epoch||uid!==user?.id)return;
                 const latest=read();latest.reopened=(latest.reopened||[]).filter(k=>!puts.has(k));write(latest);
                 const pending=(latest.pending||[]).filter(p=>p.seq>seq);apply(data,pending);announce(pending.length?'等待同步':'已同步');changed();
             }catch(e){if(current!==epoch)return;
                 if(e.data?.code==='history_conflict'){
-                    const s=read();s.reopened=[];write(s);apply(e.data.history);announce('已采用其他设备更新后的记录，避免旧记录覆盖');changed();
+                    // Another device updating a different episode must not erase
+                    // the current viewing progress. Remote deletes/disable and
+                    // newer observations still win; never merge by maximum time
+                    // (a deliberate backward seek is a valid newer observation).
+                    const remote=e.data.history,s=read(),removed=new Set(remote.deleted||[]);
+                    const rows=new Map((remote.rows||[]).map(r=>[H.identity(r),r]));
+                    const pending=(s.pending||[]).filter(op=>op.type==='put'
+                        ? remote.enabled!==false && !removed.has(H.identity(op.row)) && op.row.updated>(rows.get(H.identity(op.row))?.updated||0)
+                        : op.type==='delete' || op.type==='clear' || op.type==='enabled' && op.value===false);
+                    s.reopened=[];write(s);apply(remote,pending);
+                    announce(pending.length?'已合并其他设备记录，当前进度等待同步':'已采用其他设备更新后的记录，避免旧记录覆盖');changed();
+                    if(pending.length)timer=setTimeout(()=>flush(),1200);
                 }else await failure(e);
             }finally{flushing=null;}
         })();return flushing;

@@ -102,11 +102,12 @@ document.addEventListener('DOMContentLoaded', () => {
         cancelCommand: () => { commands = commands.filter(item => item.type !== 'state'); },
     });
     const experience = window.createRoomExperience({socket,room,addMessage,seek:time => {
-        if (!sync.sample || !companion?.connected) return;
+        if (!sync.sample || !companion?.connected) return false;
         sync.receive(sync.sample,[{type:'seek',time,speed:sync.sample.speed}]);
         const id=++sync.commandId;sync.awaitingCommand=id;
         queueCommand({type:'state',session:nativeSession,id,time,speed:sync.sample.speed,
             playing:sync.sample.playing,seek:true,issuedAt:Date.now()});
+        return true;
     }});
     function stopNative() {
         companion?.removeAllListeners();
@@ -156,10 +157,20 @@ document.addEventListener('DOMContentLoaded', () => {
         receive(data) {
             receivedAt = Date.now();
             if (roomProgram && roomProgram.revision !== appliedProgramRevision) return;
+            if(data?.program_revision && data.program_revision!==appliedProgramRevision)return;
             if (!data?.active) {
                 experience.receive(data,false);
                 if (companion) stopNative();
                 playerStatus.textContent = '网页播放 · 在上方页面操作';
+                return;
+            }
+            const actual=data.history_context?.program;
+            if(actual && roomProgram && ['source','item','episode'].some(k=>actual[k]!==roomProgram.program[k])) {
+                // Preserve local history for the actual episode, but never
+                // publish its timing under the previous room episode.
+                experience.receive(data,true);
+                if(companion)stopNative();
+                playerStatus.textContent='原站已切换集数，观看历史按当前集保存；请用软件「选集」让朋友同步换集。';
                 return;
             }
             if (nativeSession !== data.session) startNative(data.session);
@@ -181,6 +192,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         },
         suspend() {
+            experience.save?.();
+            window.TogetherWatchAccount?.flush({keepalive:true});
             stopNative();
             document.getElementById('leaveCallBtn').click();
             playerStatus.textContent = '已暂停，返回 APP 后重新同步';
@@ -195,6 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 3000);
     window.addEventListener('beforeunload', () => {
         experience.destroy();
+        window.TogetherWatchAccount?.flush({keepalive:true});
         clearInterval(watchdog); stopNative(); call.destroy(); socket.disconnect();
     });
 });

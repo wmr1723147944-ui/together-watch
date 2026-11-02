@@ -395,3 +395,15 @@ test('web fallback volume targets the paired companion and suspending disconnect
     assert.equal(h.sockets[1].connected, false);
     assert.equal(h.bridge.drain().commands.length, 0);
 });
+
+test('original site episode switch never broadcasts its progress under the previous room episode',()=>{
+    const h=mobileHarness();h.sockets[0].connect();
+    const program={source:'kanju',item:'av-test',episode:'ep-one'};
+    h.sockets[0].handlers.room_program({revision:1,program});h.bridge.applyProgram(1);
+    const sample={active:true,session:1,time:60,duration:600,ready:true,speed:1,playing:true,program_revision:1,history_context:{program}};
+    h.bridge.receive(sample);h.sockets[1].connect();h.bridge.receive(sample);
+    const before=h.sockets.length;
+    h.bridge.receive({...sample,history_context:{program:{...program,episode:'ep-two'}},events:[{type:'seek',time:70,speed:1}]});
+    assert.equal(h.sockets[1].connected,false);assert.equal(h.sockets.length,before);assert.equal(h.bridge.drain().commands.length,0);
+    assert.match(h.element('mobilePlayerStatus').textContent,/原站已切换集数/);
+});

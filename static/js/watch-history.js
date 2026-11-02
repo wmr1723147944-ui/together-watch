@@ -54,13 +54,17 @@
             },
             record(p, sample) {
                 const key = identity(p), s = read();
-                if (!key || s.enabled === false || s.deleted.includes(key) || !sample?.ready || sample.seeking
+                if (!key || s.enabled === false || s.deleted.includes(key) || !sample?.ready || sample.active === false || sample.seeking
                     || !Number.isFinite(sample.time) || sample.time < 5 || sample.time > 604800) return false;
                 const previous = s.rows.find(r => identity(r) === key);
+                // A cached final sample is not a new viewing action. Otherwise
+                // closing an old room can rewind a newer record from this device.
+                const updated = Number.isFinite(sample.observedAt) ? Math.min(now(), sample.observedAt) : now();
+                if (updated < 0 || (previous && previous.updated >= updated && Number.isFinite(sample.observedAt))) return false;
                 const meta = s.meta[key] || previous || cleanMeta(p, { title:sample.title });
                 const row = { ...cleanMeta(p, meta), time:sample.time,
-                    duration:Number.isFinite(sample.duration) ? Math.max(0, Math.min(604800, sample.duration)) : 0, updated:now() };
-                s.rows = [row, ...s.rows.filter(r => identity(r) !== key)].slice(0, 100); return write(s);
+                    duration:Number.isFinite(sample.duration) ? Math.max(0, Math.min(604800, sample.duration)) : 0, updated };
+                s.rows = [row, ...s.rows.filter(r => identity(r) !== key)].sort((a,b)=>b.updated-a.updated).slice(0, 100); return write(s);
             },
             remove(p) { const key = identity(p), s = read(); s.rows = s.rows.filter(r => identity(r) !== key); delete s.meta[key]; s.deleted = [...s.deleted.filter(k => k !== key), key].slice(-100); if (s.resume?.key === key) delete s.resume; write(s); },
             clear() { const s = read(); s.deleted = s.rows.map(identity); s.rows = []; s.meta = {}; delete s.resume; write(s); },
