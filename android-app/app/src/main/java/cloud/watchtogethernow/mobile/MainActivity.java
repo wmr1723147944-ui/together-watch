@@ -234,7 +234,7 @@ public final class MainActivity extends ComponentActivity {
         nativePlayerView.setKeepScreenOn(true);
         nativePlayerView.setControllerShowTimeoutMs(2500);
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
-        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus);
+        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus, this::nextRoomEpisode);
         nativePlayerView.setFullscreenButtonClickListener(fullscreen -> {
             if (nativeFullscreen) exitNativeFullscreen(); else enterNativeFullscreen();
         });
@@ -259,7 +259,7 @@ public final class MainActivity extends ComponentActivity {
             readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
             () -> foreground && finding && !originalFinderActive,
             view -> configureWebView(view,false),networkExecutor);
-        episodePicker=new EpisodePickerController(this,SERVER_ORIGIN,catalogScript,readAsset("catalog-metadata-bridge.js"),
+        episodePicker=new EpisodePickerController(this,SERVER_ORIGIN,catalogScript,readAsset("catalog-metadata-bridge.js"),readAsset("next-episode.js"),
             ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor);
         arrangePanels();
     }
@@ -373,6 +373,8 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void updateRoomControls() {
+        if(nativePlayer!=null)nativePlayer.setEpisodeControl(sessionActive && !finding && EpisodePickerController.supported(programSelection),
+            !requestBusy && !ownerKey.isEmpty());
         updatePlaybackGate();
         updateCatalogChrome();
         boolean watching=sessionActive && !finding;
@@ -504,6 +506,11 @@ public final class MainActivity extends ComponentActivity {
         showFinder(originalFinderActive && originalFinderWebView != null);
     }
 
+    private void nextRoomEpisode() {
+        if(!sessionActive || !foreground || finding || requestBusy || ownerKey.isEmpty() || !nativePlayer.isActive() || !EpisodePickerController.supported(programSelection))return;
+        finishPlayerHold(false);
+        episodePicker.next(programSelection,catalogWebView);
+    }
     private void showCurrentEpisodes() {
         if(requestBusy || !sessionActive)return;
         if(programRevision>0 && ownerKey.isEmpty()){reportError("由房主选集，你会自动跟随换集。");return;}
@@ -662,6 +669,7 @@ public final class MainActivity extends ComponentActivity {
         if(!validateIdentity())return;
         if(sessionActive && ownerKey.isEmpty()){reportError("只有房主可以换片。");return;}
         boolean change=sessionActive;
+        long previousRevision=programRevision;
         requestProgram(change?"/api/watch-rooms/"+activeRoom+"/program":"/api/watch-rooms",change?"PUT":"POST",selection,change?ownerKey:"",data->{
             ProgramPolicy.Selection selected=validatedProgram(data);
             if(selected==null){reportError("服务器返回了不支持的片源，未打开外部地址。");return;}
@@ -670,7 +678,11 @@ public final class MainActivity extends ComponentActivity {
                 if(!room.matches("[a-f0-9]{24}") || !owner.matches("[A-Za-z0-9_-]{32,128}")){reportError("建房回复无效，请重试。");return;}
                 ownerKey=owner;preferences.edit().putString("owner_"+room,owner).apply();
                 programRevision=data.optLong("revision");programSelection=selected;startResolved(room,selected.page);
-            }else if(!applyRoomProgram(data)) openProgramPage(selected.page);
+            }else if(!applyRoomProgram(data) && programRevision==previousRevision && data.optLong("revision")==programRevision) {
+                // Replaying the same selection is intentional. A room update that
+                // already applied this switch must not restart the new episode.
+                openProgramPage(selected.page);
+            }
         });
     }
 
@@ -723,6 +735,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showSetup() {
+        if(episodePicker!=null)episodePicker.close();
         pendingSetupSelection=null;
         roomInput.setText("");videoUrlInput.setText("");
         exitNativeFullscreen();

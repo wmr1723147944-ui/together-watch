@@ -38,20 +38,24 @@ final class EpisodePickerController {
     private CatalogMetadataController metadata;
     private ProgramPolicy.Selection selection;
     private int generation;
+    private final String nextScript;
+    private boolean quick,checking;
 
-    EpisodePickerController(Activity activity,String origin,String adapters,String bridge,BooleanSupplier foreground,
+    EpisodePickerController(Activity activity,String origin,String adapters,String bridge,String nextScript,BooleanSupplier foreground,
                             Consumer<WebView> configure,Consumer<ProgramPolicy.Selection> choose,Consumer<String> error,Executor disk) {
         this.activity=activity;this.origin=origin;this.adapters=adapters;this.bridge=bridge;this.foreground=foreground;
-        this.configure=configure;this.choose=choose;this.error=error;this.disk=disk;
+        this.configure=configure;this.choose=choose;this.error=error;this.disk=disk;this.nextScript=nextScript;
     }
     boolean isOpen(){return dialog!=null;}
     private boolean live(int epoch){return epoch==generation && dialog!=null && page!=null;}
-    void show(ProgramPolicy.Selection program) {
+    static boolean supported(ProgramPolicy.Selection p){return p!=null && p.exact() && p.source.matches("cupfox|yhdmoe|huarw|kanju|pkavi|233dm");}
+    void show(ProgramPolicy.Selection program) {show(program,false);}
+    private void show(ProgramPolicy.Selection program,boolean advance) {
         if(isOpen())return;
         if(program==null || !program.source.matches("cupfox|yhdmoe|huarw|kanju|pkavi|233dm")) {
             error.accept("此链接没有可用剧集目录，可到「更多」换片或使用原网页选集。");return;
         }
-        selection=program;final int epoch=++generation;
+        quick=advance;checking=false;selection=program;final int epoch=++generation;
         dialog=new Dialog(activity);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         FrameLayout host=new FrameLayout(activity);host.setBackgroundColor(0xff171b25);
         page=new WebView(activity);configure.accept(page);page.setBackgroundColor(0xff171b25);
@@ -64,7 +68,7 @@ final class EpisodePickerController {
                 if(!request.isForMainFrame())return !"https".equals(request.getUrl().getScheme());
                 if(!live(epoch) || !request.hasGesture() || !CatalogMetadataPolicy.catalogue(view.getUrl(),origin))return true;
                 ProgramPolicy.Selection next=ProgramPolicy.handoff(request.getUrl().toString(),origin);
-                if(next!=null && next.source.equals(program.source) && next.item.equals(program.item) && !next.episode.equals(program.episode))choose.accept(next);
+                if(next!=null && next.source.equals(program.source) && next.item.equals(program.item) && !next.episode.equals(program.episode)){quick=false;choose.accept(next);}
                 return true;
             }
             @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon) {
@@ -100,8 +104,46 @@ final class EpisodePickerController {
             if(!live(epoch))return;
             if("\"closed\"".equals(raw))close();
             else if("null".equals(raw))handler.postDelayed(()->open(epoch,attempt+1),250);
-            else if("true".equals(raw))watchClose(epoch);
+            else if("true".equals(raw)){watchClose(epoch);if(quick)advanceDrawer(epoch,0);}
             else fail("此来源没有可用集数目录，可用原网页选集。");
+        });
+    }
+    private void readNext(WebView web,ProgramPolicy.Selection p,boolean expand,Consumer<String> result) {
+        if(!CatalogMetadataPolicy.catalogue(web.getUrl(),origin) || nextScript.isEmpty()){result.accept("missing");return;}
+        String args=JSONObject.quote(origin)+",{source:"+JSONObject.quote(p.source)+",item:"+JSONObject.quote(p.item)+",episode:"+JSONObject.quote(p.episode)+"}";
+        web.evaluateJavascript(nextScript.trim()+"(document,"+args+","+expand+")",raw->{
+            String value="missing";
+            try {Object parsed=new org.json.JSONTokener(raw).nextValue();if(parsed instanceof String)value=(String)parsed;}catch(Exception ignored){}
+            result.accept(value);
+        });
+    }
+    private ProgramPolicy.Selection validatedNext(String value,ProgramPolicy.Selection p) {
+        ProgramPolicy.Selection n=ProgramPolicy.handoff(value,origin);
+        return n!=null && n.source.equals(p.source) && n.item.equals(p.item) && !n.episode.equals(p.episode)?n:null;
+    }
+    void next(ProgramPolicy.Selection program,WebView catalogue) {
+        if(!supported(program) || checking || isOpen())return;
+        checking=true;final int epoch=++generation;
+        readNext(catalogue,program,false,value->{
+            if(epoch!=generation)return;
+            checking=false;if(!foreground.getAsBoolean())return;
+            ProgramPolicy.Selection n=validatedNext(value,program);
+            if(n!=null)choose.accept(n);
+            else show(program,true); // Re-read even a cached last episode: a new one may be available.
+        });
+    }
+    private void advanceDrawer(int epoch,int attempt) {
+        if(!live(epoch) || !quick)return;
+        readNext(page,selection,true,value->{
+            if(!live(epoch) || !quick || !foreground.getAsBoolean())return;
+            ProgramPolicy.Selection n=validatedNext(value,selection);
+            if(n!=null){close();choose.accept(n);return;}
+            if(("waiting".equals(value) || "more".equals(value)) && attempt<180){
+                handler.postDelayed(()->advanceDrawer(epoch,attempt+1),250);return;
+            }
+            quick=false;
+            if("end".equals(value)){fail("当前线路的目录里没有下一集，继续播放本集。");return;}
+            error.accept("未能确认下一集，当前影片没有切换。可以在目录里手动选择。");
         });
     }
     private void watchClose(int epoch) {
@@ -112,6 +154,7 @@ final class EpisodePickerController {
         });
     }
     void close() {
+        quick=false;checking=false;
         ++generation;handler.removeCallbacksAndMessages(null);
         if(metadata!=null){metadata.close();metadata=null;}
         Dialog old=dialog;dialog=null;

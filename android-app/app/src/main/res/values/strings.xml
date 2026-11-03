@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="room_next_episode">下一集</string>
     <string name="app_name">一起看</string>
     <string name="setup_title">加入房间 / 确认选片</string>
     <string name="setup_subtitle">自己看：先找片，选集后建房。朋友邀请：只需粘贴邀请，自动打开房主的片源。</string>

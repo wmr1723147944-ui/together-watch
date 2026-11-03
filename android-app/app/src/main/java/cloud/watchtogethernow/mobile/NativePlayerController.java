@@ -31,13 +31,23 @@ final class NativePlayerController {
     private String error = "";
     private final DanmakuView danmaku;
     private final PlaybackHold hold = new PlaybackHold();
+    private final android.view.View episodeButton;
 
-    NativePlayerController(Context context, PlayerView view, StatusListener listener) {
+    NativePlayerController(Context context, PlayerView view, StatusListener listener, Runnable nextEpisode) {
         this.context = context;
         this.view = view;
         this.listener = listener;
         view.setShowFastForwardButton(false);
         view.setShowRewindButton(false);
+        // ExoPlayer owns one media item. Its playlist-next command is therefore
+        // disabled; a room episode change must go through the host's room API.
+        android.view.View stock=view.findViewById(androidx.media3.ui.R.id.exo_next);
+        android.view.ViewGroup center=(android.view.ViewGroup)stock.getParent();
+        view.setShowNextButton(false);
+        episodeButton=android.view.LayoutInflater.from(context).inflate(R.layout.room_next_episode,center,false);
+        center.addView(episodeButton,center.indexOfChild(stock)+1);
+        episodeButton.setOnClickListener(v->nextEpisode.run());
+        setEpisodeControl(false,false);
         danmaku=new DanmakuView(context,()->player==null?0:player.getCurrentPosition()/1000.0,()->{
             if(player==null || view.getResizeMode()==androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM)return 0;
             androidx.media3.common.VideoSize size=player.getVideoSize();return size.height>0?(double)size.width*size.pixelWidthHeightRatio/size.height:0;
@@ -93,6 +103,11 @@ final class NativePlayerController {
     }
 
     boolean isActive() { return player != null; }
+    void setEpisodeControl(boolean show,boolean enabled) {
+        episodeButton.setVisibility(show?android.view.View.VISIBLE:android.view.View.GONE);
+        episodeButton.setEnabled(enabled);
+        episodeButton.setAlpha(enabled?1f:.35f);
+    }
     boolean beginHold() {
         if (player == null || !player.isPlaying() || pendingState != null || events.length() > 0) return false;
         if (!hold.begin(player.getCurrentPosition()/1000.0, player.getPlaybackParameters().speed)) return false;
