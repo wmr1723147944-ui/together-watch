@@ -182,6 +182,8 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
             assert.equal(result.ok, true, result.error);
             await shellWc.executeJavaScript("document.getElementById('setup').hidden=true;document.getElementById('tools').hidden=false;");
             const { video, roomView } = client.state();
+            assert.equal(video.getVisible(),false);
+            await client.action('original'); // This suite exercises the optional website player.
             // These windows stay hidden to avoid stealing desktop focus.
             // Establish emulated focus before the first autoplay/seek command,
             // not halfway through its pending play() promise.
@@ -310,6 +312,8 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/cupfox/123/ep2')}`);
         await until('selected second episode in embedded view', async () => catalogClient.state().video.webContents.getURL() === 'https://www.cupfox.in/vod-detail/123.html'
             && await catalogClient.state().video.webContents.executeJavaScript('document.body.dataset.episode === "ep2"'));
+        await catalogClient.action('original');
+        await catalogClient.action('cinema');
         await until('selected episode player connected', () => !!catalogClient.state().selected);
         assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
         assert.equal(catalogClient.state().browsing, false);
@@ -320,15 +324,20 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/yhdmoe/123/EP10.5')}`);
         await until('sakura selects exact fractional episode', async () => catalogClient.state().video.webContents.getURL() === 'https://yhdmoe.com/watch/123#play_ep_EP10.5'
             && await catalogClient.state().video.webContents.executeJavaScript('document.body.dataset.episode === "EP10.5"'));
+        await catalogClient.action('original');
         await until('sakura player connected', () => !!catalogClient.state().selected);
         await catalogClient.action('discover');
         await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/fcma/9102-229/1048459')}`);
-        await until('fengche opaque episode page stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://www.fcma.cc/p/9102/229/1048459' && !!catalogClient.state().selected);
+        await until('fengche opaque episode page stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://www.fcma.cc/p/9102/229/1048459');
+        await catalogClient.action('original'); await catalogClient.action('cinema');
+        await until('compatible web player connected',()=>!!catalogClient.state().selected);
         assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
         assert.equal(catalogClient.state().cinema, true);
         await catalogClient.action('discover');
         await catalogWc.executeJavaScript(`location.href=${JSON.stringify(server + '/discover/play/ddys/interstellar/page')}`);
-        await until('ddys original-page entry stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://ddys.io/movie/interstellar' && !!catalogClient.state().selected);
+        await until('ddys original-page entry stays in app', () => catalogClient.state().video.webContents.getURL() === 'https://ddys.io/movie/interstellar');
+        await catalogClient.action('original'); await catalogClient.action('cinema');
+        await until('legacy page player connected',()=>!!catalogClient.state().selected);
         assert.equal(catalogClient.state().roomView.webContents, catalogRoom);
         assert.equal(catalogClient.state().cinema, true);
         await fixtureSession.protocol.unhandle('https');

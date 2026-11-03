@@ -97,7 +97,9 @@ exports.run=async({createDesktop,server,output,until})=>{
             // Hidden WebContentsViews may not have a capturable display surface.
             // DOM assertions above are mandatory; visual QA uses an offscreen window.
             await finder.executeJavaScript('document.querySelector("#discoveryEpisodes a").click()');
-            await until('selection creates room and detects player',()=>!!a.state().current && !!a.state().selected);
+            await until('selection creates room',()=>!!a.state().current && !!a.state().video);
+            await a.action('original');
+            await until('manual web player connected',()=>!!a.state().selected);
             const id=a.state().current.room;
             const roomView=a.state().roomView;
             await a.action('back');
@@ -120,6 +122,7 @@ exports.run=async({createDesktop,server,output,until})=>{
             const {c:b}=await client('guest-'+source,source,item);
             const joined=await b.start({nickname:'guest',room:server+'/room/'+id,consent:true});
             assert.ok(joined.ok,joined.error);
+            await b.action('original');
             await until('guest player without reentering source',()=>!!b.state().selected);
             assert.equal(b.state().video.webContents.getURL(),api.selection(source,item,episode(1)).page);
             await until('guest catches up',()=>read(b,'document.querySelector("video").currentTime>10 && !document.querySelector("video").paused'));
@@ -147,7 +150,8 @@ exports.run=async({createDesktop,server,output,until})=>{
             assert.equal((await picker.executeJavaScript('twSourceMetadata.request("not-search","search",{source:"kanju",q:"test"})')).status,'unavailable');
             assert.equal(await picker.executeJavaScript('document.querySelector("#discoveryEpisodes [aria-current]").getAttribute("href")'),api.selection(source,item,episode(1)).path);
             await picker.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a")[1].click()');
-            await until('invited guest changes episode',()=>b.state().video.webContents.getURL()===api.selection(source,item,episode(2)).page && !!b.state().selected);
+            await until('invited guest changes episode',()=>b.state().video.webContents.getURL()===api.selection(source,item,episode(2)).page);
+            await b.action('original'); await until('guest reopens web playback for new episode',()=>!!b.state().selected);
             assert.equal(a.state().episodeView,null);assert.equal(a.state().roomView,roomView);assert.equal(a.state().current.room,id);
             await delay(1800);
             assert.ok(await read(b,'document.querySelector("video").currentTime<15'));

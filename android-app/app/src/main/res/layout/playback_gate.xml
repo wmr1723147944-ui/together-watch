@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:visibility="gone" android:background="#151922" android:clickable="true"
+    android:focusable="true" android:gravity="center" android:orientation="vertical" android:padding="12dp">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="一起看 · 内置播放" android:textSize="19sp" android:textColor="#FFFFFF"/>
+    <TextView android:id="@+id/gateMessage" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:gravity="center" android:padding="8dp" android:textColor="#CFD7E4" android:textSize="14sp"/>
+    <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
+        <Button android:id="@+id/gateChoices" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="选线路"/>
+        <Button android:id="@+id/gateChange" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="换个来源"/>
+        <Button android:id="@+id/gateOriginal" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="手动打开原网页"/>
+    </LinearLayout>
+</LinearLayout>

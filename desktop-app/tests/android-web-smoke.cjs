@@ -63,6 +63,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await session.fromPartition('video-test-'+host.win.id).protocol.handle('https',fixture);
         assert.ok((await host.start({nickname:'Windows CSP fixture',source:page,consent:true})).ok);
         const hostVideo=host.state().video.webContents;
+        await host.action('original');
         await focus(hostVideo);
         await wait('Windows player',()=>!!host.state().selected);
         await wait('Windows sync',()=>host.state().roomView.webContents.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent.includes("同步已连接")'));
@@ -172,7 +173,8 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await host.win.webContents.executeJavaScript(`document.getElementById('room').value=${JSON.stringify(androidId)};
             document.getElementById('room').dispatchEvent(new Event('input'));document.getElementById('source').value='';
             document.getElementById('consent').checked=true;document.getElementById('startForm').requestSubmit();`);
-        await wait('bare room number joins Android host',()=>host.state().current?.room===androidId&&!!host.state().selected);
+        await wait('bare room number joins Android host',()=>host.state().current?.room===androidId&&host.state().video);
+        await host.action('original'); await wait('original player attached',()=>!!host.state().selected);
         const guestVideo=host.state().video.webContents;await focus(guestVideo);
         await wait('Windows catches Android host pause and position',async()=>{const s=await state(guestVideo);return s.paused&&Math.abs(s.time-10)<1;});
         await key(pv,'p');
@@ -181,6 +183,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await wait('Windows guest seek/pause reaches Android host',async()=>{const s=await state(pv);return s.paused&&Math.abs(s.time-20)<1;});
         const rejoined=await host.start({nickname:'Windows query invite',room:server+'/?room='+androidId,consent:true});
         assert.equal(rejoined.ok,true,rejoined.error);assert.equal(host.state().current.room,androidId);
+        await host.action('original');
         await wait('query invite keeps Android room position',async()=>{const s=await state(host.state().video.webContents);return s.paused&&Math.abs(s.time-20)<1;});
         const missing=await host.start({nickname:'missing room',room:'0'.repeat(24),consent:true});
         assert.equal(missing.ok,false);assert.equal(host.state().current.room,androidId,'failed join must not silently create another room');
@@ -194,6 +197,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         polling=(async()=>{while(!stopped&&!pollError){await poll();await delay(300);}})();
         const legacyJoin=await host.start({nickname:'legacy Windows guest',room:legacy,source:page,consent:true});
         assert.equal(legacyJoin.ok,true,legacyJoin.error);assert.equal(host.state().current.room,legacy);
+        await host.action('original');
         await wait('legacy Windows player ready',()=>!!host.state().selected);
         await wait('legacy Android connected',()=>rv.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent.includes("同步已连接")'));
         await key(pv,'j');

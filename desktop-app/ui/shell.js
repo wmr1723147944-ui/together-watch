@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let room = '', finderMode = 'catalog';
+let room = '', finderMode = 'catalog', gate = false, manualWeb = false;
 const LEGAL_VERSION = '2026-07-28';
 let entryMode = 'join', submitting = false;
 const samples = { sintel: 'https://media.w3.org/2010/05/sintel/trailer.mp4', bunny: 'https://media.w3.org/2010/05/bunny/trailer.mp4' };
@@ -11,7 +11,7 @@ $('room').oninput = () => { $('source').disabled = !!$('room').value.trim(); };
 $('roomLabel').onclick = () => window.desktop.action('copy-room');
 function closeEntry() { $('setup').close(); $('setup').hidden=true; }
 function finder() { room=''; closeEntry(); document.body.classList.toggle('catalog-home',finderMode==='catalog'); $('tools').hidden = true; $('finderTools').hidden = finderMode==='catalog'; $('placeholder').hidden = true; $('home').hidden=false; $('settings').hidden=false; }
-function joined(id) { closeEntry(); document.body.classList.remove('catalog-home'); room = id; $('roomLabel').textContent = `复制房间号 · ${room}`; $('tools').hidden = false; $('finderTools').hidden = true; $('placeholder').hidden = false; $('home').hidden = true; $('settings').hidden = true; }
+function joined(id) { closeEntry(); document.body.classList.remove('catalog-home'); room = id; $('roomLabel').textContent = `复制房间号 · ${room}`; $('tools').hidden = false; $('finderTools').hidden = true; $('placeholder').hidden = !gate; $('home').hidden = true; $('settings').hidden = true; }
 function showEntry() {
     $('setup').hidden=false;
     if (!$('setup').open) $('setup').showModal();
@@ -26,6 +26,9 @@ $('more').onclick = () => window.desktop.action({type:'tools',expanded:$('roomMo
 $('leave').onclick = () => window.desktop.action('leave');
 $('finder-catalog').onclick = () => window.desktop.action('discover');
 $('change-film').onclick = () => window.desktop.action('discover');
+$('gateOriginal').onclick = () => window.desktop.action('original');
+$('gateChange').onclick = () => window.desktop.action('discover');
+$('gateChoices').onclick = async () => {await window.desktop.action({type:'tools',expanded:true}); $('mediaChoices').focus();};
 $('finder-kanju').onclick = () => window.desktop.action('kanju');
 $('finder-pick').onclick = () => window.desktop.action('pick-current');
 for (const action of ['finder-back','finder-reload','finder-browser']) $(action).onclick = () => window.desktop.action(action);
@@ -60,6 +63,10 @@ $('play-media').onclick = async () => {
 for (const action of ['terms','privacy']) $(action).onclick = event => { event.preventDefault(); window.desktop.action(action); };
 $('sourceForm').onsubmit = async event => { event.preventDefault(); const result = await window.desktop.action({ type: 'source', source: $('currentSource').value }); if (result?.error) $('status').textContent = result.error; };
 window.desktop.onStatus(data => {
+    if (typeof data.gate === 'boolean') { gate=data.gate; $('placeholder').hidden=!room || !gate; }
+    if (data.gateText) $('gateText').textContent=data.gateText;
+    if (typeof data.manualWeb === 'boolean') {manualWeb=data.manualWeb; $('modeLabel').textContent=manualWeb?'网页播放':'内置播放';}
+    if (typeof data.host === 'boolean') $('gateChange').hidden=!data.host;
     if (data.message) { $('status').textContent = data.message; $('status').title = data.message; }
     if (data.finder) finder();
     if (data.joined) joined(data.joined);
@@ -73,6 +80,7 @@ window.desktop.onStatus(data => {
     }
     if (typeof data.cinema === 'boolean') $('cinema').textContent=data.cinema?'显示完整网页':'只显示视频区域';
     if (Array.isArray(data.candidates)) {
+        $('gateChoices').hidden=!data.candidates.length;
         const previous = $('mediaChoices').value;
         $('mediaChoices').replaceChildren(new Option(data.candidates.length ? `识别到 ${data.candidates.length} 项，请选择` : '尚未识别到可转移的视频', ''));
         for (const item of data.candidates) $('mediaChoices').add(new Option(item.label, item.id));
@@ -80,7 +88,7 @@ window.desktop.onStatus(data => {
         else if (data.candidates.length === 1) $('mediaChoices').value = data.candidates[0].id;
         $('play-media').disabled = !$('mediaChoices').value;
     }
-    if (typeof data.builtin === 'boolean') $('modeLabel').textContent = data.builtin ? '内置播放' : '网页播放';
+    if (typeof data.builtin === 'boolean') $('modeLabel').textContent = data.builtin || !manualWeb ? '内置播放' : '网页播放';
     if (data.setup) { document.body.classList.remove('catalog-home'); $('setup').hidden = false; $('tools').hidden = true; $('finderTools').hidden = true; $('placeholder').hidden = true;
         room=''; $('home').hidden=false; $('settings').hidden=false;
         $('room').value=''; $('source').disabled=false; $('source').value=data.pendingSource||''; $('error').textContent='';

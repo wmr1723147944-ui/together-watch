@@ -44,3 +44,14 @@ test('DRM detection invalidates every candidate until the page changes', () => {
     c.reset(); assert.ok(c.add(a.url, page));
     assert.equal(c.add(a.url, 'https://v.qq.com/a'), null);
 });
+test('automatic playback needs two unambiguous current snapshots, never a historical/network hit', () => {
+    const c=new MediaCatalog();
+    const a=c.add('https://cdn.example.com/episode.mp4',page).id;
+    const b=c.add('https://cdn.example.com/preview.mp4',page).id;
+    for(const ids of [[],[a],[a,b],[a],[],[b],[b,''],[a]]) {
+        c.observeMain(ids);assert.equal(c.automaticId,'');
+    }
+    c.observeMain([a,a]);assert.equal(c.automaticId,a);
+    c.block();c.observeMain([a]);assert.equal(c.automaticId,'');
+    c.reset();assert.equal(c.previousMain,'');
+});

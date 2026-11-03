@@ -30,6 +30,7 @@ exports.run=async({createDesktop,server,output,until})=>{
         });
         const result=await c.start({nickname:name,consent:true,...(room?{room}:{source:server+'/discover/play/cupfox/12/ep1'})});
         assert.equal(result.ok,true,result.error);
+        await c.action('original');
         await until(name+' player ready',()=>!!c.state().selected);
         return c;
     }

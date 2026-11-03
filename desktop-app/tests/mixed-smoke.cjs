@@ -42,6 +42,7 @@ exports.run = async ({ createDesktop, server, source, output, until, inputKey })
         const result = await desktop.win.webContents.executeJavaScript(`window.desktop.start(${JSON.stringify({ nickname: 'Desktop', room: 'mixed-smoke', source, consent: true })})`);
         assert.equal(result.ok, true, result.error);
         const debuggerApi = desktop.state().video.webContents.debugger;
+        await desktop.action('original');
         debuggerApi.attach('1.3');
         await debuggerApi.sendCommand('Emulation.setFocusEmulationEnabled', { enabled: true });
         await until('mixed desktop player', () => !!desktop.state().selected);

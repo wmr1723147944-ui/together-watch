@@ -39,6 +39,8 @@ exports.run = async ({createDesktop, server, output, until}) => {
             // Observe candidate and start the isolated view, then supply a seekable
             // MP4 on HTTPS within that view's session. No production overrides.
             const list = await candidates(client); assert.equal(list.length, 1);
+            assert.equal(client.state().video.getVisible(),false,'do not expose the original while resolving');
+            assert.equal(client.state().video.webContents.isAudioMuted(),true,'hidden source stays silent');
             const playerSession = client.state().mediaSession;
             await playerSession.protocol.handle('https', async request => {
                 if (new URL(request.url).hostname !== 'media.example.com') return new Response('', {status:404});
@@ -47,7 +49,15 @@ exports.run = async ({createDesktop, server, output, until}) => {
                 const headers = new Headers(response.headers); headers.set('access-control-allow-origin','*');
                 return new Response(response.body,{status:response.status,headers});
             });
-            assert.equal((await client.action({type:'play-media',id:list[0].id})).ok, true);
+            if (name==='builtin-alice') {
+                // This fixture intentionally blocks the source request. Supply only
+                // metadata for the paused main video; the isolated player decodes real bytes.
+                await client.state().video.webContents.executeJavaScript("const v=document.querySelector('video');Object.defineProperties(v,{duration:{get:()=>2400},readyState:{get:()=>1}});true");
+            } else {
+                // Explicit media links need neither DOM metadata nor a visit to the original.
+                await client.action({type:'source',source:'https://media.example.com/movie.mp4'});
+            }
+            await until('automatic isolated playback',()=>!!client.state().builtin);
             const wc = client.state().builtin.webContents;
             wc.debugger.attach('1.3'); await wc.debugger.sendCommand('Emulation.setFocusEmulationEnabled',{enabled:true});
             await until('MP4 loaded', () => wc.executeJavaScript('document.querySelector("video").readyState>=3'));
@@ -105,11 +115,19 @@ exports.run = async ({createDesktop, server, output, until}) => {
         await a.action({type:'source',source:fixture+'/next'});
         assert.equal((await staleOpen).ok,false);
         assert.equal(a.state().builtin,null);
+        assert.equal(a.state().video.getVisible(),false,'manual web mode must not carry over to the next episode');
         await until('new page loaded', () => !a.state().video.webContents.isLoadingMainFrame());
         assert.equal((await a.action({type:'play-media',id:old})).ok,false);
         // The trusted player presents an error, never claims a 403 is playing.
         await bw.executeJavaScript('window.__twBuiltin.load({url:"https://media.example.com/broken.mp4",kind:"mp4"})');
         await until('403 error visible', () => bw.executeJavaScript('!!window.__twBuiltin.state().error'));
+        assert.equal(b.state().video.getVisible(),false,'a decoder error must not reveal the website');
+        await a.action({type:'source',source:'https://v.qq.com/example'});
+        await until('web-only gate without loading the site',async()=>a.state().video.webContents.getURL()==='about:blank'
+            && !a.state().video.getVisible() && await a.win.webContents.executeJavaScript('!placeholder.hidden && gateText.textContent.includes("原网页")'));
+        assert.equal(a.state().selected,null);
+        await a.action('original');
+        await until('explicit action reveals the original',()=>a.state().video.getVisible() && a.state().video.webContents.getURL()==='https://v.qq.com/example');
         console.log('BUILTIN PASS: MP4 decode, solo advance, two-peer seek/pause/play/speed, isolated session, native and F11 fullscreen, actual mouse focus auto-hides, keyboard focus stays visible, no fullscreen scrollbar, original-page fallback, stale candidate/racing navigation rejection, 403 message.');
         if (process.env.TW_SMOKE_LIVE_MEDIA === '1') {
             // Real network media: an openly published trailer and HLS.js' public

@@ -12,7 +12,8 @@
             }
             if (video.mediaKeys || video.__twEncrypted) result.protected = true;
             const r = video.getBoundingClientRect();
-            const details = { dom: true, active: r.width > 80 && r.height > 45 && !video.paused && video.readyState >= 1,
+            const details = { dom: true, main: r.width > 100 && r.height > 70 && video.readyState >= 1 && Number.isFinite(video.duration) && video.duration >= 120,
+                active: r.width > 80 && r.height > 45 && !video.paused && video.readyState >= 1,
                 position: video.currentTime || 0, duration: Number.isFinite(video.duration) ? video.duration : 0 };
             const url = video.currentSrc || video.src;
             if (url) result.candidates.push({ url, ...details });

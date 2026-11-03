@@ -208,17 +208,6 @@
                 android:textColor="#242730"
                 android:textColorHint="#7A7E88" />
 
-            <CheckBox
-                android:id="@+id/autoNativeCheck"
-                android:visibility="gone"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:checked="true"
-                android:buttonTint="#C6533C"
-                android:text="自动尝试内置播放（可随时切回网页）"
-                android:textColor="#737782" />
-
             <Button
                 android:id="@+id/sampleButton"
                 android:visibility="gone"

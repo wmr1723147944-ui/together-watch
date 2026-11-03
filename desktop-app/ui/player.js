@@ -6,7 +6,7 @@
     let hls = null, loadId = 0, watchdog = null, failed = '', position = 0, cropped = false;
     function fail(message) {
         failed = message; clearTimeout(watchdog); video.pause(); hls?.stopLoad();
-        notice.textContent = message + ' 可点击上方“原网页”返回，或重新识别其他候选。'; notice.hidden = false;
+        notice.textContent = message + ' 可在「更多」里换片，或点「用原网页播放」。'; notice.hidden = false;
     }
     function destroy() {
         ++loadId; clearTimeout(watchdog); hls?.destroy(); hls = null;

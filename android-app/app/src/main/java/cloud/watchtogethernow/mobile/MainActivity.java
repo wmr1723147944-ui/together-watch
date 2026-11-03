@@ -95,7 +95,9 @@ public final class MainActivity extends ComponentActivity {
     private FrameLayout roomContainer;
     private PlayerView nativePlayerView;
     private NativePlayerController nativePlayer;
-    private CheckBox autoNativeCheck;
+    private View playbackGate;
+    private String requestedPageUrl="";
+    private long resolveUntil;
     private final LinkedHashMap<String, JSONObject> mediaCandidates = new LinkedHashMap<>();
     private String discoveryScript = "";
     private String sourcePageUrl = "";
@@ -192,7 +194,6 @@ public final class MainActivity extends ComponentActivity {
         webContainer = findViewById(R.id.webContainer);
         videoContainer = findViewById(R.id.videoContainer);
         roomContainer = findViewById(R.id.roomContainer);
-        autoNativeCheck = findViewById(R.id.autoNativeCheck);
         popupContainer = findViewById(R.id.popupContainer);
         fullscreenContainer = findViewById(R.id.fullscreenContainer);
     }
@@ -222,6 +223,11 @@ public final class MainActivity extends ComponentActivity {
             ViewGroup.LayoutParams.MATCH_PARENT
         );
         videoContainer.addView(videoWebView, match);
+        playbackGate=getLayoutInflater().inflate(R.layout.playback_gate,videoContainer,false);
+        videoContainer.addView(playbackGate,new FrameLayout.LayoutParams(-1,-1));
+        playbackGate.findViewById(R.id.gateOriginal).setOnClickListener(v->returnToWeb());
+        playbackGate.findViewById(R.id.gateChange).setOnClickListener(v->showFinder());
+        playbackGate.findViewById(R.id.gateChoices).setOnClickListener(v->choosePlayback());
         videoContainer.addView(catalogWebView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayerView = new PlayerView(this);
         nativePlayerView.setVisibility(View.GONE);
@@ -295,7 +301,6 @@ public final class MainActivity extends ComponentActivity {
         roomInput.setText("");
         videoUrlInput.setText(preferences.getString("video_url", ""));
         consentCheck.setChecked(preferences.getBoolean("consent", false));
-        autoNativeCheck.setChecked(preferences.getBoolean("auto_native", true));
     }
 
     private void bindActions() {
@@ -368,6 +373,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void updateRoomControls() {
+        updatePlaybackGate();
         updateCatalogChrome();
         boolean watching=sessionActive && !finding;
         browserToolbar.setVisibility(watching?View.VISIBLE:View.GONE);
@@ -472,7 +478,6 @@ public final class MainActivity extends ComponentActivity {
             .putString("room", activeRoom)
             .putString("video_url", videoUrl)
             .putBoolean("consent", true)
-            .putBoolean("auto_native", autoNativeCheck.isChecked())
             .apply();
 
         hideKeyboard();
@@ -677,10 +682,14 @@ public final class MainActivity extends ComponentActivity {
         finding=false;appliedProgramRevision=0;awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
         mediaCandidates.clear();protectedPage=false;sourcePageUrl=page;++videoPageGeneration;
-        preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
+        requestedPageUrl=page;preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
+        resolveUntil=android.os.SystemClock.elapsedRealtime()+24000;
+        mainHandler.postDelayed(()->{if(!destroyed)updatePlaybackGate();},24050);
+        videoWebView.getSettings().setMediaPlaybackRequiresUserGesture(true);
         browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
         nativePlayerView.setVisibility(View.GONE);videoWebView.setVisibility(View.VISIBLE);showVideoTab();
-        if(MediaSourcePolicy.isMedia(page))openNative(page,0);else videoWebView.loadUrl(page);
+        if(MediaSourcePolicy.preferWeb(page)) videoWebView.loadUrl("about:blank");
+        else if(MediaSourcePolicy.isMedia(page))openNative(page,0);else videoWebView.loadUrl(page);
     }
 
     private boolean applyRoomProgram(JSONObject data) {
@@ -764,7 +773,6 @@ public final class MainActivity extends ComponentActivity {
         consentCheck.setVisibility(expanded || identityNeeded?View.VISIBLE:View.GONE);
         findViewById(R.id.legalLinks).setVisibility(expanded || identityNeeded?View.VISIBLE:View.GONE);
         videoUrlInput.setVisibility(expanded?View.VISIBLE:View.GONE);
-        autoNativeCheck.setVisibility(expanded?View.VISIBLE:View.GONE);
         findViewById(R.id.sampleButton).setVisibility(expanded?View.VISIBLE:View.GONE);
         ((Button)findViewById(R.id.entryAdvancedButton)).setText(expanded?"收起选项":"昵称 / 手动链接");
     }
@@ -843,8 +851,9 @@ public final class MainActivity extends ComponentActivity {
                 deliverSample(generation,page,new JSONObject(),-1);
             });return;
         }
-        if(!nativePlayer.isActive() && System.currentTimeMillis()-lastDiscovery>2000)discoverMedia();
+        if(!nativePlayer.isActive() && System.currentTimeMillis()-lastDiscovery>2000 && (preferWebThisPage || android.os.SystemClock.elapsedRealtime()<resolveUntil))discoverMedia();
         if(nativePlayer.isActive()) {deliverSample(generation,page,nativePlayer.sample(),-1);return;}
+        if(!preferWebThisPage){deliverSample(generation,page,new JSONObject(),-1);return;}
         if(playerAgent.isEmpty() || webSyncScript.isEmpty()){setStatus("播放器组件缺失，请重新安装完整 APK。");deliverSample(generation,page,new JSONObject(),-1);return;}
         videoWebView.evaluateJavascript(WebPlayerScripts.sample(webSyncScript,playerAgent),result->{
             if(!bridgeCurrent(generation))return;
@@ -919,6 +928,7 @@ public final class MainActivity extends ComponentActivity {
         if (url.isEmpty() || !MediaSourcePolicy.isMedia(url)) return;
         if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) return;
         mediaCandidates.put(url, details == null ? new JSONObject() : details);
+        updatePlaybackGate();
     }
 
     private void discoverMedia() {
@@ -932,18 +942,18 @@ public final class MainActivity extends ComponentActivity {
             if (destroyed || finding || awaitingEpisode || generation != videoPageGeneration || !sessionActive || nativePlayer.isActive()) return;
             try {
                 JSONObject discovery = new JSONObject(result);
-                protectedPage = discovery.optBoolean("protectedVideo");
-                if (protectedPage) { mediaCandidates.clear(); return; }
+                protectedPage |= discovery.optBoolean("protectedVideo");
+                if (protectedPage) { mediaCandidates.clear(); updatePlaybackGate(); return; }
                 JSONArray candidates = discovery.optJSONArray("candidates");
                 List<JSONObject> active = new ArrayList<>();
                 if (candidates != null) for (int i = 0; i < candidates.length(); i++) {
                     JSONObject candidate = candidates.getJSONObject(i);
                     rememberCandidate(candidate.optString("url"), candidate);
-                    if (candidate.optBoolean("active") && candidate.optDouble("duration") >= 120) active.add(candidate);
+                    if (candidate.optBoolean("visible") && candidate.optDouble("duration") >= 120) active.add(candidate);
                 }
-                // Require the same visible, playing long-form video twice;
+                // Require the same visible long-form video twice (it may be paused);
                 // network-only candidates are offered for manual selection.
-                if (active.size() == 1 && autoNativeCheck.isChecked() && !preferWebThisPage) {
+                if (active.size() == 1 && discovery.optInt("longFormPlayers")==1 && !preferWebThisPage && android.os.SystemClock.elapsedRealtime()<resolveUntil) {
                     JSONObject candidate = active.get(0);
                     String url = candidate.optString("url");
                     activeCandidateCount = url.equals(lastActiveCandidate) ? activeCandidateCount + 1 : 1;
@@ -956,7 +966,8 @@ public final class MainActivity extends ComponentActivity {
 
     private void openNative(String url, double position) {
         if(finding || awaitingEpisode)return;
-        if (!MediaSourcePolicy.isMedia(url) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage) return;
+        if (!MediaSourcePolicy.isMedia(url) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
+        preferWebThisPage=false;
         // Keep the confirmed public episode with this native player. Its source
         // WebView is about to be unloaded, so its later title/URL is not evidence.
         nativeHistoryContext=historyContextPage==videoPageGeneration?currentHistoryContext:null;
@@ -978,26 +989,46 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void returnToWeb() {
+        if(!sessionActive || finding || requestedPageUrl.isEmpty())return;
+        ++videoPageGeneration;exitNativeFullscreen();
         nativePlayer.release();
         nativePlayerView.setVisibility(View.GONE);
         videoWebView.setVisibility(View.VISIBLE);
         preferWebThisPage = true;
+        sourcePageUrl=requestedPageUrl;
+        videoWebView.getSettings().setMediaPlaybackRequiresUserGesture(false);
         awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         appliedProgramRevision=0;episodeStarted=System.currentTimeMillis();
         showVideoTab();
         videoWebView.loadUrl(sourcePageUrl);
     }
 
+    private void updatePlaybackGate() {
+        if(playbackGate==null)return;
+        boolean waiting=sessionActive && !finding && !preferWebThisPage && nativePlayer!=null && !nativePlayer.isActive();
+        playbackGate.setVisibility(waiting?View.VISIBLE:View.GONE);
+        videoWebView.setImportantForAccessibility(waiting?View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS:View.IMPORTANT_FOR_ACCESSIBILITY_AUTO);
+        videoWebView.setFocusable(!waiting);
+        if(!waiting)return;
+        playbackGate.findViewById(R.id.gateChange).setVisibility(programRevision==0 || !ownerKey.isEmpty()?View.VISIBLE:View.GONE);
+        playbackGate.findViewById(R.id.gateChoices).setVisibility(!protectedPage && !mediaCandidates.isEmpty()?View.VISIBLE:View.GONE);
+        String note=protectedPage || MediaSourcePolicy.preferWeb(requestedPageUrl)?"这个来源需要在原网页播放。":
+            android.os.SystemClock.elapsedRealtime()>=resolveUntil?"未找到可直接播放的正片。可以换个来源，或手动打开原网页。":"正在为这一集准备内置播放…";
+        ((TextView)playbackGate.findViewById(R.id.gateMessage)).setText(note);
+    }
+
     private void choosePlayback() {
+        final int page=videoPageGeneration;
         List<String> urls = new ArrayList<>(mediaCandidates.keySet());
         List<String> labels = new ArrayList<>();
-        labels.add(nativePlayer.isActive() ? "返回原网页播放 / 选集" : "继续网页播放（关闭本页自动切换）");
-        labels.add("刷新网页并重新识别");
+        labels.add("手动打开原网页");
+        labels.add("重新尝试内置播放");
         for (String url : urls) labels.add("内置播放：" + MediaSourcePolicy.displayName(url));
         new AlertDialog.Builder(this).setTitle(urls.isEmpty() ? "暂未识别到可内置播放的资源" : "选择播放方式")
             .setItems(labels.toArray(new String[0]), (dialog, index) -> {
-                if (index == 0) { preferWebThisPage = true; if (nativePlayer.isActive()) returnToWeb(); }
-                else if (index == 1) { returnToWeb(); preferWebThisPage = false; }
+                if(page!=videoPageGeneration || !sessionActive || finding){reportError("影片已切换，请重新选择播放方式。");return;}
+                if (index == 0) { returnToWeb(); }
+                else if (index == 1) { openProgramPage(requestedPageUrl); }
                 else {
                     String url = urls.get(index - 2);
                     JSONObject details = mediaCandidates.get(url);
@@ -1227,6 +1258,7 @@ public final class MainActivity extends ComponentActivity {
         @Override public void onPermissionRequest(PermissionRequest request) {runOnUiThread(request::deny);}
         @Override
         public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+            if(view==videoWebView && !preferWebThisPage)return false;
             if(finding || programRevision>0) {
                 if(!isUserGesture)return false;
                 final boolean wasFinding=finding;
@@ -1278,6 +1310,7 @@ public final class MainActivity extends ComponentActivity {
 
         @Override
         public void onShowCustomView(View view, CustomViewCallback callback) {
+            if(!finding && !preferWebThisPage){callback.onCustomViewHidden();return;}
             showFullscreenVideo(view, callback);
         }
 
@@ -1599,6 +1632,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void enterWebFullscreen() {
+        if(!preferWebThisPage)return;
         // This requests the page's real video fullscreen, not a larger WebView
         // containing menus, adverts and empty page margins.
         videoWebView.evaluateJavascript("(function(){const v=Array.from(document.querySelectorAll('video')).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];if(!v||!v.requestFullscreen)return false;v.requestFullscreen().catch(()=>{});return true;})()", result -> {

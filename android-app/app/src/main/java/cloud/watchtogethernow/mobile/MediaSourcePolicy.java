@@ -15,6 +15,7 @@ final class MediaSourcePolicy {
             String host = URI.create(page).getHost();
             if (host == null) return true;
             host = host.toLowerCase(Locale.ROOT);
+            if (host.endsWith(".")) host = host.substring(0,host.length()-1);
             for (String domain : WEB_PLAYBACK_HOSTS) {
                 if (host.equals(domain) || host.endsWith("." + domain)) return true;
             }

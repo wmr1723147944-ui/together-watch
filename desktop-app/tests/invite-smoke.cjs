@@ -46,7 +46,8 @@ exports.run = async ({createDesktop,server,output,until}) => {
         await finder.executeJavaScript('document.querySelector(".discovery-title-card button").click()');
         await until('episode chooser',()=>finder.executeJavaScript('!!document.querySelector("#discoveryEpisodes a")'));
         await finder.executeJavaScript('document.querySelector("#discoveryEpisodes a").click()');
-        await until('selection creates room',()=>!!a.state().current && !!a.state().selected);
+        await until('selection creates room',()=>!!a.state().current && !!a.state().video);
+        await a.action('original'); await until('web player detected',()=>!!a.state().selected);
         const id = a.state().current.room;
         const selection = await (await fetch(server+`/api/watch-rooms/${id}/program`)).json();
         assert.equal(selection.program.source,'blender'); assert.equal(selection.owner,undefined);
@@ -57,6 +58,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         const b = await newClient('guest');
         const result=await b.start({nickname:'guest',room:server+'/room/'+id,consent:true});
         assert.equal(result.ok,true,result.error); // Deliberately NO source field.
+        await b.action('original');
         await until('guest opens matching page',()=>!!b.state().selected);
         assert.equal(b.state().video.webContents.getURL(),a.state().video.webContents.getURL());
         await until('guest catches host progress',()=>read(b,'document.querySelector("video").currentTime>10'));
@@ -67,7 +69,8 @@ exports.run = async ({createDesktop,server,output,until}) => {
         assert.equal(rejected.ok,false);
         const changed = await a.action({type:'source',source:'https://media.w3.org/2010/05/bunny/trailer.mp4'});
         assert.equal(changed.ok,true,changed.error);
-        await until('guest follows next episode',()=>b.state().video.webContents.getURL().includes('/bunny/'));
+        await until('guest follows next episode',()=>b.win.webContents.executeJavaScript('document.getElementById("currentSource").value.includes("/bunny/")'));
+        await b.action('original');
         await until('new source bridge ready',()=>!!b.state().selected);
         await delay(2500);
         assert.ok(await read(b,'document.querySelector("video").currentTime<15'),'old 18 second timeline must not leak into new episode');

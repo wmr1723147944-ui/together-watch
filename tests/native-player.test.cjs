@@ -266,6 +266,15 @@ test('network-only manifests are not marked as active playback', () => {
     const result = discover([], ['https://media.example/master.m3u8', 'http://media.example/insecure.mp4']);
     assert.equal(result.candidates.length, 1);
     assert.equal(result.candidates[0].active, false);
+    assert.equal(result.candidates[0].visible, false);
+});
+test('a paused long-form video can be recognized without playing the source page', () => {
+    const result=discover([video({paused:true})],['https://media.example/movie.mp4']);
+    assert.equal(result.candidates.length,1);
+    assert.equal(result.candidates[0].active,false);
+    assert.equal(result.candidates[0].visible,true);
+    assert.equal(result.candidates[0].duration,600);
+    assert.equal(discover([video({readyState:0})]).candidates[0].visible,false);
 });
 test('protected video suppresses captured network candidates', () => {
     const result = discover([video({ mediaKeys: {} })], ['https://media.example/master.mpd']);

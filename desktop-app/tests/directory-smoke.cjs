@@ -75,6 +75,7 @@ exports.run = async ({createDesktop,server,output,until}) => {
         assert.match(joined.room,/^legacy-/,'unsupported source must not fake automatic invite compatibility');
         assert.equal(dialogs,1,'compatibility limitation requires user confirmation');
         assert.equal(client.state().video.webContents.getURL(),'https://www.aafun.cc/watch');
+        await client.action('original');
         await until('compatibility player detected',()=>!!client.state().selected);
         await client.action('discover');
         assert.equal(client.state().current.room,joined.room,'browsing cannot replace current room');

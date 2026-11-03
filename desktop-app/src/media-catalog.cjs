@@ -19,14 +19,22 @@ function mediaKind(value, mime = '') {
 }
 class MediaCatalog {
     constructor() { this.reset(); }
-    reset() { this.items = new Map(); this.protected = false; this.reason = ''; }
+    reset() { this.items = new Map(); this.protected = false; this.reason = ''; this.previousMain = ''; this.automaticId = ''; }
+    // Compare complete, consecutive DOM snapshots, not the accumulated network list.
+    observeMain(ids) {
+        const unique = [...new Set(ids)];
+        const id = unique.length === 1 && this.get(unique[0]) ? unique[0] : '';
+        this.automaticId = id && id === this.previousMain ? id : '';
+        this.previousMain = id;
+    }
     block(reason = '检测到受保护内容，请保留原网页播放。') { this.protected = true; this.reason = reason; this.items.clear(); }
     add(value, page, mime = '', details = {}) {
         if (this.protected || preferWeb(page) || !publicHttps(page)) return null;
-        const kind = mediaKind(value, mime);
-        if (!kind) return null;
+        if (!publicHttps(value)) return null;
         const url = new URL(value); url.hash = '';
         let item = this.items.get(url.href);
+        const kind = mediaKind(value, mime) || item?.kind;
+        if (!kind) return null;
         if (!item) {
             if (this.items.size >= 24) return null;
             let file = url.pathname.split('/').pop() || '视频';

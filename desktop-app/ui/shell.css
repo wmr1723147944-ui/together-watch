@@ -59,7 +59,9 @@ a { color: #0785b3; }
 nav { margin-top: 6px; }
 nav.room-actions { margin-top:0; }
 #roomLabel { flex: 1; font-size: 12px; color: #728095; }
-#placeholder { text-align: center; margin-top: 100px; color: #728095; }
+#placeholder { width:calc(100% - clamp(300px,29vw,400px)); box-sizing:border-box; padding:clamp(24px,10vh,116px) 16px 20px; text-align:center; color:#536378; }
+#placeholder strong { font-size:20px; color:#263647; }
+#placeholder button { margin:4px; }
 .media-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e1e6ee; }
 .media-tools button, .media-tools select { font: inherit; font-size: 12px; padding: 6px 10px; }
 .media-tools select { flex: 1; min-width: 0; background: #fff; color: #425269; border: 1px solid #dce3ed; border-radius: 7px; }
