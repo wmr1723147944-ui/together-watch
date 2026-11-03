@@ -268,6 +268,38 @@ test('network-only manifests are not marked as active playback', () => {
     assert.equal(result.candidates[0].active, false);
     assert.equal(result.candidates[0].visible, false);
 });
+test('Android discovery retains the confirmed element above a busy network log',()=>{
+    const noise=Array.from({length:80},(_,n)=>'https://cdn.example/'+n+'.m3u8');
+    const result=discover([video()],noise);
+    assert.equal(result.candidates.length,24);
+    assert.equal(result.candidates[0].url,'https://media.example/movie.mp4');
+    assert.equal(result.candidates[0].visible,true);
+    assert.ok(result.candidates.slice(1).every(c=>!c.visible));
+});
+test('blob playback uses only a manifest attached to this exact video',()=>{
+    const v=video({currentSrc:'blob:https://public.example/123',paused:true});
+    const win={hls:{media:{},url:'https://ads.example/ad.m3u8'}};
+    v.ownerDocument={baseURI:'https://frame.example/movies/page',defaultView:win};
+    assert.equal(discover([v]).candidates.length,0);
+    win.dp={plugins:{hls:{media:v,url:'episode/master.m3u8'}}};
+    const r=discover([v]);
+    assert.equal(r.candidates.length,1);
+    assert.equal(r.candidates[0].url,'https://frame.example/movies/episode/master.m3u8');
+    assert.equal(r.candidates[0].visible,true);
+    v.mediaKeys={};assert.equal(discover([v]).candidates.length,0);
+});
+test('a single source child can supply the visible player URL; multiple choices stay manual',()=>{
+    const src={src:'https://cdn.example/one.mp4'};
+    const v=video({currentSrc:'',querySelectorAll:()=>[src]});
+    assert.equal(discover([v]).candidates[0].visible,true);
+    v.querySelectorAll=()=>[src,{src:'https://cdn.example/two.mp4'}];
+    assert.ok(discover([v]).candidates.every(c=>!c.visible));
+});
+test('preload none requests metadata only, without clicking or playing the hidden site',()=>{
+    const v=video({preload:'none',readyState:0,paused:true,play:()=>assert.fail('autoplay')});
+    const r=discover([v]);assert.equal(v.preload,'metadata');
+    assert.equal(r.candidates[0].visible,false);
+});
 test('a paused long-form video can be recognized without playing the source page', () => {
     const result=discover([video({paused:true})],['https://media.example/movie.mp4']);
     assert.equal(result.candidates.length,1);

@@ -7,6 +7,7 @@
         android:text="一起看 · 内置播放" android:textSize="19sp" android:textColor="#FFFFFF"/>
     <TextView android:id="@+id/gateMessage" android:layout_width="wrap_content" android:layout_height="wrap_content"
         android:gravity="center" android:padding="8dp" android:textColor="#CFD7E4" android:textSize="14sp"/>
+    <Button android:id="@+id/gateRetry" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="重新识别本集"/>
     <LinearLayout android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal">
         <Button android:id="@+id/gateChoices" android:visibility="gone" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="选线路"/>
         <Button android:id="@+id/gateChange" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="换个来源"/>

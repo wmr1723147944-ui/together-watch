@@ -97,7 +97,11 @@ public final class MainActivity extends ComponentActivity {
     private NativePlayerController nativePlayer;
     private View playbackGate;
     private String requestedPageUrl="";
-    private long resolveUntil;
+    private final PlaybackPreparation preparation=new PlaybackPreparation();
+    private final Runnable prepareTick=this::prepareBuiltin;
+    private boolean resolverPageReady;
+    private int confirmingPage=-1;
+    private String preparationFailure="";
     private final LinkedHashMap<String, JSONObject> mediaCandidates = new LinkedHashMap<>();
     private String discoveryScript = "";
     private String sourcePageUrl = "";
@@ -121,7 +125,7 @@ public final class MainActivity extends ComponentActivity {
     };
     private final Runnable startPlayerHold = this::startPlayerHold;
     private long lastDiscovery;
-    private boolean discoveryInFlight;
+    private int discoveryPage=-1;
     private boolean protectedPage;
     private boolean foreground = true;
     private int bridgeGeneration;
@@ -228,13 +232,18 @@ public final class MainActivity extends ComponentActivity {
         playbackGate.findViewById(R.id.gateOriginal).setOnClickListener(v->returnToWeb());
         playbackGate.findViewById(R.id.gateChange).setOnClickListener(v->showFinder());
         playbackGate.findViewById(R.id.gateChoices).setOnClickListener(v->choosePlayback());
+        playbackGate.findViewById(R.id.gateRetry).setOnClickListener(v->openProgramPage(requestedPageUrl));
         videoContainer.addView(catalogWebView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayerView = new PlayerView(this);
         nativePlayerView.setVisibility(View.GONE);
         nativePlayerView.setKeepScreenOn(true);
         nativePlayerView.setControllerShowTimeoutMs(2500);
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
-        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus, this::nextRoomEpisode);
+        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus, this::nextRoomEpisode, message->{
+            if(destroyed || !sessionActive)return;
+            preparationFailure=message;preparation.stop();exitNativeFullscreen();
+            nativePlayerView.setVisibility(View.GONE);updatePlaybackGate();setStatus(message);
+        });
         nativePlayerView.setFullscreenButtonClickListener(fullscreen -> {
             if (nativeFullscreen) exitNativeFullscreen(); else enterNativeFullscreen();
         });
@@ -470,7 +479,7 @@ public final class MainActivity extends ComponentActivity {
         sourcePageUrl = videoUrl;
         preferWebThisPage = false;
         protectedPage = false;
-        discoveryInFlight = false;
+        discoveryPage = -1;
         sessionActive = true;
         navigationBack.setEnabled(true);
         bridgeMisses = 0;
@@ -571,7 +580,8 @@ public final class MainActivity extends ComponentActivity {
         setupPanel.setVisibility(View.GONE);mainContent.setVisibility(View.VISIBLE);
         browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
         findViewById(R.id.finderToolbar).setVisibility(View.VISIBLE);
-        showVideoTab();setStatus("已返回当前播放，房间保持连接。");
+        showVideoTab();mainHandler.removeCallbacks(prepareTick);mainHandler.post(prepareTick);
+        setStatus("已返回当前播放，房间保持连接。");
     }
 
     private void chooseCurrentPage() {
@@ -579,7 +589,10 @@ public final class MainActivity extends ComponentActivity {
         if(!finding && nativePlayer.isActive()){setStatus("当前已使用内置播放器，可直接播放、暂停或拖动进度。");return;}
         if(!finding && programSelection!=null) {
             if(!currentProgramPage()) {openProgramPage(programSelection.page);return;}
-            if(programSelection.exact()) {awaitingEpisode=programSelection.needsConfirmation();episodeStarted=System.currentTimeMillis();setStatus("正在重新确认所选集数…");return;}
+            if(programSelection.exact()) {
+                if(!preferWebThisPage){openProgramPage(programSelection.page);return;}
+                awaitingEpisode=programSelection.needsConfirmation();episodeStarted=System.currentTimeMillis();setStatus("正在重新确认所选集数…");return;
+            }
         }
         final WebView pageView=finding && originalFinderActive?originalFinderWebView:videoWebView;
         if(pageView==null)return;
@@ -589,7 +602,8 @@ public final class MainActivity extends ComponentActivity {
             && !(selection.source.equals("kanju") && !ownerKey.isEmpty())) {
             new AlertDialog.Builder(this).setTitle("确认双方已经选好同一集")
                 .setMessage("此来源不能自动确认集数。请双方核对影片和集数后再开始同步。")
-                .setPositiveButton("我已核对",(d,w)->{awaitingEpisode=false;appliedProgramRevision=0;})
+                .setPositiveButton("我已核对",(d,w)->{awaitingEpisode=false;appliedProgramRevision=0;
+                    if(!preferWebThisPage){preparation.start(android.os.SystemClock.elapsedRealtime());prepareBuiltin();}})
                 .setNegativeButton("取消",null).show();return;
         }
         if(selection.source.equals("kanju") && !selection.exact()) {
@@ -695,8 +709,10 @@ public final class MainActivity extends ComponentActivity {
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
         mediaCandidates.clear();protectedPage=false;sourcePageUrl=page;++videoPageGeneration;
         requestedPageUrl=page;preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
-        resolveUntil=android.os.SystemClock.elapsedRealtime()+24000;
-        mainHandler.postDelayed(()->{if(!destroyed)updatePlaybackGate();},24050);
+        preparationFailure="";resolverPageReady=false;lastDiscovery=0;
+        preparation.start(android.os.SystemClock.elapsedRealtime());
+        mainHandler.removeCallbacks(prepareTick);
+        mainHandler.post(prepareTick);
         videoWebView.getSettings().setMediaPlaybackRequiresUserGesture(true);
         browserToolbar.setVisibility(View.VISIBLE);statusText.setVisibility(View.VISIBLE);
         nativePlayerView.setVisibility(View.GONE);videoWebView.setVisibility(View.VISIBLE);showVideoTab();
@@ -853,6 +869,7 @@ public final class MainActivity extends ComponentActivity {
             if(!videoLoading)setStatus("当前页面与房间片源不同。可在「更多」中核对当前集数并恢复同步。");
             deliverSample(generation,page,new JSONObject(),-1);return;
         }
+        if(awaitingEpisode && !preferWebThisPage){deliverSample(generation,page,new JSONObject(),-1);return;}
         if(awaitingEpisode) {
             if(!programSelection.exact()){setStatus("请双方核对同一集，再到「更多 → 核对当前集数」开始同步。");deliverSample(generation,page,new JSONObject(),-1);return;}
             if(System.currentTimeMillis()-episodeStarted>20000){setStatus("尚未确认集数。请在原站选好后，到「更多 → 核对当前集数」重试。");deliverSample(generation,page,new JSONObject(),-1);return;}
@@ -864,7 +881,7 @@ public final class MainActivity extends ComponentActivity {
                 deliverSample(generation,page,new JSONObject(),-1);
             });return;
         }
-        if(!nativePlayer.isActive() && System.currentTimeMillis()-lastDiscovery>2000 && (preferWebThisPage || android.os.SystemClock.elapsedRealtime()<resolveUntil))discoverMedia();
+        if(!nativePlayer.isActive() && preferWebThisPage && System.currentTimeMillis()-lastDiscovery>2000)discoverMedia();
         if(nativePlayer.isActive()) {deliverSample(generation,page,nativePlayer.sample(),-1);return;}
         if(!preferWebThisPage){deliverSample(generation,page,new JSONObject(),-1);return;}
         if(playerAgent.isEmpty() || webSyncScript.isEmpty()){setStatus("播放器组件缺失，请重新安装完整 APK。");deliverSample(generation,page,new JSONObject(),-1);return;}
@@ -935,24 +952,64 @@ public final class MainActivity extends ComponentActivity {
         });
     }
 
+    private boolean preparingBuiltin(){
+        return !destroyed && foreground && sessionActive && !finding && !preferWebThisPage && !nativePlayer.isActive();
+    }
+    private void prepareBuiltin() {
+        mainHandler.removeCallbacks(prepareTick);
+        if(!preparingBuiltin())return;
+        long now=android.os.SystemClock.elapsedRealtime();
+        updatePlaybackGate();
+        if(protectedPage || MediaSourcePolicy.preferWeb(requestedPageUrl) || !preparation.active(now))return;
+        // Schedule independently of WebView callbacks: a hung page/room cannot
+        // leave the placeholder saying "preparing" indefinitely.
+        mainHandler.postDelayed(prepareTick,650);
+        if(!resolverPageReady || (programRevision>0 && !currentProgramPage()))return;
+        if(awaitingEpisode) {
+            if(programSelection==null || !programSelection.exact())return;
+            preparation.advance(PlaybackPreparation.CONFIRM,now);
+            final int page=videoPageGeneration;
+            if(confirmingPage==page)return;
+            confirmingPage=page;
+            videoWebView.evaluateJavascript(catalogScript+";"+webSyncScript+";window.__twAndroidPage.confirm("+js(programSelection.source)+","+js(programSelection.episode)+")",raw->{
+                if(confirmingPage==page)confirmingPage=-1;
+                if(page!=videoPageGeneration || !preparingBuiltin() || !preparation.active(android.os.SystemClock.elapsedRealtime()))return;
+                if("true".equals(raw)) {
+                    awaitingEpisode=false;
+                    preparation.advance(PlaybackPreparation.SCAN,android.os.SystemClock.elapsedRealtime());
+                    setStatus("已确认集数，正在识别本集的视频…");
+                }
+            });
+        }else{
+            preparation.advance(PlaybackPreparation.SCAN,now);
+            if(System.currentTimeMillis()-lastDiscovery>1100)discoverMedia();
+        }
+    }
     private void rememberCandidate(String rawUrl, JSONObject details) {
         if (!sessionActive || finding || awaitingEpisode || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
         String url = UrlPolicy.normalizeHttpsUrl(rawUrl);
         if (url.isEmpty() || !MediaSourcePolicy.isMedia(url)) return;
-        if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) return;
+        if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) {
+            if(details==null || !details.optBoolean("visible"))return;
+            String replace=null;
+            for(String key:mediaCandidates.keySet())if(!mediaCandidates.get(key).optBoolean("visible")){replace=key;break;}
+            if(replace==null)return;
+            mediaCandidates.remove(replace);
+        }
+        if(details==null && mediaCandidates.containsKey(url))return;
         mediaCandidates.put(url, details == null ? new JSONObject() : details);
         updatePlaybackGate();
     }
 
     private void discoverMedia() {
         lastDiscovery = System.currentTimeMillis();
-        if (discoveryInFlight || destroyed || !sessionActive || finding || awaitingEpisode || nativePlayer.isActive()
+        if (discoveryPage==videoPageGeneration || destroyed || !foreground || !sessionActive || finding || awaitingEpisode || nativePlayer.isActive()
             || discoveryScript.isEmpty() || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
-        discoveryInFlight = true;
         int generation = videoPageGeneration;
+        discoveryPage=generation;
         videoWebView.evaluateJavascript(discoveryScript, result -> {
-            discoveryInFlight = false;
-            if (destroyed || finding || awaitingEpisode || generation != videoPageGeneration || !sessionActive || nativePlayer.isActive()) return;
+            if(discoveryPage==generation)discoveryPage=-1;
+            if (destroyed || !foreground || finding || awaitingEpisode || generation != videoPageGeneration || !sessionActive || nativePlayer.isActive()) return;
             try {
                 JSONObject discovery = new JSONObject(result);
                 protectedPage |= discovery.optBoolean("protectedVideo");
@@ -966,7 +1023,7 @@ public final class MainActivity extends ComponentActivity {
                 }
                 // Require the same visible long-form video twice (it may be paused);
                 // network-only candidates are offered for manual selection.
-                if (active.size() == 1 && discovery.optInt("longFormPlayers")==1 && !preferWebThisPage && android.os.SystemClock.elapsedRealtime()<resolveUntil) {
+                if (active.size() == 1 && discovery.optInt("longFormPlayers")==1 && !preferWebThisPage && preparation.active(android.os.SystemClock.elapsedRealtime()) && (programRevision==0 || currentProgramPage())) {
                     JSONObject candidate = active.get(0);
                     String url = candidate.optString("url");
                     activeCandidateCount = url.equals(lastActiveCandidate) ? activeCandidateCount + 1 : 1;
@@ -1025,8 +1082,14 @@ public final class MainActivity extends ComponentActivity {
         if(!waiting)return;
         playbackGate.findViewById(R.id.gateChange).setVisibility(programRevision==0 || !ownerKey.isEmpty()?View.VISIBLE:View.GONE);
         playbackGate.findViewById(R.id.gateChoices).setVisibility(!protectedPage && !mediaCandidates.isEmpty()?View.VISIBLE:View.GONE);
-        String note=protectedPage || MediaSourcePolicy.preferWeb(requestedPageUrl)?"这个来源需要在原网页播放。":
-            android.os.SystemClock.elapsedRealtime()>=resolveUntil?"未找到可直接播放的正片。可以换个来源，或手动打开原网页。":"正在为这一集准备内置播放…";
+        boolean expired=!preparation.active(android.os.SystemClock.elapsedRealtime());
+        boolean webOnly=protectedPage || MediaSourcePolicy.preferWeb(requestedPageUrl);
+        playbackGate.findViewById(R.id.gateRetry).setVisibility(expired && !webOnly?View.VISIBLE:View.GONE);
+        String note=webOnly?"这个来源需要在原网页播放。":!preparationFailure.isEmpty()?preparationFailure:
+            !resolverPageReady?(expired?"播放页加载超时，可以重新识别或换源。":"正在加载本集的播放页…"):
+            awaitingEpisode?(expired?"未能确认所选集数，未切换到其他视频。":"正在核对所选集数…"):
+            expired?(mediaCandidates.isEmpty()?"没有识别到可内置播放的视频。":"找到了视频线路，但无法确定哪条是正片。可点「选线路」。"):
+            "正在识别本集的视频…";
         ((TextView)playbackGate.findViewById(R.id.gateMessage)).setText(note);
     }
 
@@ -1174,9 +1237,11 @@ public final class MainActivity extends ComponentActivity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
             if ("about:blank".equals(url)) return;
+            resolverPageReady=false;
             finishPlayerHold(false);
             videoLoading=true;
             videoPageGeneration += 1;
+            if(!preferWebThisPage && programSelection!=null && programSelection.needsConfirmation())awaitingEpisode=true;
             protectedPage = false;
             mediaCandidates.clear();
             lastActiveCandidate = "";
@@ -1186,10 +1251,15 @@ public final class MainActivity extends ComponentActivity {
             if(!finding)setStatus("网页加载中…");
         }
 
+        @Override public void onPageCommitVisible(WebView view,String url) {
+            super.onPageCommitVisible(view,url);
+            if(url.equals(view.getUrl()) && UrlPolicy.isHttpsWebUrl(url))resolverPageReady=true;
+        }
         @Override
         public void onPageFinished(WebView view, String url) {
             super.onPageFinished(view, url);
             if(!url.equals(view.getUrl()))return;
+            resolverPageReady=UrlPolicy.isHttpsWebUrl(url);
             videoLoading=false;
             if(!pageLayoutScript.isEmpty())view.evaluateJavascript(pageLayoutScript,null);
             if(finding)return;
@@ -1208,6 +1278,9 @@ public final class MainActivity extends ComponentActivity {
         public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
             super.onReceivedError(view, request, error);
             if (!finding && request.isForMainFrame()) {
+                if(preparingBuiltin() && view.getUrl()!=null && view.getUrl().equals(request.getUrl().toString())){
+                    preparationFailure="播放页没有加载成功，请重新识别或换源。";preparation.stop();updatePlaybackGate();
+                }
                 statusText.setVisibility(View.VISIBLE);
                 setStatus("网页加载失败，可返回找片重试：" + error.getDescription());
             }
@@ -1851,6 +1924,7 @@ public final class MainActivity extends ComponentActivity {
         super.onResume();
         foreground = true;
         if (sessionActive) {
+            mainHandler.removeCallbacks(prepareTick);mainHandler.post(prepareTick);
             final int generation = ++bridgeGeneration;
             mainHandler.post(() -> tickBridge(generation));
         }

@@ -32,8 +32,13 @@ final class NativePlayerController {
     private final DanmakuView danmaku;
     private final PlaybackHold hold = new PlaybackHold();
     private final android.view.View episodeButton;
+    private final java.util.function.Consumer<String> startupFailure;
+    private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
+    private Runnable startupTimeout;
 
-    NativePlayerController(Context context, PlayerView view, StatusListener listener, Runnable nextEpisode) {
+    NativePlayerController(Context context, PlayerView view, StatusListener listener, Runnable nextEpisode,
+                           java.util.function.Consumer<String> startupFailure) {
+        this.startupFailure=startupFailure;
         this.context = context;
         this.view = view;
         this.listener = listener;
@@ -66,16 +71,23 @@ final class NativePlayerController {
         player = new ExoPlayer.Builder(context)
             .setMediaSourceFactory(new DefaultMediaSourceFactory(http)).build();
         ExoPlayer current = player;
+        startupTimeout=()->failedStartup(current,"已找到本集视频，但线路在 30 秒内没有就绪。可以重新识别或换一条线路。");
+        handler.postDelayed(startupTimeout,30000);
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (current != player) return;
                 if (state == Player.STATE_READY) {
+                    cancelStartupTimeout();
                     if (pendingState != null) apply(pendingState);
                     listener.onStatus("内置播放已就绪 · 下方可聊天和通话");
                 } else if (state == Player.STATE_BUFFERING) listener.onStatus("视频缓冲中…");
             }
             @Override public void onPlayerError(PlaybackException exception) {
                 if (current != player) return;
+                if(startupTimeout!=null){
+                    handler.post(()->failedStartup(current,"已找到本集视频，但内置播放器无法打开这条线路。可以重新识别或换源。"));
+                    return;
+                }
                 error = "这个来源暂时无法内置播放，请点「播放方式」返回网页或换一条线路";
                 listener.onStatus(error);
             }
@@ -197,7 +209,16 @@ final class NativePlayerController {
         appliedCommand = id;
     }
 
+    private void cancelStartupTimeout() {
+        if(startupTimeout!=null)handler.removeCallbacks(startupTimeout);
+        startupTimeout=null;
+    }
+    private void failedStartup(ExoPlayer expected,String message) {
+        if(player!=expected || startupTimeout==null)return;
+        release();startupFailure.accept(message);
+    }
     void release() {
+        cancelStartupTimeout();
         hold.reset();
         danmaku.update(null);
         pendingState = null;
