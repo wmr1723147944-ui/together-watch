@@ -10,6 +10,7 @@ final class PlaybackPreparation {
 
     void start(long now) {phase=LOAD;deadline=now+24000;limit=now+60000;}
     boolean active(long now) {return now<deadline;}
+    int secondsLeft(long now){ return (int)((Math.max(0,deadline-now)+999)/1000); }
     void advance(int next,long now) {
         if(!active(now) || next<=phase)return;
         phase=next;

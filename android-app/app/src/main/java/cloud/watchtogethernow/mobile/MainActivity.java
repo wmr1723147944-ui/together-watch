@@ -102,6 +102,8 @@ public final class MainActivity extends ComponentActivity {
     private boolean resolverPageReady;
     private int confirmingPage=-1;
     private String preparationFailure="";
+    private String scanDiagnostic="";
+    private int readyWebSamples;
     private final LinkedHashMap<String, JSONObject> mediaCandidates = new LinkedHashMap<>();
     private String discoveryScript = "";
     private String sourcePageUrl = "";
@@ -709,7 +711,7 @@ public final class MainActivity extends ComponentActivity {
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
         mediaCandidates.clear();protectedPage=false;sourcePageUrl=page;++videoPageGeneration;
         requestedPageUrl=page;preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
-        preparationFailure="";resolverPageReady=false;lastDiscovery=0;
+        preparationFailure="";scanDiagnostic="";readyWebSamples=0;resolverPageReady=false;lastDiscovery=0;
         preparation.start(android.os.SystemClock.elapsedRealtime());
         mainHandler.removeCallbacks(prepareTick);
         mainHandler.post(prepareTick);
@@ -988,7 +990,7 @@ public final class MainActivity extends ComponentActivity {
     private void rememberCandidate(String rawUrl, JSONObject details) {
         if (!sessionActive || finding || awaitingEpisode || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
         String url = UrlPolicy.normalizeHttpsUrl(rawUrl);
-        if (url.isEmpty() || !MediaSourcePolicy.isMedia(url)) return;
+        if (url.isEmpty() || !MediaSourcePolicy.playable(url,confirmedMedia(details))) return;
         if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) {
             if(details==null || !details.optBoolean("visible"))return;
             String replace=null;
@@ -1012,8 +1014,11 @@ public final class MainActivity extends ComponentActivity {
             if (destroyed || !foreground || finding || awaitingEpisode || generation != videoPageGeneration || !sessionActive || nativePlayer.isActive()) return;
             try {
                 JSONObject discovery = new JSONObject(result);
+                scanDiagnostic=discovery.optInt("opaquePlayers")>0?"原网页正在使用临时视频地址，未取得能交给内置播放器的线路。":
+                    discovery.optInt("visiblePlayers")>0?"找到了原网页播放器，但它没有提供可确认的正片线路。":
+                    discovery.optInt("inaccessibleFrames")>0?"视频可能在独立的嵌入页里，当前页没有可识别的播放器。":"当前页面还没有加载出可识别的播放器。";
                 protectedPage |= discovery.optBoolean("protectedVideo");
-                if (protectedPage) { mediaCandidates.clear(); updatePlaybackGate(); return; }
+                if (protectedPage) { readyWebSamples=0;mediaCandidates.clear(); updatePlaybackGate(); return; }
                 JSONArray candidates = discovery.optJSONArray("candidates");
                 List<JSONObject> active = new ArrayList<>();
                 if (candidates != null) for (int i = 0; i < candidates.length(); i++) {
@@ -1021,6 +1026,9 @@ public final class MainActivity extends ComponentActivity {
                     rememberCandidate(candidate.optString("url"), candidate);
                     if (candidate.optBoolean("visible") && candidate.optDouble("duration") >= 120) active.add(candidate);
                 }
+                readyWebSamples=!preferWebThisPage && active.isEmpty() && discovery.optInt("longFormPlayers")==1
+                    && discovery.optInt("readyBlobPlayers")==1?Math.min(2,readyWebSamples+1):0;
+                updatePlaybackGate();
                 // Require the same visible long-form video twice (it may be paused);
                 // network-only candidates are offered for manual selection.
                 if (active.size() == 1 && discovery.optInt("longFormPlayers")==1 && !preferWebThisPage && preparation.active(android.os.SystemClock.elapsedRealtime()) && (programRevision==0 || currentProgramPage())) {
@@ -1034,9 +1042,13 @@ public final class MainActivity extends ComponentActivity {
         });
     }
 
+    private static boolean confirmedMedia(JSONObject details) {
+        return details!=null && details.optBoolean("confirmed") && details.optBoolean("visible") && details.optDouble("duration",0)>0;
+    }
     private void openNative(String url, double position) {
         if(finding || awaitingEpisode)return;
-        if (!MediaSourcePolicy.isMedia(url) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
+        JSONObject details=mediaCandidates.get(url);
+        if (!MediaSourcePolicy.playable(url,confirmedMedia(details)) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
         preferWebThisPage=false;
         // Keep the confirmed public episode with this native player. Its source
         // WebView is about to be unloaded, so its later title/URL is not evidence.
@@ -1054,25 +1066,38 @@ public final class MainActivity extends ComponentActivity {
         videoWebView.setVisibility(View.GONE);
         nativePlayerView.setVisibility(View.VISIBLE);
         String referer = MediaSourcePolicy.origin(sourcePageUrl);
-        nativePlayer.open(url, referer, videoWebView.getSettings().getUserAgentString(), position);
+        nativePlayer.open(url, referer, videoWebView.getSettings().getUserAgentString(), position,
+            details!=null && "application/x-mpegURL".equals(details.optString("mime")));
         showVideoTab();
     }
 
     private void returnToWeb() {
         if(!sessionActive || finding || requestedPageUrl.isEmpty())return;
+        // This WebView owns the temporary blob URL. Reloading here used to
+        // discard the episode/position that the gate had just confirmed.
+        boolean keepPage=webPlayerReady();
         ++videoPageGeneration;exitNativeFullscreen();
         nativePlayer.release();
         nativePlayerView.setVisibility(View.GONE);
         videoWebView.setVisibility(View.VISIBLE);
         preferWebThisPage = true;
-        sourcePageUrl=requestedPageUrl;
+        mainHandler.removeCallbacks(prepareTick);
         videoWebView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+        if(keepPage){
+            readyWebSamples=0;showVideoTab();
+            setStatus("已保留本集的网页播放器；如果画面暂停，点一下播放。");return;
+        }
+        sourcePageUrl=requestedPageUrl;
         awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         appliedProgramRevision=0;episodeStarted=System.currentTimeMillis();
         showVideoTab();
         videoWebView.loadUrl(sourcePageUrl);
     }
 
+    private boolean webPlayerReady() {
+        return readyWebSamples>=2 && !awaitingEpisode && !protectedPage && !nativePlayer.isActive()
+            && resolverPageReady && UrlPolicy.isHttpsWebUrl(videoWebView.getUrl()) && (programRevision==0 || currentProgramPage());
+    }
     private void updatePlaybackGate() {
         if(playbackGate==null)return;
         boolean waiting=sessionActive && !finding && !preferWebThisPage && nativePlayer!=null && !nativePlayer.isActive();
@@ -1084,13 +1109,17 @@ public final class MainActivity extends ComponentActivity {
         playbackGate.findViewById(R.id.gateChoices).setVisibility(!protectedPage && !mediaCandidates.isEmpty()?View.VISIBLE:View.GONE);
         boolean expired=!preparation.active(android.os.SystemClock.elapsedRealtime());
         boolean webOnly=protectedPage || MediaSourcePolicy.preferWeb(requestedPageUrl);
+        boolean webReady=webPlayerReady();
+        ((Button)playbackGate.findViewById(R.id.gateOriginal)).setText(webReady?"用网页播放本集":"手动打开原网页");
         playbackGate.findViewById(R.id.gateRetry).setVisibility(expired && !webOnly?View.VISIBLE:View.GONE);
         String note=webOnly?"这个来源需要在原网页播放。":!preparationFailure.isEmpty()?preparationFailure:
+            webReady?"本集已在网页播放器就绪，临时地址无法直接用于内置播放。可在当前房间继续，无需重新加载。":
             !resolverPageReady?(expired?"播放页加载超时，可以重新识别或换源。":"正在加载本集的播放页…"):
             awaitingEpisode?(expired?"未能确认所选集数，未切换到其他视频。":"正在核对所选集数…"):
-            expired?(mediaCandidates.isEmpty()?"没有识别到可内置播放的视频。":"找到了视频线路，但无法确定哪条是正片。可点「选线路」。"):
-            "正在识别本集的视频…";
+            expired?(mediaCandidates.isEmpty()?(scanDiagnostic.isEmpty()?"没有识别到可内置播放的视频。":scanDiagnostic):"找到了视频线路，但无法确定哪条是正片。可点「选线路」。"):
+            "正在识别本集的视频（还剩 "+preparation.secondsLeft(android.os.SystemClock.elapsedRealtime())+" 秒）…";
         ((TextView)playbackGate.findViewById(R.id.gateMessage)).setText(note);
+        if((expired || webReady) && foreground)setStatus(webReady?"网页播放器已就绪，可直接继续本集。":note);
     }
 
     private void choosePlayback() {
@@ -1238,6 +1267,7 @@ public final class MainActivity extends ComponentActivity {
             super.onPageStarted(view, url, favicon);
             if ("about:blank".equals(url)) return;
             resolverPageReady=false;
+            scanDiagnostic="";readyWebSamples=0;
             finishPlayerHold(false);
             videoLoading=true;
             videoPageGeneration += 1;

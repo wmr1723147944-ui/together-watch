@@ -18,6 +18,18 @@ public class MediaSourcePolicyTest {
         assertTrue(MediaSourcePolicy.preferWeb("https://www.iqiyi.com/video.html"));
         assertFalse(MediaSourcePolicy.preferWeb("https://v.qq.com.example/video.html"));
     }
+    @Test public void extensionlessCdnUrlNeedsConfirmedPlayerEvidenceOnBothEntryPaths() {
+        String url="https://cdn.example/opaqueVideo?ttl=123&sig=abc";
+        assertFalse(MediaSourcePolicy.isMedia(url));
+        assertFalse(MediaSourcePolicy.playable(url,false));
+        assertTrue(MediaSourcePolicy.playable(url,true));
+        assertTrue(MediaSourcePolicy.playable("https://cdn.example/opaque.v1.image",true));
+        assertFalse(MediaSourcePolicy.playable("https://cdn.example/opaque.v1.image",false));
+        for(String rejected:new String[]{"http://cdn.example/id","https://user@cdn.example/id",
+            "https://cdn.example/","https://cdn.example/frame.html","https://cdn.example/part.m4s",
+            "https://cdn.example/key%2Ebin","blob:https://cdn.example/id"})
+            assertFalse(rejected,MediaSourcePolicy.playable(rejected,true));
+    }
     @Test public void omitsCredentialsFromDisplayAndReferer() {
         String url = "https://media.example/watch/a.mp4?token=secret#private";
         assertEquals("https://media.example/", MediaSourcePolicy.origin(url));

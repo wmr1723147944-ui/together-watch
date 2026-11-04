@@ -268,6 +268,44 @@ test('network-only manifests are not marked as active playback', () => {
     assert.equal(result.candidates[0].active, false);
     assert.equal(result.candidates[0].visible, false);
 });
+test('Kanju-style CDN URLs: accept the decoded player URL, never infer a movie from signed traffic',()=>{
+    const stream='https://cdn.example/opaqueId123?expires=123&sig=example';
+    const other='https://cdn.example/otherToken';
+    const v=video({currentSrc:stream,paused:true});
+    const r=discover([v],[other,stream]);
+    assert.equal(r.longFormPlayers,1);
+    assert.deepEqual(Array.from(r.candidates,c=>c.url),[stream]);
+    assert.equal(r.candidates[0].confirmed,true);
+    assert.equal(discover([],[stream]).candidates.length,0);
+    const alias='https://cdn.byteimg.com/v/token.v2.image?sig=example';
+    assert.equal(discover([video({currentSrc:alias})]).candidates[0].confirmed,true);
+    assert.equal(discover([],[alias]).candidates.length,0);
+    assert.equal(discover([video({currentSrc:alias,readyState:0})]).candidates.length,0);
+    for(const changes of [{readyState:0},{duration:NaN},{currentSrc:'',src:stream},{srcObject:{}},
+        {getBoundingClientRect:()=>({width:5,height:5})},{mediaKeys:{}}]){
+        assert.equal(discover([video({currentSrc:stream,...changes})],[stream]).candidates.length,0);
+    }
+    for(const u of ['http://cdn.example/id','https://user@cdn.example/id','https://cdn.example/part.m4s',
+        'https://cdn.example/episode.html','https://cdn.example/auth.key','https://cdn.example/?file=test.mp4']){
+        assert.equal(discover([video({currentSrc:u})]).candidates.length,0);
+    }
+});
+test('a bound HLS instance retains its format even with an extensionless playlist',()=>{
+    const v=video({currentSrc:'blob:https://public.example/id'});
+    v.hls={media:v,url:'https://cdn.example/playlistID'};
+    const r=discover([v]);assert.equal(r.candidates[0].confirmed,true);
+    assert.equal(r.candidates[0].mime,'application/x-mpegURL');
+});
+test('an unbound blob may be retained in its original player, never mistaken for a native URL',()=>{
+    const v=video({currentSrc:'blob:https://www.kanju.ai/local',paused:true});
+    const r=discover([v],['https://cdn.example/other']);
+    assert.equal(r.candidates.length,0);
+    assert.equal(r.readyBlobPlayers,1);
+    assert.equal(discover([video({...v,readyState:0})]).readyBlobPlayers,0);
+    assert.equal(discover([video({...v,duration:15})]).readyBlobPlayers,0);
+    assert.equal(discover([video({...v,mediaKeys:{}})]).readyBlobPlayers,0);
+    assert.equal(discover([v,video()]).longFormPlayers,2);
+});
 test('Android discovery retains the confirmed element above a busy network log',()=>{
     const noise=Array.from({length:80},(_,n)=>'https://cdn.example/'+n+'.m3u8');
     const result=discover([video()],noise);

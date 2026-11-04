@@ -60,7 +60,7 @@ final class NativePlayerController {
         if(view.getOverlayFrameLayout()!=null)view.getOverlayFrameLayout().addView(danmaku,new android.widget.FrameLayout.LayoutParams(-1,-1));
     }
 
-    void open(String url, String referer, String userAgent, double initialPosition) {
+    void open(String url, String referer, String userAgent, double initialPosition, boolean hls) {
         release();
         session++;
         error = "";
@@ -107,7 +107,9 @@ final class NativePlayerController {
             }
             @Override public void setPlaybackSpeed(float speed) { super.setPlaybackSpeed(speed); event("speed"); }
         });
-        player.setMediaItem(MediaItem.fromUri(url));
+        MediaItem.Builder item=new MediaItem.Builder().setUri(url);
+        if(hls)item.setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8);
+        player.setMediaItem(item.build());
         if (Double.isFinite(initialPosition) && initialPosition > 0) player.seekTo((long) (initialPosition * 1000));
         player.prepare();
         // The confirmed room state decides whether to play, including on join.
