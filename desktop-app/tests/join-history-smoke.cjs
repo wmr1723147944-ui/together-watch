@@ -35,12 +35,15 @@ module.app.run(host='127.0.0.1',port=${port},use_reloader=False)
     // Seed the legacy single-poster format directly: no remember()/migration first.
     await js(`localStorage.setItem('tw_watch_history_v1',JSON.stringify({enabled:true,meta:{},deleted:[],rows:[
         {source:'kanju',item:'av-old',episode:'ep-one',title:'旧观看记录',label:'第 1 集',time:83,duration:2700,updated:Date.now(),poster:'https://image.tmdb.org/good.jpg'},
-        {source:'cupfox',item:'234',episode:'ep1',title:'备用封面测试',label:'第 1 集',time:605,duration:2700,updated:Date.now(),poster:'https://image.tmdb.org/broken.jpg',poster_candidates:['https://image.tmdb.org/broken.jpg','https://image.tmdb.org/backup.jpg']}
+        {source:'cupfox',item:'234',episode:'ep1',title:'备用封面测试',label:'第 1 集',time:605,duration:2700,updated:Date.now()-1000,poster:'https://image.tmdb.org/broken.jpg',poster_candidates:['https://image.tmdb.org/broken.jpg','https://image.tmdb.org/backup.jpg']},
+        {source:'kanju',item:'av-old',episode:'ep-two',title:'旧观看记录',label:'第 2 集',time:1510,duration:2700,updated:Date.now()-2000,poster:'https://image.tmdb.org/good.jpg'}
     ]}));`);
     await win.loadURL(server+'/');
     await until('legacy and fallback covers',()=>js('document.querySelectorAll("#continueWatchingList img[data-loading=false]").length===2'));
     assert.deepEqual(await js('[...document.querySelectorAll("#continueWatchingList img[data-loading=false]")].map(i=>i.currentSrc)'),['https://image.tmdb.org/good.jpg','https://image.tmdb.org/backup.jpg']);
-    assert.equal(await js('TogetherWatchHistory.store.list().length'),2,'legacy rows remain intact');
+    assert.equal(await js('TogetherWatchHistory.store.list().length'),3,'per-episode legacy progress remains intact');
+    assert.equal(await js('document.querySelectorAll("#continueWatchingList article").length'),2);
+    assert.equal(await js('document.querySelector("#continueWatchingList a").pathname'),'/discover/play/kanju/av-old/ep-one');
     await js('document.querySelector("[data-watch-history]").click()');
     await until('history dialog covers',()=>js('document.querySelectorAll("#watchHistoryList img[data-loading=false]").length===2'));
     await shot('desktop-history');

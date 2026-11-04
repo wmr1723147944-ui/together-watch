@@ -64,14 +64,21 @@
         else if(op.type==='enabled')s.enabled=op.value;
         s.pending=[...(s.pending||[]),op];write(s);
     }
-    function enqueue(op){
-        const s=read();s.serial=(s.serial||0)+1;op.seq=s.serial;
+    function enqueueMany(ops){
+        if(!ops.length)return;
+        const s=read();
         let pending=s.pending||[];
-        if(op.type==='put')pending=pending.filter(p=>p.type!=='put'||H.identity(p.row)!==H.identity(op.row));
-        if(op.type==='clear')pending=pending.filter(p=>p.type==='enabled');
-        s.pending=[...pending,op].slice(-200);write(s);
+        for(const op of ops){
+            s.serial=(s.serial||0)+1;op.seq=s.serial;
+            if(op.type==='put')pending=pending.filter(p=>p.type!=='put'||H.identity(p.row)!==H.identity(op.row));
+            if(op.type==='delete')pending=pending.filter(p=>!(p.type==='put' && H.identity(p.row)===op.key || p.type==='delete' && p.key===op.key));
+            if(op.type==='clear')pending=pending.filter(p=>p.type==='enabled');
+            pending.push(op);
+        }
+        s.pending=pending.slice(-200);write(s);
         announce('等待同步');clearTimeout(timer);timer=setTimeout(()=>flush(),1200);changed();
     }
+    function enqueue(op){enqueueMany([op]);}
     async function request(path,method='GET',body,expected=user?.id,keepalive=false){
         const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
         try{
@@ -121,9 +128,9 @@
         const initial=read(),ops=initial.pending||[];
         if(!ops.length)return;
         if(!Number.isInteger(initial.revision)){announce('请联网读取账号历史后再同步');return;}
-        const current=epoch,uid=user.id,seq=initial.serial;
+        const batch=ops.slice(0,100),current=epoch,uid=user.id,seq=batch[batch.length-1].seq;
         const puts=new Map(),deletes=new Set();let clear=false,enabled;
-        for(const op of ops){
+        for(const op of batch){
             if(op.type==='put'){puts.set(H.identity(op.row),op.row);deletes.delete(H.identity(op.row));}
             else if(op.type==='delete'){deletes.add(op.key);puts.delete(op.key);}
             else if(op.type==='clear'){clear=true;puts.clear();deletes.clear();}
@@ -131,10 +138,11 @@
         }
         flushing=(async()=>{
             try{
-                const data=await request('history','POST',{revision:initial.revision,upserts:[...puts.values()].slice(-100),deletes:[...deletes].slice(-100),clear,...(enabled===undefined?{}:{enabled})},uid,keepalive);
+                const data=await request('history','POST',{revision:initial.revision,upserts:[...puts.values()],deletes:[...deletes],clear,...(enabled===undefined?{}:{enabled})},uid,keepalive);
                 if(current!==epoch||uid!==user?.id)return;
                 const latest=read();latest.reopened=(latest.reopened||[]).filter(k=>!puts.has(k));write(latest);
                 const pending=(latest.pending||[]).filter(p=>p.seq>seq);apply(data,pending);announce(pending.length?'等待同步':'已同步');changed();
+                if(pending.length){clearTimeout(timer);timer=setTimeout(()=>flush(),1200);}
             }catch(e){if(current!==epoch)return;
                 if(e.data?.code==='history_conflict'){
                     // Another device updating a different episode must not erase
@@ -154,7 +162,7 @@
         })();return flushing;
     }
     const store={};
-    for(const method of ['enabled','list','metadata','remember','record','remove','clear','prepare','takeResume','setEnabled'])store[method]=(...args)=>{
+    for(const method of ['enabled','list','metadata','remember','record','remove','removeTitle','clear','prepare','takeResume','setEnabled'])store[method]=(...args)=>{
         if(!ready)return method==='list'?[]:method==='enabled'?false:method==='takeResume'?null:undefined;
         const active=user?accountStore():local;
         const result=active[method](...args);
@@ -162,6 +170,10 @@
             if(method==='remember' && H.identity(args[0])){const s=read();s.reopened=[...new Set([...(s.reopened||[]),H.identity(args[0])])].slice(-100);write(s);}
             if(method==='record'&&result){const row=active.list().find(r=>H.identity(r)===H.identity(args[0]));if(row)enqueue({type:'put',row});}
             else if(method==='remove'){const s=read();s.reopened=(s.reopened||[]).filter(k=>k!==H.identity(args[0]));write(s);enqueue({type:'delete',key:H.identity(args[0])});}
+            else if(method==='removeTitle' && result.length){
+                const keys=new Set(result),s=read();s.reopened=(s.reopened||[]).filter(k=>!keys.has(k));write(s);
+                enqueueMany(result.map(key=>({type:'delete',key})));
+            }
             else if(method==='clear'){const s=read();s.reopened=[];write(s);enqueue({type:'clear'});}
             else if(method==='setEnabled')enqueue({type:'enabled',value:!!args[0]});
         }
@@ -197,7 +209,7 @@
             for(const label of doc.querySelectorAll('[data-account-label]'))label.textContent=user?'我的账号':'登录';
             $('accountGuest').hidden=!!user;$('accountMember').hidden=!user;
             $('accountName').textContent=user?.display_name||'';$('accountUsername').textContent=user?'@'+user.username:'';
-            $('accountSyncState').textContent=status;$('accountLocalCount').textContent=local.list().length;
+            $('accountSyncState').textContent=status;$('accountLocalCount').textContent=H.listTitles(local.list()).length;
             $('accountConnection').textContent=status;
         }
         async function action(button,fn){button.disabled=true;showMessage('正在处理…');try{await fn();}catch(e){showMessage(e.message||'操作失败，请重试');}finally{button.disabled=false;render();}}

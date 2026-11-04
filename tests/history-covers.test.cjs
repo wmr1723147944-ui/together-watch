@@ -4,6 +4,15 @@ const A=require('../static/js/catalog-adapters.js');
 const D=require('../static/js/source-discovery.js');
 const poster='https://image.tmdb.org/t/p/w500/history.jpg', backup='https://image.tmdb.org/t/p/w780/backup.jpg';
 const p={source:'kanju',item:'av-test',episode:'ep-one'};
+test('group by source and work ID, not display name; keep the newest episode and borrow only artwork/title',()=>{
+    const first={...p,title:'同名',poster,label:'第1集',time:100,duration:200,updated:1};
+    const latest={...first,episode:'ep-two',title:'kanju · 观看记录',label:'第2集',time:20,duration:190,updated:9,poster:''};
+    const rows=[first,{...first,item:'other-id',updated:4},{...first,source:'cupfox',updated:6},latest];
+    const before=JSON.stringify(rows),titles=H.listTitles(rows);
+    assert.deepEqual(titles.map(H.identity),[H.identity(latest),H.identity(rows[2]),H.identity(rows[1])]);
+    assert.deepEqual([titles[0].title,titles[0].poster,titles[0].label,titles[0].time,titles[0].duration],['同名',poster,'第2集',20,190]);
+    assert.equal(JSON.stringify(rows),before);
+});
 function store(){const data=new Map();return H.createStore({getItem:k=>data.get(k),setItem:(k,v)=>data.set(k,v)});}
 
 test('absolute history cover accepts absent or empty base without weakening URL policy',()=>{

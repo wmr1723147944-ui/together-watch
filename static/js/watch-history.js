@@ -21,6 +21,27 @@
         if (![p.item, p.episode].every(v => typeof v === 'string' && /^[A-Za-z0-9_.-]{1,240}$/.test(v) && !v.includes('..'))) return '';
         return [p.source, p.item, p.episode].join(':');
     }
+    // Episode identity remains the unit for recording, sync and resume tickets.
+    // Group only the reading view; legacy rows need no destructive migration.
+    function titleKey(p) { return identity(p) ? p.source + ':' + p.item : ''; }
+    function listTitles(rows) {
+        const titles = new Map();
+        const byRecency = rows.filter(r => identity(r) && Number.isFinite(r.time))
+            .sort((a,b)=>(Number(b.updated)||0)-(Number(a.updated)||0));
+        for (const row of byRecency) {
+            const key = titleKey(row), latest = titles.get(key);
+            if (!latest) { titles.set(key,{...row}); continue; }
+            // Only presentation data may be borrowed, never the episode label,
+            // playback position or duration of an older viewing session.
+            if (!latest.title || latest.title === latest.source + ' · 观看记录') latest.title = row.title || latest.title;
+            if (!latest.year) latest.year = row.year;
+            if (!latest.poster && (row.poster || row.poster_candidates?.length)) {
+                const artwork = covers([row.poster,...(Array.isArray(row.poster_candidates)?row.poster_candidates:[])]);
+                if (artwork.length) { latest.poster=artwork[0]; latest.poster_candidates=artwork; }
+            }
+        }
+        return [...titles.values()];
+    }
     function createStore(storage, now = Date.now, storageKey = KEY) {
         const empty = () => ({ enabled: true, rows: [], meta: {}, deleted: [] });
         function read() {
@@ -67,6 +88,17 @@
                 s.rows = [row, ...s.rows.filter(r => identity(r) !== key)].sort((a,b)=>b.updated-a.updated).slice(0, 100); return write(s);
             },
             remove(p) { const key = identity(p), s = read(); s.rows = s.rows.filter(r => identity(r) !== key); delete s.meta[key]; s.deleted = [...s.deleted.filter(k => k !== key), key].slice(-100); if (s.resume?.key === key) delete s.resume; write(s); },
+            removeTitle(p) {
+                const title=titleKey(p), s=read();
+                if(!title)return [];
+                const keys=new Set(s.rows.filter(r=>titleKey(r)===title).map(identity));
+                if(!keys.size)return [];
+                s.rows=s.rows.filter(r=>!keys.has(identity(r)));
+                for(const key of Object.keys(s.meta))if(key.startsWith(title+':'))delete s.meta[key];
+                s.deleted=[...s.deleted.filter(k=>!keys.has(k)),...keys].slice(-100);
+                if(s.resume?.key?.startsWith(title+':'))delete s.resume;
+                return write(s)?[...keys]:[];
+            },
             clear() { const s = read(); s.deleted = s.rows.map(identity); s.rows = []; s.meta = {}; delete s.resume; write(s); },
             prepare(p) { const s = read(), row = s.rows.find(r => identity(r) === identity(p)); if (!row) return; s.resume = { key:identity(row), time:row.time, expires:now()+120000 }; write(s); },
             takeResume(p, owner, alone) {
@@ -77,7 +109,7 @@
             },
         };
     }
-    const api = { identity, createStore, posterMetadata, KEY };
+    const api = { identity, listTitles, createStore, posterMetadata, KEY };
     if (typeof module === 'object' && module.exports) module.exports = api;
     else {
         try { api.store = createStore(root.localStorage); } catch { api.store = createStore({ getItem() {}, setItem() { throw Error('storage unavailable'); } }); }
@@ -98,7 +130,7 @@
                 if(clearHint)clearHint.textContent=account?.user?'确定清空这个账号在所有设备上的观看历史？':'确定清空这台设备的观看历史？';
                 enabled.checked = api.store.enabled(); list.replaceChildren();
                 const recent = doc.getElementById('continueWatchingList'); recent?.replaceChildren();
-                const rows = api.store.list(); let recentCount = 0;
+                const rows = listTitles(api.store.list()); let recentCount = 0;
                 const launchPath = row => {
                     const path = `/discover/play/${row.source}/${row.item}/${row.episode}`;
                     return available.has(row.source) && root.TogetherWatchDiscovery?.safeLaunchPath(row.source,row.item,row.episode,path) ? path : '';
@@ -116,7 +148,7 @@
                         const title = doc.createElement('strong'); title.textContent = row.title;
                         const info = doc.createElement('small'); info.textContent = `${path ? '' : '来源已移除或未启用 · '}${row.label} · 看到 ${format(row.time)}${row.duration ? ' / '+format(row.duration) : ''}`;
                         link.append(art,title,info); article.append(link);
-                        if (removable) { const remove = doc.createElement('button'); remove.type = 'button'; remove.textContent = '删除'; remove.onclick = () => { api.store.remove(row); render(); }; article.append(remove); }
+                        if (removable) { const remove = doc.createElement('button'); remove.type = 'button'; remove.textContent = '删除整部记录'; remove.title = '删除此片源下这部作品的各集历史'; remove.onclick = () => { api.store.removeTitle(row); render(); }; article.append(remove); }
                         return article;
                     }
                     list.append(card(true)); if (launchPath(row) && recentCount++ < 8) recent?.append(card(false));

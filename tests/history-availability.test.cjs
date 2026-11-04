@@ -49,3 +49,26 @@ test('all sources disabled hides continue watching without wiping records',()=>{
     assert.equal(f.data.get(H.KEY),f.before);
     assert.ok(f.elements.get('watchHistoryList').children.every(card=>card.children[0].href===undefined));
 });
+
+test('both history surfaces show one card per source/item and resume the most recent episode, even on a rewatch',()=>{
+    const f=fixture(), original=f.active,next={...original,episode:'ep-2'};
+    // Deliberately store cloud/import rows out of order. The last viewing was
+    // back on episode one, not the highest episode or greatest time.
+    const s=JSON.parse(f.data.get(H.KEY)),base=s.rows.find(r=>r.source==='kanju');
+    s.rows=[{...base,...next,label:'第2集',time:700,updated:2000},
+        {...s.rows.find(r=>r.source==='huarw'),updated:1000},
+        {...base,label:'第1集',time:45,updated:3000}];
+    f.data.set(H.KEY,JSON.stringify(s));f.events['tw-history-change']();
+    const card=f.elements.get('watchHistoryList').children[0],shelf=f.elements.get('continueWatchingList').children;
+    assert.equal(f.elements.get('watchHistoryList').children.length,2);assert.equal(shelf.length,1);
+    for(const c of [card,shelf[0]]){
+        assert.equal(c.children[0].href,'/discover/play/kanju/av-test/ep-1');
+        assert.match(c.children[0].children[2].textContent,/第1集 · 看到 0:45/);
+    }
+    assert.equal(f.original.list().length,3,'display grouping does not erase episode progress');
+    shelf[0].children[0].handlers.click();assert.equal(f.original.takeResume(original,true,true),45);
+    f.original.prepare(next);
+    card.children[1].onclick();assert.equal(f.original.takeResume(next,true,true),null);
+    assert.deepEqual(f.original.list().map(H.identity),[H.identity(f.retired)]);
+    assert.equal(f.original.record(next,{ready:true,time:701}),false,'closing an old player cannot resurrect the removed title');
+});

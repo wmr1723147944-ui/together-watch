@@ -35,6 +35,24 @@ function harness(existing){
 }
 const record=(store,program=p,time=40)=>store.record(program,{ready:true,time,duration:300});
 
+test('account history groups legacy episodes from different devices, syncs a whole-card deletion, and preserves guest history',async()=>{
+    const h=harness(),other={...p,item:'other'};
+    record(h.local,p,30);await h.api.refresh();await h.api.authenticate('login',{username:'alice'});
+    const snap=h.db.get('alice'),clock=Date.now()-10000;
+    snap.rows=[{...q,time:160,updated:clock},{...other,time:50,updated:clock+500},{...p,time:31,updated:clock+1000}];
+    snap.revision++;await h.api.sync(false);
+    const titles=H.listTitles(h.api.store.list());assert.deepEqual(titles.map(H.identity),[H.identity(p),H.identity(other)]);
+    h.api.store.prepare(titles[0]);assert.equal(h.api.store.takeResume(p,true,true),31);
+    h.setOffline(true);h.api.store.removeTitle(p);assert.deepEqual(h.api.store.list().map(H.identity),[H.identity(other)]);
+    // A stale write for an old episode and a concurrent change to a different
+    // title must neither resurrect the deleted show nor erase the other title.
+    assert.equal(record(h.api.store,q,170),false);
+    snap.rows[1].time=61;snap.revision++;
+    h.setOffline(false);await h.api.flush();await h.api.flush();await h.api.sync(false);
+    assert.deepEqual(snap.rows.map(H.identity),[H.identity(other)]);assert.equal(snap.rows[0].time,61);
+    assert.equal(h.local.list()[0].time,30);assert.deepEqual(new Set(snap.deleted),new Set([H.identity(p),H.identity(q)]));
+});
+
 test('guest stays local, login does not silently import, explicit import keeps guest original',async()=>{
     const h=harness();await h.api.refresh();h.api.store.remember(p,{title:'本地作品',label:'第一集'});record(h.api.store);
     assert.equal(h.calls.some(c=>c.name==='history'),false);
@@ -43,6 +61,20 @@ test('guest stays local, login does not silently import, explicit import keeps g
     assert.equal(await h.api.importLocal(),1);assert.equal(h.db.get('alice').rows[0].time,40);
     assert.equal(h.map.get(H.KEY),before);assert.ok(![...h.map.values()].join('').includes('not-saved'));
     assert.ok(![...h.map.values()].join('').includes('csrf-alice'));
+});
+
+test('a full title deletion behind queued work never silently drops episode deletions at the API limit',async()=>{
+    const h=harness();await h.api.refresh();await h.api.authenticate('login',{username:'batch'});
+    const snap=h.db.get('batch');
+    snap.rows=Array.from({length:100},(_,i)=>({...p,episode:'ep'+i,time:10,updated:100+i}));
+    snap.revision++;await h.api.sync(false);
+    h.api.store.setEnabled(true);
+    h.api.store.removeTitle(p);
+    await h.api.flush();assert.equal(snap.rows.length,1,'the remaining delete must stay queued');
+    await h.api.flush();assert.equal(snap.rows.length,0);
+    const posts=h.calls.filter(c=>c.name==='history'&&c.options.method==='POST');
+    assert.deepEqual(posts.map(c=>c.data.deletes.length),[99,1]);
+    assert.equal(new Set(snap.deleted).size,100);
 });
 
 test('logout restores guest data and removes account cache; another account is isolated',async()=>{
