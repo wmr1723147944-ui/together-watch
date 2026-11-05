@@ -13,6 +13,7 @@ const {script:CATALOG_SCRIPT,api:catalogAdapters}=require('./catalog-adapters.cj
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
 const AGENT = fs.readFileSync(path.join(__dirname, 'danmaku-overlay.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
 const MEDIA_SCAN = fs.readFileSync(path.join(__dirname, 'media-scan.js'), 'utf8');
+const INLINE = fs.readFileSync(path.join(__dirname,'inline-video.js'),'utf8');
 const PLAYER_URL = policy.APP_ORIGIN + '/player.html';
 const SMOKE = !app.isPackaged && process.argv.includes('--smoke-test');
 const PACKAGE_CHECK = process.argv.includes('--verify-package');
@@ -62,13 +63,17 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     let micApproved = false, switching = false;
     let builtin = null, scanning = null, lastScan = 0, lastOriginalPause = 0, sourcePage = '';
     let manualWeb = false, requestedPage = '', resolveUntil = 0, autoAttempted = false;
+    let inline=null,blobScans=0,lastBlob='',scanWindowStarted=false,fallbackUntil=0;
     function preparePlayback(page) {
+        leaveInline();
         requestedPage = page; manualWeb = false; autoAttempted = false;
+        blobScans=0;lastBlob='';scanWindowStarted=false;fallbackUntil=0;
         resolveUntil = Date.now() + 24000;
         liveContents(video)?.setAudioMuted(true);
     }
     const gateText = () => catalog.reason || (preferWeb(requestedPage) ? '这个平台需要在原网页播放。'
         : selectionFailed ? '还没确认是哪一集。可以换来源，或打开原网页核对。'
+        : pendingEpisode ? '正在加载并确认所选集数…'
         : autoAttempted || Date.now() >= resolveUntil ? '未找到可直接播放的正片。可以换个来源，或手动打开原网页。'
         : '正在为这一集准备内置播放…');
     let draft = null, managed = null, finderMode = 'catalog', selecting = false;
@@ -107,7 +112,47 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     });
     playerPartition.on('will-download', event => event.preventDefault());
 
-    function reportMedia(message) { status({ candidates: catalog.summaries(), builtin: !!builtin, ...(message ? { message } : {}) }); }
+    function reportMedia(message) { status({ candidates: catalog.summaries(), builtin: !!builtin, inline:!!inline, ...(message ? { message } : {}) }); }
+    function leaveInline() {
+        const old=inline;if(!old)return;
+        inline=null;selected=null;
+        video?.setVisible(false);
+        if(old.wc.isDestroyed())return;
+        old.wc.setAudioMuted(true);
+        old.wc.removeInsertedCSS(old.css).catch(()=>{});
+        old.wc.executeJavaScriptInIsolatedWorld(991,[{code:INLINE+"('restore',"+JSON.stringify(old.token)+")"}]).catch(()=>{});
+    }
+    async function useLoadedVideo(expectedBuiltin=null) {
+        const wc=liveContents(video),p=currentProgram,epoch=videoGeneration;
+        const allowed=()=>wc && !wc.isDestroyed() && wc===liveContents(video) && epoch===videoGeneration && builtin===expectedBuiltin && !manualWeb && !browsing && !pendingEpisode && !selectionFailed && !catalog.protected;
+        if(inline || !allowed() || p?.source!=='kanju' || p.episode==='page' || wc.mainFrame.framesInSubtree.length!==1)return false;
+        const actual=policy.programSelection(wc.getURL(),server);
+        if(actual?.item!==p.item || actual?.source!==p.source || actual?.episode!==p.episode)return false;
+        const token=crypto.randomUUID(), mark='video[data-tw-inline="'+token+'"]',root='html[data-tw-inline-mode="'+token+'"]';
+        // Even a removed/replaced video leaves a black surface, never a page of
+        // ads. The user must explicitly select original-page mode to reveal it.
+        const css=await wc.insertCSS([
+            root+','+root+' body{background:#000!important;overflow:hidden!important}',
+            root+' body *,'+root+' body *::before,'+root+' body *::after{visibility:hidden!important;pointer-events:none!important}',
+            root+' *:has('+mark+'){transform:none!important;contain:none!important;overflow:visible!important}',
+            root+' '+mark+'{visibility:visible!important;pointer-events:auto!important;position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;max-width:none!important;max-height:none!important;z-index:2147483647!important;object-fit:contain!important;background:black!important}',
+            root+' canvas[data-tw-overlay="'+token+'"]{visibility:visible!important}'
+        ].join('\n'),{cssOrigin:'user'});
+        let adopted=false;
+        try{
+            if(!allowed())return false;
+            const ok=await timeout(wc.executeJavaScriptInIsolatedWorld(991,[{code:CATALOG_SCRIPT+';'+INLINE+"('start',"+JSON.stringify(token)+','+JSON.stringify(p.episode)+')'}]));
+            if(!ok || !allowed())return false;
+            if(builtin)closeBuiltin();
+            inline={wc,css,token};adopted=true;selected=null;playerSession++;videoGeneration++;
+            autoAttempted=true;wc.setAudioMuted(false);layout();reportMedia('已在房间接上本集，只显示视频。');return true;
+        }finally{
+            if(!adopted && !wc.isDestroyed()){
+                wc.removeInsertedCSS(css).catch(()=>{});
+                wc.executeJavaScriptInIsolatedWorld(991,[{code:INLINE+"('restore',"+JSON.stringify(token)+")"}]).catch(()=>{});
+            }
+        }
+    }
     function closeBuiltin() {
         if (!builtin) return;
         const old = builtin; builtin = null; selected = null; videoGeneration++;
@@ -117,6 +162,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         reportMedia();
     }
     function resetMedia() {
+        blobScans=0;lastBlob='';
         catalog.reset(); requests.clear(); lastScan = 0;
         // A user-supplied media URL need not render as an HTML document first.
         if (mediaKind(sourcePage)) catalog.add(sourcePage, sourcePage);
@@ -157,15 +203,18 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                     } catch { return null; }
                 }));
                 if (epoch !== videoGeneration || wc !== video?.webContents) return false;
-                const mainIds = [];
+                const mainIds = [];let blob='';
                 for (const result of results.filter(Boolean)) {
                     if (result.data?.protected || preferWeb(result.page)) { catalog.block(); break; }
                     for (const item of (result.data?.candidates || []).slice(0, 200)) {
-                        const entry = catalog.add(item.url, result.page, '', item);
+                        const entry = catalog.add(item.url, result.page, item.hls && item.main?'application/x-mpegurl':'', item);
                         if (item.main) mainIds.push(entry?.id || '');
+                        if(item.blobReady)blob=item.url;
                     }
                 }
                 catalog.observeMain(mainIds);
+                if(mainIds.length===1 && blob && !catalog.protected){blobScans=blob===lastBlob?Math.min(2,blobScans+1):1;lastBlob=blob;}
+                else{blobScans=0;lastBlob='';}
             }
             if (catalog.protected && builtin) { closeBuiltin(); layout(); }
             reportMedia(); return true;
@@ -175,7 +224,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (!automatic && !await scanMedia()) return { ok: false, error: '页面仍在识别或选集，请稍后重试。' };
         const item = catalog.get(id);
         if (!item) return { ok: false, error: catalog.reason || '候选已过期，请重新识别。' };
-        closeBuiltin();
+        leaveInline();closeBuiltin();
         const sourceEpoch = videoGeneration;
         const history = await readHistoryContext();
         await focusPlayer(false);
@@ -218,12 +267,12 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
 
     function guardSession(ses, isRoom) {
         ses.setPermissionCheckHandler((wc, permission, origin, details) => {
-            if (permission === 'fullscreen') return manualWeb && wc === video?.webContents;
+            if (permission === 'fullscreen') return (manualWeb || !!inline) && wc === video?.webContents;
             return isRoom && micApproved && permission === 'media' && origin === server
                 && details.isMainFrame && details.mediaType === 'audio' && roomTrusted(wc);
         });
         ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
-            if (permission === 'fullscreen') return callback(manualWeb && wc === video?.webContents);
+            if (permission === 'fullscreen') return callback((manualWeb || !!inline) && wc === video?.webContents);
             const url = details.requestingUrl || '';
             if (!isRoom || permission !== 'media' || !details.isMainFrame || !roomTrusted(wc)
                 || !policy.isRoomUrl(url, current.room, server) || !Array.isArray(details.mediaTypes)
@@ -241,7 +290,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
 
     function layout() {
         if (win.isDestroyed()) return;
-        status({advanced:toolsExpanded,browsing,cinema,gate:!!current && !builtin && !manualWeb && !browsing,gateText:gateText(),manualWeb});
+        status({advanced:toolsExpanded,browsing,cinema,gate:!!current && !builtin && !inline && !manualWeb && !browsing,gateText:gateText(),manualWeb,inline:!!inline});
         const [width, height] = win.getContentSize();
         if (!video || !roomView) {
             const top = finderMode === 'catalog' ? 72 : 200;
@@ -252,7 +301,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         video.setBounds(bounds.video); roomView.setBounds(bounds.room);
         if (builtin) { builtin.setBounds(bounds.video); builtin.setVisible(!browsing || full); }
         layoutFinder(bounds.video, browsing && !full);
-        video.setVisible(manualWeb && !builtin && (!browsing || full));
+        video.setVisible((manualWeb || !!inline) && !builtin && (!browsing || full));
         roomView.setVisible(!full);
         if(episodeView) {
             const area=bounds.video, drawer=Math.min(area.width,420);
@@ -307,7 +356,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         } catch { /* Frame navigation invalidates old handles. */ }
     }
     async function toggleFullscreen(value = !full) {
-        if (!video || (value && !manualWeb && !builtin)) return;
+        if (!video || (value && !manualWeb && !inline && !builtin)) return;
         if (!value && builtin && !builtin.webContents.isDestroyed()) {
             await builtin.webContents.executeJavaScript('document.fullscreenElement ? document.exitFullscreen() : undefined').catch(()=>{});
         }
@@ -321,7 +370,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         keepFinders = keepFinders === true; // Window close passes an event, not a flag.
         toolsExpanded=false;
         ++finderGeneration; metadataBrowser.cancelAll();
-        closeBuiltin(); sourcePage = ''; resetMedia();
+        leaveInline();closeBuiltin(); sourcePage = ''; resetMedia();
         ++generation; clearTimeout(timer); timer = null; selected = null; current = null; micApproved = false;
         full = false;
         if (!win.isDestroyed()) win.setFullScreen(false);
@@ -369,13 +418,17 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         });
         if (!isRoom) {
             wc.on('did-start-navigation', (_e, url, _inPlace, main) => {
+                if(main && inline)leaveInline();
                 if (main && !builtin) { if (sourceAllowed(url)) sourcePage = url; videoGeneration++; selected = null; resetMedia(); layout(); }
             });
             wc.on('did-navigate', (_e, url) => {
-                if (pendingEpisode && url !== pendingEpisode.page) { pendingEpisode = null; selectionFailed = true; }
+                if (pendingEpisode && url !== pendingEpisode.page) {
+                    const actual=policy.programSelection(url,server);
+                    if(actual?.source!==pendingEpisode.source || actual?.item!==pendingEpisode.item || actual?.episode!==pendingEpisode.episode){pendingEpisode=null;selectionFailed=true;}
+                }
                 selected = null; searchingSince = Date.now(); status({ source: sourceAllowed(url)?url:requestedPage, message: manualWeb?'已打开原网页，请点播放。':gateText() });
             });
-            wc.on('enter-html-full-screen', () => { if(!manualWeb || builtin)return; full = true; win.setFullScreen(true); layout(); });
+            wc.on('enter-html-full-screen', () => { if((!manualWeb && !inline) || builtin)return; full = true; win.setFullScreen(true); layout(); });
             wc.on('leave-html-full-screen', () => { full = false; win.setFullScreen(false); layout(); focusPlayer(cinema); });
         }
     }
@@ -687,7 +740,10 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 lastOriginalPause = Date.now(); pauseOriginal().catch(() => {});
             }
             // Slow third-party frames must not stall the playback sync loop.
-            if (Date.now() - lastScan > 2000 && !builtin && !browsing && (manualWeb || (!autoAttempted && Date.now() < resolveUntil))) scanMedia();
+            if(!scanWindowStarted && !pendingEpisode && !selectionFailed && !wc.isLoadingMainFrame()){
+                scanWindowStarted=true;resolveUntil=Date.now()+24000;
+            }
+            if (Date.now() - lastScan > 1300 && !builtin && !inline && !browsing && (manualWeb || (!autoAttempted && Date.now() < resolveUntil))) scanMedia();
             if (!stillCurrent()) return;
             if (pendingEpisode) {
                 const request = pendingEpisode;
@@ -696,6 +752,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 const loaded = !wc.isLoadingMainFrame() && (request.source==='kanju'
                     ? actual?.source==='kanju' && actual.item===wanted?.item && actual.episode===wanted?.episode
                     : wc.getURL() === request.page);
+                if(loaded && !request.readyAt)request.readyAt=Date.now();
                 const clicked = loaded && (request.source==='kanju'
                     ? await timeout(wc.executeJavaScriptInIsolatedWorld(991,[{code:CATALOG_SCRIPT+';TogetherWatchCatalogAdapters.episodeReady(document,'+JSON.stringify(request.episode)+')'}]))
                     : await timeout(wc.executeJavaScript(`(${function(source, episode) {
@@ -707,14 +764,20 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                     return el.classList.contains(active);
                 }.toString()})(${JSON.stringify(request.source)},${JSON.stringify(request.episode)})`)));
                 if (!stillCurrent()) return;
-                if (pendingEpisode === request && clicked) pendingEpisode = null;
-                else if (pendingEpisode === request && Date.now() - request.at > 20000) {
+                if (pendingEpisode === request && clicked) {pendingEpisode = null;scanWindowStarted=true;resolveUntil=Date.now()+24000;}
+                else if (pendingEpisode === request && Date.now() - (request.readyAt || request.at) > (request.readyAt ? 20000 : 45000)) {
                     pendingEpisode = null; selectionFailed = true;
                     await wc.executeJavaScript("document.querySelectorAll('video').forEach(v=>v.pause())");
                     status('没有确认所选集数，已停止自动接入。请用网页选集，再点“重连同步”。');
                 }
             }
-            if (!builtin && !manualWeb) {
+            if(inline){
+                const s=inline;
+                const ok=await timeout(s.wc.executeJavaScriptInIsolatedWorld(991,[{code:INLINE+"('check',"+JSON.stringify(s.token)+")"}]));
+                if(!stillCurrent() || s!==inline)return;
+                if(!ok){leaveInline();resetMedia();autoAttempted=false;resolveUntil=Date.now()+24000;layout();return;}
+            }
+            if (!builtin && !inline && !manualWeb) {
                 if (!stillCurrent()) return;
                 await timeout(roomView.webContents.executeJavaScript("window.TogetherWatchMobile.receive({active:false});window.TogetherWatchMobile.drain()"));
                 if (!stillCurrent() || manualWeb || browsing) return;
@@ -722,6 +785,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 if (!pendingEpisode && !selectionFailed && !autoAttempted && Date.now() < resolveUntil && !catalog.protected) {
                     const id = (mediaKind(requestedPage) && catalog.add(requestedPage,requestedPage)?.id) || catalog.automaticId;
                     if (id) { autoAttempted=true; const result=await openBuiltin(id,true); if(result.error && !manualWeb)status(result.error); }
+                    else if(blobScans>=2)await useLoadedVideo();
                 }
                 return;
             }
@@ -756,7 +820,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 if(!stillCurrent())return;
                 if (builtin) {
                     const playback = await timeout(wc.executeJavaScript('window.__twBuiltin?.state()'));
-                    if (playback?.error) { sample.error = playback.error; sample.ready = false; sample.events = []; }
+                    if (playback?.error) {
+                        if(playback.reusable && !browsing){
+                            if(!fallbackUntil)fallbackUntil=Date.now()+8000;
+                            if(Date.now()<fallbackUntil && await useLoadedVideo(builtin))return;
+                            if(!stillCurrent())return;
+                        }
+                        sample.error = playback.error; sample.ready = false; sample.events = [];
+                    }
                 }
                 const reply = await timeout(roomView.webContents.executeJavaScript(`window.TogetherWatchMobile.context?.(${JSON.stringify({owner:!!managed?.owner})});window.TogetherWatchMobile.receive(${JSON.stringify(sample)});window.TogetherWatchMobile.drain()`));
                 if (!stillCurrent()) return;
@@ -767,7 +838,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                     const command = policy.playbackCommand(value, playerSession);
                     if (command) await timeout(selected.frame.executeJavaScript(`window.__twDesktopPlayer?.apply(${JSON.stringify(command)})`));
                 }
-                if (!browsing) status(sample.error || (full ? '全屏：Esc / F11 返回，Ctrl+Z 切换铺满' : builtin ? '内置播放 · 播放器已连接' : '网页播放 · 播放器已连接'));
+                if (!browsing) status(sample.error || (full ? '全屏：Esc / F11 返回，Ctrl+Z 切换铺满' : builtin ? '内置播放 · 播放器已连接' : inline?'房间播放 · 仅显示本集视频':'网页播放 · 播放器已连接'));
             }
         } catch { if (stillCurrent()) { selected = null; status('播放页发生变化，正在重新连接播放器…'); } }
         finally { if (epoch === generation) timer = setTimeout(() => tick(epoch), selected ? 350 : 1200); }
@@ -928,7 +999,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         else if (value === 'original') {
             const epoch=generation, page=requestedPage;
             await parkFinder(discoveryView); if(epoch!==generation || page!==requestedPage || !video)return;
-            manualWeb=true; closeBuiltin(); video.webContents.setAudioMuted(false); browsing=false; cinema=false;
+            leaveInline();manualWeb=true; closeBuiltin(); video.webContents.setAudioMuted(false); browsing=false; cinema=false;
             const loaded=video.webContents.getURL();
             if (sourceAllowed(page) && (!sourceAllowed(loaded) || new URL(loaded).origin!==new URL(page).origin)) video.webContents.loadURL(page).catch(()=>{});
             await focusPlayer(false); layout(); status('已手动打开原网页。'); }
@@ -941,7 +1012,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         else if (value === 'detect') { await focusPlayer(false); selected = null; selectionFailed = false; pendingEpisode = null; searchingSince = Date.now(); status('正在重新识别播放器'); }
         else if (value === 'reload') {
             if (browsing && discoveryView) discoveryView.webContents.reload();
-            else { closeBuiltin(); selected = null; resolveUntil=Date.now()+24000; autoAttempted=false; resetMedia(); video.webContents.reload(); layout(); }
+            else { leaveInline();closeBuiltin(); selected = null; resolveUntil=Date.now()+24000; autoAttempted=false; fallbackUntil=0;scanWindowStarted=false;resetMedia(); video.webContents.reload(); layout(); }
         }
     }
     const senderIsShell = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
@@ -958,12 +1029,12 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     win.on('close', closeViews);
     win.on('closed', () => shells.delete(shellId));
     const suspend = () => { if (activeVideo()) activeVideo().webContents.setAudioMuted(true); if (roomTrusted(roomView?.webContents)) roomView.webContents.executeJavaScript('window.TogetherWatchMobile.suspend()').catch(() => {}); };
-    const resume = () => { liveContents(video)?.setAudioMuted(!manualWeb || !!builtin); liveContents(builtin)?.setAudioMuted(false); };
+    const resume = () => { liveContents(video)?.setAudioMuted((!manualWeb && !inline) || !!builtin); liveContents(builtin)?.setAudioMuted(false); };
     powerMonitor.on('suspend', suspend); powerMonitor.on('resume', resume);
     win.on('closed', () => { powerMonitor.removeListener('suspend', suspend); powerMonitor.removeListener('resume', resume); });
     await win.loadURL(policy.APP_ORIGIN + '/index.html');
     if (!PACKAGE_CHECK) { await showDiscovery(); status({finder:true}); }
-    return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, mediaSession: playerPartition, roomView, discoveryView, episodeView, browsing, cinema, selected, full, current }), toggleFullscreen };
+    return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, inline:!!inline, mediaSession: playerPartition, roomView, discoveryView, episodeView, browsing, cinema, selected, full, current }), toggleFullscreen };
 }
 
 app.whenReady().then(async () => {

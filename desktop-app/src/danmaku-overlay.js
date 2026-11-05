@@ -10,6 +10,7 @@
         // Browsers do not allow children over native video-only fullscreen.
         const parent=full && full!==video ? full : document.body;
         if(!canvas){canvas=document.createElement('canvas');canvas.setAttribute('aria-hidden','true');canvas.style.cssText='position:fixed!important;pointer-events:none!important;z-index:2147483647!important;';}
+        canvas.setAttribute('data-tw-overlay',video.getAttribute('data-tw-inline')||'');
         if(canvas.parentNode!==parent)parent.appendChild(canvas);
         const rect=video.getBoundingClientRect();
         let width=rect.width,height=rect.height,left=rect.left,top=rect.top;

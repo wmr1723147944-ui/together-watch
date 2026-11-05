@@ -3,8 +3,9 @@
     const video = document.getElementById('video'), notice = document.getElementById('notice');
     const levels = document.getElementById('levels');
     const episodes=document.getElementById('episodes');
-    let hls = null, loadId = 0, watchdog = null, failed = '', position = 0, cropped = false;
-    function fail(message) {
+    let hls = null, loadId = 0, watchdog = null, failed = '', position = 0, cropped = false, reusable = false;
+    function fail(message, canReuse = false) {
+        reusable = canReuse;
         failed = message; clearTimeout(watchdog); video.pause(); hls?.stopLoad();
         notice.textContent = message + ' 可在「更多」里换片，或点「用原网页播放」。'; notice.hidden = false;
     }
@@ -13,13 +14,13 @@
         video.pause(); video.removeAttribute('src'); video.load();
     }
     function load(item) {
-        destroy(); failed = ''; position = item.position || 0;
+        destroy(); failed = ''; reusable = false; position = item.position || 0;
         episodes.disabled=!item.episodes || !window.twPlayer;
         episodes.title=item.episodes?'选择当前影片的其他集数':'由房主选集；单视频链接不提供剧集目录';
         const id = loadId;
         notice.textContent = '正在加载公开媒体…'; notice.hidden = false;
         levels.replaceChildren(new Option('自动', '-1')); levels.disabled = true;
-        watchdog = setTimeout(() => { if (id === loadId && video.readyState < 3) fail('20 秒内没有加载到可播放画面：可能是源站、网络或跨域限制。'); }, 20000);
+        watchdog = setTimeout(() => { if (id === loadId && video.readyState < 3) fail('20 秒内没有加载到可播放画面：可能是源站、网络或跨域限制。', true); }, 20000);
         if (item.kind === 'hls' && window.Hls?.isSupported()) {
             // Start conservatively; adapt upwards after measured throughput.
             hls = new Hls({ enableWorker: true, emeEnabled: false, maxBufferLength: 30, startLevel: 0,
@@ -27,8 +28,12 @@
             hls.on(Hls.Events.ERROR, (_event, data) => {
                 if (id !== loadId || !data.fatal) return;
                 const code = Number(data.response?.code) || 0;
+                const denied = code === 401 || code === 403 || code === 404 || /key|drm/i.test(data.details || '');
                 fail(code === 401 || code === 403 ? '源站拒绝内置播放（登录或访问权限限制）。'
-                    : code === 404 ? '视频地址已失效（404）。' : 'HLS 加载失败：源站、跨域、网络或编码不兼容。');
+                    : code === 404 ? '视频地址已失效（404）。'
+                    : /key|drm/i.test(data.details || '') ? '加密视频未能加载，请使用原网页及自己的观看权限。'
+                    : data.type === 'mediaError' ? '视频分片或编码无法在独立播放器中解码。'
+                    : '视频请求未完成：可能是网络或源站跨域限制。', !denied);
             });
             hls.on(Hls.Events.MANIFEST_PARSED, () => {
                 if (id !== loadId) return;
@@ -51,7 +56,7 @@
     video.addEventListener('encrypted', () => fail('检测到 DRM 保护，请使用原网页及自己的观看权限。'));
     video.addEventListener('error', () => {
         if (!video.getAttribute('src') || failed) return;
-        fail(video.error?.code === 3 ? '设备无法解码这段视频。' : '媒体加载失败：地址失效、访问权限、跨域或编码不兼容。');
+        fail(video.error?.code === 3 ? '设备无法解码这段视频。' : '媒体加载失败：地址失效、访问权限、跨域或编码不兼容。', video.error?.code === 3);
     });
     levels.onchange = () => { if (hls) hls.currentLevel = Number(levels.value); };
     document.getElementById('fit').onclick = () => { cropped = !cropped; video.style.objectFit = cropped ? 'cover' : 'contain'; };
@@ -72,6 +77,6 @@
     });
     document.addEventListener('focusin',showControls);
     window.addEventListener('blur',()=>{clearTimeout(controlsTimer);document.body.classList.remove('show-controls','keyboard-controls');});
-    window.__twBuiltin = { load, destroy, state: () => ({ error: failed, ready: video.readyState >= 3 }),
+    window.__twBuiltin = { load, destroy, state: () => ({ error: failed, ready: video.readyState >= 3, reusable }),
         fullscreen(enabled, crop) { if(enabled && !fullscreen)showControls();fullscreen=!!enabled;document.body.classList.toggle('full', enabled); video.style.objectFit = crop ? 'cover' : 'contain'; } };
 })();

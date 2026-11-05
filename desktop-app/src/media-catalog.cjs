@@ -33,10 +33,18 @@ class MediaCatalog {
         if (!publicHttps(value)) return null;
         const url = new URL(value); url.hash = '';
         let item = this.items.get(url.href);
-        const kind = mediaKind(value, mime) || item?.kind;
+        const leaf=url.pathname.split('/').pop();
+        // Chromium can decode a progressive Kanju CDN resource named ".image"
+        // or with no extension. Never infer media from artwork/network hits.
+        const decoded=details.dom && details.main && details.current && Number.isFinite(details.duration) && details.duration>=120;
+        const kind = mediaKind(value, mime) || item?.kind || (decoded && leaf && (!leaf.includes('.') || /\.image$/i.test(leaf))?'mp4':'');
         if (!kind) return null;
         if (!item) {
-            if (this.items.size >= 24) return null;
+            if (this.items.size >= 24) {
+                if(!details.main)return null;
+                const stale=[...this.items.entries()].find(([,i])=>!i.dom);
+                if(!stale)return null;this.items.delete(stale[0]);
+            }
             let file = url.pathname.split('/').pop() || '视频';
             try { file = decodeURIComponent(file); } catch { /* Use encoded label. */ }
             item = { id: crypto.randomBytes(12).toString('hex'), url: url.href, kind,
@@ -44,6 +52,7 @@ class MediaCatalog {
             this.items.set(url.href, item);
         }
         if (details.dom) {
+            item.dom=true;
             item.active = details.active === true;
             item.position = Number.isFinite(details.position) ? Math.max(0, Math.min(604800, details.position)) : 0;
             item.duration = Number.isFinite(details.duration) ? Math.max(0, Math.min(604800, details.duration)) : 0;

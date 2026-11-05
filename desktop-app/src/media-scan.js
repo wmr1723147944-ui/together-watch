@@ -16,7 +16,16 @@
                 active: r.width > 80 && r.height > 45 && !video.paused && video.readyState >= 1,
                 position: video.currentTime || 0, duration: Number.isFinite(video.duration) ? video.duration : 0 };
             const url = video.currentSrc || video.src;
-            if (url) result.candidates.push({ url, ...details });
+            if (url) {
+                let bound='';
+                if(url.startsWith('blob:') && details.main){
+                    try{for(const hls of [video.hls,window.hls,window.dp?.plugins?.hls]){
+                        if(hls?.media===video && typeof hls.url==='string' && /^https:\/\//i.test(hls.url)){bound=hls.url;break;}
+                    }}catch{}
+                }
+                result.candidates.push({ url:bound||url, ...details, current:!!video.currentSrc && !video.srcObject,
+                    hls:!!bound, blobReady:!bound && url.startsWith('blob:') && details.main && video.readyState>=2 });
+            }
             for (const source of video.querySelectorAll('source[src]')) result.candidates.push({ url: source.src });
         }
         for (const node of Array.from(root.querySelectorAll('*')).slice(0, 3000)) if (node.shadowRoot) scan(node.shadowRoot, depth + 1);

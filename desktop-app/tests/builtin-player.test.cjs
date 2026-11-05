@@ -61,8 +61,23 @@ test('fatal 403 and DRM failures stay visible even if a late canplay event arriv
     const t=setup();t.api.load({url:'https://example.com/a.m3u8',kind:'hls'});
     t.streams[0].events.error(null,{fatal:true,response:{code:403}});
     assert.match(t.api.state().error,/拒绝/);t.listeners.canplay();assert.equal(t.notice.hidden,false);
+    assert.equal(t.api.state().reusable,false);
     assert.equal(t.streams[0].stopped,true);assert.match(t.notice.textContent,/原网页/);
     t.api.load({url:'https://example.com/a.mp4',kind:'mp4'});t.listeners.encrypted();assert.match(t.api.state().error,/DRM/);
+    assert.equal(t.api.state().reusable,false);
+});
+
+test('compatibility fallback is limited to load/decode failures, never key or access failures',()=>{
+    const t=setup();
+    for(const data of [{type:'mediaError'},{type:'networkError'}]){
+        t.api.load({url:'https://example.com/a.m3u8',kind:'hls'});
+        t.streams.at(-1).events.error(null,{fatal:true,...data});assert.equal(t.api.state().reusable,true);
+    }
+    for(const data of [{response:{code:404}},{details:'keyLoadError'},{details:'keySystemNoKeys'}]){
+        t.api.load({url:'https://example.com/a.m3u8',kind:'hls'});
+        t.streams.at(-1).events.error(null,{fatal:true,...data});assert.equal(t.api.state().reusable,false);
+    }
+    t.api.load({url:'https://example.com/a.mp4',kind:'mp4'});assert.equal(t.api.state().reusable,false);
 });
 test('startup timeout is bounded and callbacks from an old source cannot fail the new source', () => {
     const t=setup();t.api.load({url:'https://example.com/a.m3u8',kind:'hls'});

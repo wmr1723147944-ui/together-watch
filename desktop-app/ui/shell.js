@@ -1,6 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
-let room = '', finderMode = 'catalog', gate = false, manualWeb = false;
+let room = '', finderMode = 'catalog', gate = false, manualWeb = false, inline = false;
 const LEGAL_VERSION = '2026-07-28';
 let entryMode = 'join', submitting = false;
 const samples = { sintel: 'https://media.w3.org/2010/05/sintel/trailer.mp4', bunny: 'https://media.w3.org/2010/05/bunny/trailer.mp4' };
@@ -65,7 +65,9 @@ $('sourceForm').onsubmit = async event => { event.preventDefault(); const result
 window.desktop.onStatus(data => {
     if (typeof data.gate === 'boolean') { gate=data.gate; $('placeholder').hidden=!room || !gate; }
     if (data.gateText) $('gateText').textContent=data.gateText;
-    if (typeof data.manualWeb === 'boolean') {manualWeb=data.manualWeb; $('modeLabel').textContent=manualWeb?'网页播放':'内置播放';}
+    if (typeof data.manualWeb === 'boolean') manualWeb=data.manualWeb;
+    if (typeof data.inline === 'boolean') inline=data.inline;
+    $('modeLabel').textContent=inline?'兼容播放 · 仅视频':manualWeb?'网页播放':'内置播放';
     if (typeof data.host === 'boolean') $('gateChange').hidden=!data.host;
     if (data.message) { $('status').textContent = data.message; $('status').title = data.message; }
     if (data.finder) finder();
@@ -88,7 +90,6 @@ window.desktop.onStatus(data => {
         else if (data.candidates.length === 1) $('mediaChoices').value = data.candidates[0].id;
         $('play-media').disabled = !$('mediaChoices').value;
     }
-    if (typeof data.builtin === 'boolean') $('modeLabel').textContent = data.builtin || !manualWeb ? '内置播放' : '网页播放';
     if (data.setup) { document.body.classList.remove('catalog-home'); $('setup').hidden = false; $('tools').hidden = true; $('finderTools').hidden = true; $('placeholder').hidden = true;
         room=''; $('home').hidden=false; $('settings').hidden=false;
         $('room').value=''; $('source').disabled=false; $('source').value=data.pendingSource||''; $('error').textContent='';

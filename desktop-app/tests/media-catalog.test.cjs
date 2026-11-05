@@ -55,3 +55,20 @@ test('automatic playback needs two unambiguous current snapshots, never a histor
     c.block();c.observeMain([a]);assert.equal(c.automaticId,'');
     c.reset();assert.equal(c.previousMain,'');
 });
+
+test('opaque and image-named streams require decoded current main-video evidence',()=>{
+    const c=new MediaCatalog(), evidence={dom:true,main:true,current:true,duration:3600};
+    for(const url of ['https://cdn.example.com/opaqueID','https://cdn.example.com/clip.image']){
+        assert.equal(c.add(url,page),null);
+        assert.equal(c.add(url,page,'',{...evidence,current:false}),null);
+        assert.equal(c.add(url,page,'',{...evidence,duration:30}),null);
+        assert.equal(c.add(url,page,'',evidence).kind,'mp4');
+    }
+    for(const url of ['blob:https://kanju.ai/abc','https://127.0.0.1/opaque','https://cdn.example.com/a.key','https://cdn.example.com/a.ts'])assert.equal(c.add(url,page,'',evidence),null);
+});
+
+test('network candidates cannot crowd the decoded main video out of the catalog',()=>{
+    const c=new MediaCatalog();for(let i=0;i<24;i++)c.add('https://cdn.example.com/'+i+'.mp4',page);
+    const item=c.add('https://cdn.example.com/movie.image',page,'',{dom:true,main:true,current:true,duration:3600});
+    assert.ok(item);assert.equal(c.items.size,24);c.observeMain([item.id]);c.observeMain([item.id]);assert.equal(c.automaticId,item.id);
+});
