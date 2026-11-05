@@ -12,33 +12,29 @@
         android:layout_height="match_parent"
         android:orientation="vertical">
 
-        <LinearLayout android:id="@+id/navigationToolbar" android:layout_width="match_parent" android:layout_height="48dp"
+        <LinearLayout android:id="@+id/navigationToolbar" android:layout_width="match_parent" android:layout_height="56dp"
             android:orientation="horizontal" android:gravity="center_vertical" android:paddingHorizontal="8dp">
             <Button android:id="@+id/previousButton" android:layout_width="wrap_content"
                 android:layout_height="match_parent" android:text="← 返回" android:textAllCaps="false"
-                android:background="@android:color/transparent" android:textColor="@color/text_primary" />
-            <TextView android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+                android:minWidth="48dp" android:paddingHorizontal="6dp" android:background="@android:color/transparent" android:textColor="@color/text_primary" />
+            <TextView android:id="@+id/navigationTitle" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
                 android:text="一起看" android:gravity="center" android:textColor="@color/text_primary" android:textStyle="bold" />
-            <Button android:id="@+id/moreButton" android:layout_width="wrap_content" android:layout_height="match_parent"
-                android:text="更多 ···" android:background="@android:color/transparent" android:textColor="@color/text_primary" />
-        </LinearLayout>
-
         <LinearLayout
             android:id="@+id/browserToolbar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:background="@color/surface"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="48dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
-            android:padding="8dp"
+            android:paddingHorizontal="2dp"
             android:visibility="gone">
 
             <Button
                 android:id="@+id/findAgainButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:background="@drawable/button_secondary"
+                android:padding="0dp" android:minWidth="0dp" android:background="@drawable/room_control"
                 android:text="选集"
                 android:textSize="13sp"
                 android:textAllCaps="false"
@@ -47,33 +43,36 @@
             <Button
                 android:id="@+id/inviteButton"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_marginStart="6dp"
-                android:layout_weight="1"
-                android:background="@drawable/button_secondary"
+                android:layout_weight="1.6"
+                android:padding="0dp" android:minWidth="0dp" android:background="@drawable/room_invite"
                 android:text="邀请朋友"
                 android:textSize="13sp"
                 android:textAllCaps="false"
-                android:textColor="@color/text_primary" />
+                android:textStyle="bold" android:textColor="#381C15" />
 
             <Button
                 android:id="@+id/fullscreenButton"
                 android:layout_width="0dp"
                 android:layout_weight="1"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_marginStart="6dp"
-                android:background="@drawable/button_secondary"
+                android:padding="0dp" android:minWidth="0dp" android:background="@drawable/room_control"
                 android:text="全屏"
                 android:textSize="13sp"
                 android:textAllCaps="false"
-                android:textColor="@color/text_secondary" />
+                android:textColor="#EEE9E6" />
+        </LinearLayout>
+            <Button android:id="@+id/moreButton" android:layout_width="48dp" android:layout_height="match_parent"
+                android:minWidth="0dp" android:padding="0dp" android:text="•••" android:contentDescription="更多房间操作" android:background="@android:color/transparent" android:textColor="@color/text_primary" />
         </LinearLayout>
 
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#25213D"
+            android:background="#1C1B1D"
             android:ellipsize="end"
             android:maxLines="2"
             android:paddingStart="12dp"
@@ -81,7 +80,7 @@
             android:paddingEnd="12dp"
             android:paddingBottom="6dp"
             android:text="@string/status_preparing"
-            android:textColor="@color/text_secondary"
+            android:textColor="#C4BBB6"
             android:textSize="12sp"
             android:visibility="gone" />
 

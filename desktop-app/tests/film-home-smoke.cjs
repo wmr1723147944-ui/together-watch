@@ -44,23 +44,23 @@ exports.run=async({createDesktop,server,until,output})=>{
         const data=await(await fetch(server+'/api/watch-rooms/'+c.state().current.room+'/program')).json();
         assert.equal(data.program.source,'sample');assert.equal(data.program.item,'sintel');
         const room=c.state().current.room, roomView=c.state().roomView;
-        assert.equal(c.state().video.getBounds().y,128);
+        assert.equal(c.state().video.getBounds().y,64);
         assert.deepEqual(await shell.executeJavaScript('Array.from(document.querySelectorAll(".room-actions button")).filter(b=>!b.hidden).map(b=>b.textContent)'),['选集','邀请朋友','全屏','更多 ···']);
         assert.ok(await shell.executeJavaScript('document.getElementById("roomMore").hidden && document.getElementById("settings").hidden'));
         await shell.executeJavaScript('document.getElementById("more").click()');
-        await until('advanced options expand above native video',()=>c.state().video.getBounds().y===328);
+        await until('advanced options expand above native video',()=>c.state().video.getBounds().y===264);
         await until('options rendered',()=>shell.executeJavaScript('!document.getElementById("roomMore").hidden'));
         assert.equal(c.state().current.room,room);assert.equal(c.state().roomView,roomView);
         assert.ok(await shell.executeJavaScript('document.getElementById("more").getAttribute("aria-expanded")==="true"'));
         for(const width of [980,1360]) {
             c.win.setContentSize(width,850);
-            assert.ok(await shell.executeJavaScript('document.documentElement.scrollWidth<=innerWidth && document.getElementById("sourceForm").getBoundingClientRect().bottom<=328'));
+            assert.ok(await shell.executeJavaScript('document.documentElement.scrollWidth<=innerWidth && document.getElementById("sourceForm").getBoundingClientRect().bottom<=264'));
         }
-        fs.writeFileSync(path.join(output,'room-controls-expanded.png'),(await shell.capturePage({x:0,y:0,width:1360,height:328})).toPNG());
+        fs.writeFileSync(path.join(output,'room-controls-expanded.png'),(await shell.capturePage({x:0,y:0,width:1360,height:264})).toPNG());
         await c.action('back');assert.equal(c.state().browsing,false,'back closes options before navigating');
-        assert.equal(c.state().video.getBounds().y,128);
+        assert.equal(c.state().video.getBounds().y,64);
         await new Promise(resolve=>setTimeout(resolve,250));
-        fs.writeFileSync(path.join(output,'room-controls-compact.png'),(await shell.capturePage({x:0,y:0,width:1360,height:128})).toPNG());
+        fs.writeFileSync(path.join(output,'room-controls-compact.png'),(await shell.capturePage({x:0,y:0,width:1360,height:64})).toPNG());
         const realDialog=dialog.showMessageBox;
         try {
             dialog.showMessageBox=async(_win,options)=>{assert.equal(options.cancelId,0);assert.match(options.message,/离开/);return {response:0};};

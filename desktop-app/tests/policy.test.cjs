@@ -70,8 +70,8 @@ test('commands are restricted to the current session and validated playback fiel
 });
 test('fullscreen uses the entire content area with no room or toolbar gap', () => {
     assert.deepEqual(p.panelBounds(1920,1080,true),{video:{x:0,y:0,width:1920,height:1080},room:{x:1920,y:0,width:0,height:1080}});
-    const b = p.panelBounds(1360,850,false); assert.equal(b.video.width+b.room.width,1360); assert.equal(b.video.y,128);
-    assert.equal(p.panelBounds(1360,850,false,true).video.y,328);
+    const b = p.panelBounds(1360,850,false); assert.equal(b.video.width+b.room.width,1360); assert.equal(b.video.y,64);
+    assert.equal(p.panelBounds(1360,850,false,true).video.y,264);
     assert.equal(p.panelBounds(1360,850,true,true).video.y,0);
 });
 test('remote content has no preload, Node integration or disabled web security', () => {

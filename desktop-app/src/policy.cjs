@@ -70,7 +70,7 @@ function danmakuOverlay(raw, session) {
         .map(r=>({text:r.text.slice(0,80),time:r.time,lane:r.lane,kind:r.kind==='room'?'room':'public'}))};
 }
 function panelBounds(width, height, full, expanded = false) {
-    const top = full ? 0 : expanded ? 328 : 128;
+    const top = full ? 0 : expanded ? 264 : 64;
     const roomWidth = full ? 0 : Math.min(400, Math.max(300, Math.round(width * .29)));
     return { video: { x: 0, y: top, width: width - roomWidth, height: Math.max(1, height - top) },
         room: { x: width - roomWidth, y: top, width: roomWidth, height: Math.max(1, height - top) } };

@@ -1,21 +1,45 @@
-/* Shared Android / Windows room rail; no player or microphone behavior changes. */
-:root { background: #191e28; color: #eef3fa; }
-body { padding: 16px; gap: 12px; }
-header { padding-bottom: 12px; border-bottom: 1px solid #303b4b; }
-header strong { font-size: 14px; }
-#onlineCount, #mobilePlayerStatus { color: #a9b6ca; font-size: 12px; }
-button { font: inherit; font-size: 12px; background: #148cbd; min-height: 40px; border-radius: 7px; padding: 9px 12px; }
-button:hover { background: #1179a5; }
-button:focus-visible, input:focus-visible { outline: 2px solid #6ccdf5; outline-offset: 3px; }
-input { background: #232c3b; border-color: #3b4960; border-radius: 7px; }
-input::placeholder { color: #98a6bd; }
-input[type="range"] { accent-color: #41b6e5; }
-#videoVolumeControl { color: #b7c3d7; font-size: 12px; }
-.room-audio-options { flex-shrink:0; color:#a9b6ca; font-size:12px; }
-.room-audio-options summary { cursor:pointer; padding:8px 0; width:max-content; }
-.room-audio-options summary:focus-visible { outline:2px solid #6ccdf5; outline-offset:3px; }
-.room-audio-options[open] #videoVolumeControl { padding:4px 0 8px; }
-#chatContainer p { background: #242e3e; font-size: 13px; line-height: 1.7; padding: 10px 12px; }
-#callDock { background: #202e3c; padding: 12px; line-height: 1.8; }
-#chatForm { border-top: 1px solid #303b4b; padding-top: 12px; }
-#chatForm input { font-size: 14px; }
+/* Shared native-client room rail. Keep the account dialog's own light theme. */
+:root {color-scheme:dark; --ink:#f1eee9; --muted:#b3b0ae; --edge:#393839; --coral:#ffab93; background:#171719; color:var(--ink); font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+body {height:100vh;height:100dvh;padding:16px 16px max(12px,env(safe-area-inset-bottom));gap:0;background:linear-gradient(155deg,#292320 0,#1b1b1d 150px,#171719 330px)}
+.lounge-head {padding:0 0 12px;flex-wrap:nowrap;gap:8px}
+.lounge-kicker {font-size:9px;line-height:1;letter-spacing:.18em;font-weight:700;color:var(--coral)}
+.lounge-head h1 {font-size:22px;line-height:1.2;letter-spacing:.025em;margin:5px 0 0}
+.lounge-head h1 span {font-size:12px;font-weight:500;color:var(--muted);margin-left:9px;border-left:1px solid #615653;padding-left:9px;vertical-align:middle}
+body>header button,.lounge-preferences button,#callDock button {font:inherit;font-size:12px;font-weight:600;border:1px solid #4c4643;background:#302c2b;border-radius:12px;min-height:40px;padding:8px 12px}
+#joinCallBtn {color:#ffcebd;white-space:normal}
+.lounge-presence {display:flex;align-items:center;gap:9px;font-size:12px;line-height:18px}
+#mobileStatus {font-weight:600;display:flex;align-items:center;gap:6px}
+#mobileStatus::before {content:"";width:7px;height:7px;border-radius:50%;background:#caa571}
+#mobileStatus[data-connected=true]::before {background:#8dd3aa}
+#onlineCount {color:var(--muted)}
+#mobilePlayerStatus {font-size:12px;color:var(--muted);line-height:1.45;padding:4px 0 10px;border-bottom:1px solid var(--edge);overflow-wrap:anywhere}
+#chatContainer {padding:12px 2px;scrollbar-width:thin;scrollbar-color:#514b48 transparent;min-height:48px}
+#chatContainer p {background:none;margin:0 0 10px;font-size:13px;line-height:1.5;border-radius:0;padding:0}
+#chatContainer .room-event {font-size:11px;color:var(--muted);padding-left:10px;border-left:2px solid #66514a}
+#chatContainer .room-welcome {font-size:15px;font-weight:600;color:#e1d6d0;margin:8px 0 18px}
+.room-welcome small {font-size:12px;font-weight:400;color:var(--muted)}
+#chatContainer:has(.chat-line) .room-welcome {display:none}
+#chatContainer .chat-line {background:#29282b;border-radius:3px 14px 14px;width:fit-content;max-width:95%;white-space:pre-wrap;padding:8px 12px;line-height:1.65}
+.chat-line strong {display:block;font-size:11px;font-weight:600;color:#e5bbac}
+.lounge-settings {flex:0 1 auto;min-height:44px;overflow:auto;border-top:1px solid var(--edge);scrollbar-width:thin}
+.lounge-settings>summary {display:flex;align-items:center;gap:8px;list-style:none;cursor:pointer;color:var(--ink);min-height:42px;font-size:12px}
+.lounge-settings>summary::-webkit-details-marker {display:none}
+.lounge-settings>summary::before {content:"";border:solid var(--muted);border-width:0 1.5px 1.5px 0;width:5px;height:5px;transform:rotate(-45deg)}
+.lounge-settings[open]>summary::before {transform:rotate(45deg)}
+.lounge-settings>summary small {margin-left:auto;color:var(--muted);font-size:11px}
+.lounge-preferences {overflow:auto;max-height:min(36dvh,max(48px,calc(100dvh - 280px)));padding:0 2px 6px;scrollbar-width:thin}
+.lounge-preferences details {border:0;border-radius:8px;background:#252426;padding:0 10px;margin-bottom:4px;max-height:none}
+.lounge-preferences details[open] {padding-bottom:10px}
+.lounge-preferences summary {padding:10px 0;font-size:12px;cursor:pointer}
+.lounge-preferences input,.lounge-preferences select,#chatForm select {background:#252427;color:var(--ink);border-color:#474448;accent-color:var(--coral)}
+.lounge-account {color:var(--muted)}
+#callDock {background:#29292a;border:1px solid var(--edge);line-height:1.7;margin-top:6px;min-height:60px;max-height:34dvh;overflow:auto;flex:0 1 auto}
+#chatForm {gap:5px;border-radius:14px;border:1px solid #494547;background:#242325;padding:4px}
+#chatForm input {background:transparent;border:0;font-size:14px;padding:8px 2px;color:var(--ink)}
+#chatForm input::placeholder {color:#aaa6a4}
+#chatForm select {width:auto;border:0;border-right:1px solid var(--edge);border-radius:8px 0 0 8px;font:inherit;font-size:12px;color:#ddd4cf;max-width:78px}
+#sendBtn {background:#ffad96;color:#321812;border-radius:10px;min-height:38px;padding:8px 12px;font-weight:650}
+#sendBtn:disabled {background:#423a39;color:#c2b6b1;opacity:1}
+:is(button,select,summary,input):focus-visible {outline:2px solid var(--coral);outline-offset:1px}
+@media(max-height:460px) {body{padding:10px 12px 8px}.lounge-head{padding-bottom:6px}.lounge-kicker{display:none}.lounge-head h1{font-size:18px;margin:0}.lounge-presence{font-size:11px}#mobilePlayerStatus{padding-bottom:5px}.lounge-settings>summary{min-height:36px}#chatContainer{padding:7px 0}}
+@media(pointer:coarse){#sendBtn,#chatForm select,#joinCallBtn,.lounge-settings>summary{min-height:44px}}

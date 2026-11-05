@@ -361,7 +361,7 @@ function mobileHarness() {
     const storage = new Map([['tw_client_key', 'mobile-test-client-key-1234']]);
     const element = id => {
         if (!elements.has(id)) elements.set(id, { value: id === 'roomData' ? 'mobile-test' : '',
-            textContent: '', disabled: false, children: [], handlers: {},
+            textContent: '', disabled: false, children: [], handlers: {}, dataset: {},
             addEventListener(name, callback) { this.handlers[name] = callback; },
             appendChild(child) { this.children.push(child); },
             click() { this.handlers.click?.({}); },
@@ -386,13 +386,31 @@ function mobileHarness() {
     const context = { window, io, crypto: require('node:crypto').webcrypto,
         localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
         document: { addEventListener: (_, callback) => { boot = callback; }, getElementById: element,
-            createElement: () => ({ textContent: '' }) },
+            createElement: () => ({ textContent: '', children: [], appendChild(child) { this.children.push(child); } }),
+            createTextNode: text => ({ textContent: text, nodeType: 3 }) },
         setInterval(callback) { intervals.push(callback); return intervals.length; }, clearInterval() {},
     };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../static/js/mobile-room.js'), 'utf8'), context);
     boot();
     return { window, sockets, element, storage, bridge: window.TogetherWatchMobile };
 }
+
+test('room styling keeps chat text safe and clears connected indicator on failure', () => {
+    const h = mobileHarness(), socket = h.sockets[0]; socket.connect();
+    assert.equal(h.element('mobileStatus').dataset.connected, 'true');
+    socket.handlers.chat_message({username:'<b>朋友</b>', message:'<img src=x onerror=alert(1)>'});
+    const row = h.element('chatContainer').children.at(-1);
+    assert.equal(row.className, 'chat-line');
+    assert.equal(row.children[0].textContent, '<b>朋友</b>');
+    assert.equal(row.children[1].nodeType, 3);
+    assert.equal(row.children[1].textContent, '<img src=x onerror=alert(1)>');
+    socket.handlers.status({msg:'朋友加入了房间'});
+    assert.equal(h.element('chatContainer').children.at(-1).className, 'room-event');
+    socket.handlers.connect_error();
+    assert.equal(h.element('mobileStatus').dataset.connected, undefined);
+    socket.connect(); socket.disconnect();
+    assert.equal(h.element('mobileStatus').dataset.connected, undefined);
+});
 
 test('mobile native and human sockets pair as one member; reconnect discards stale commands', () => {
     const h = mobileHarness(); h.sockets[0].connect();

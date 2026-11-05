@@ -390,6 +390,7 @@ public final class MainActivity extends ComponentActivity {
         updateCatalogChrome();
         boolean watching=sessionActive && !finding;
         browserToolbar.setVisibility(watching?View.VISIBLE:View.GONE);
+        findViewById(R.id.navigationTitle).setVisibility(watching?View.GONE:View.VISIBLE);
         findViewById(R.id.finderToolbar).setVisibility(finding && originalFinderActive?View.VISIBLE:View.GONE);
         findViewById(R.id.moreButton).setVisibility(sessionActive || originalFinderActive?View.VISIBLE:View.GONE);
         boolean canChoose=!sessionActive || programRevision==0 || !ownerKey.isEmpty();
@@ -405,7 +406,7 @@ public final class MainActivity extends ComponentActivity {
         // The web catalogue owns its compact search/header and bottom tabs.
         // Keep native Back / More while changing films in an existing room.
         findViewById(R.id.navigationToolbar).setVisibility(catalogue && !sessionActive?View.GONE:View.VISIBLE);
-        int background=catalogue?0xFFFFFFFF:getColor(R.color.background);
+        int background=catalogue?0xFFFFFFFF:sessionActive && !finding?0xFF1C1B1D:getColor(R.color.background);
         int text=catalogue?0xFF424956:getColor(R.color.text_primary);
         findViewById(R.id.root).setBackgroundColor(background);
         ((Button)findViewById(R.id.previousButton)).setTextColor(text);

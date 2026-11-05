@@ -5,3 +5,8 @@
 button,select{background:#182338;color:#dbe6f5;border:1px solid #36465c;border-radius:6px;padding:5px 8px;font:inherit}
 body.full main{height:100vh}body.full footer{position:fixed;bottom:64px;right:12px;height:auto;padding:10px;background:#182338ed;border-radius:10px;opacity:0;pointer-events:none}
 body.full.show-controls footer,body.full.keyboard-controls footer:focus-within{opacity:1;pointer-events:auto}body.full #quality{display:none}
+body:not(.full) footer {background:#201e20;color:#c7bfb9;border-top:1px solid #373235}
+footer button,footer select {border-color:#4e4647;background:#302b2d;color:#f3e8e2;border-radius:8px}
+footer button:hover,footer select:hover {border-color:#9a7b6f}
+footer :focus-visible {outline:2px solid #ffb59c;outline-offset:2px}
+#notice {background:#272327f2;color:#eee6e2;border-left:3px solid #f3ae91}

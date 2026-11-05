@@ -1,8 +1,8 @@
 :root { color-scheme: light; font-family: "Segoe UI", "Microsoft YaHei", sans-serif; color: #263347; background: #f5f7fa; }
 * { box-sizing: border-box; }
 body { margin: 0; }
-/* Header 72px + room bar 56px; expanded options add 200px.
-   Keep these heights aligned with policy.panelBounds (128 / 328). */
+/* Finder and setup keep their 72px header. In-room grid is 64px, plus
+   200px when expanded; its bottom aligns with policy.panelBounds. */
 header { height: 72px; display: flex; align-items: center; gap: 24px; padding: 12px 24px; background: #fff; border-bottom: 1px solid #e1e6ee; }
 .brand { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 750; white-space: nowrap; }
 .mark { display: block; width: 42px; height: 42px; flex-shrink: 0; }
@@ -62,6 +62,29 @@ nav.room-actions { margin-top:0; }
 #placeholder { width:calc(100% - clamp(300px,29vw,400px)); box-sizing:border-box; padding:clamp(24px,10vh,116px) 16px 20px; text-align:center; color:#536378; }
 #placeholder strong { font-size:20px; color:#263647; }
 #placeholder button { margin:4px; }
+body:has(#tools:not([hidden])) {display:grid;grid-template-columns:minmax(0,1fr) auto;align-content:start;min-height:100vh;background:#151416;color:#f6efe9;color-scheme:dark}
+body:has(#tools:not([hidden]))>header,#tools .room-actions {height:64px;background:#211f20;border:0;border-bottom:1px solid #393536}
+body:has(#tools:not([hidden]))>header {min-width:0;gap:14px;padding:8px 18px}
+body:has(#tools:not([hidden])) .mark {width:34px;height:34px}
+body:has(#tools:not([hidden])) .brand {font-size:17px;gap:9px}
+body:has(#tools:not([hidden])) .brand small {color:#c4b7b0}
+body:has(#tools:not([hidden])) #status {color:#bbb4b0;font-size:12px}
+#tools:not([hidden]) {display:contents}
+#tools .room-actions {padding:0 18px 0 8px;gap:6px}
+#tools #modeLabel {display:inline-block;margin:0 6px 0 0;padding:5px 9px;border-radius:6px;background:#352d29;color:#edbda7;font-size:11px}
+body:has(#tools:not([hidden]))>header button,#tools button,#placeholder button {border:1px solid #484144;border-radius:12px;background:#2e2a2d;color:#eae3df}
+#tools .room-actions button {height:36px;min-width:48px;padding:0 13px}
+#tools #invite {border-color:#ffad96;color:#361b13;background:#ffad96;font-weight:700}
+#tools #invite:hover {background:#ffc0ab} #tools button:hover,#placeholder button:hover {border-color:#ac8372}
+#tools button:focus-visible,#placeholder button:focus-visible {outline-color:#ffb7a1}
+#tools #roomMore {grid-column:1/-1;background:#221f21;border-color:#403a3c}
+#roomMore .extra-row select,#roomMore #currentSource {background:#302c2e;color:#eee7e1;border-color:#4a4445}
+#roomMore :is(strong,label,span,#roomLabel) {color:#c6bcb8}
+#tools #leave {color:#ffb29d} #tools .room-options {border-color:#413b3d}
+body #placeholder {grid-column:1/-1;align-self:start;padding:clamp(36px,15vh,140px) 16px;background:radial-gradient(ellipse at 50% 22%,#342822,transparent 69%);color:#c9bfb9}
+body #placeholder small {display:block;letter-spacing:.18em;color:#ffb69d;font-size:10px;font-weight:700}
+body #placeholder strong {display:block;margin-top:9px;font-size:28px;color:#f6eee9}
+body #placeholder p {font-size:14px;margin:10px auto 22px}
 .media-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 6px; border-top: 1px solid #e1e6ee; }
 .media-tools button, .media-tools select { font: inherit; font-size: 12px; padding: 6px 10px; }
 .media-tools select { flex: 1; min-width: 0; background: #fff; color: #425269; border: 1px solid #dce3ed; border-radius: 7px; }

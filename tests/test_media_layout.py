@@ -76,7 +76,8 @@ class MediaLayoutTests(unittest.TestCase):
         self.assertIn("#tools.expanded { height:256px", css)
         self.assertIn("#finderTools { height:128px", css)
         policy = (root / "desktop-app/src/policy.cjs").read_text(encoding="utf-8")
-        self.assertIn("const top = full ? 0 : expanded ? 328 : 128", policy)
+        self.assertIn("const top = full ? 0 : expanded ? 264 : 64", policy)
+        self.assertIn("grid-template-columns:minmax(0,1fr) auto", css)
         room = self.client.get("/mobile-room/layout-test").text
         for identifier in ["chatInput", "sendBtn", "mobileVideoVolume", "joinCallBtn", "muteCallBtn", "leaveCallBtn"]:
             self.assertIn(f'id="{identifier}"', room)

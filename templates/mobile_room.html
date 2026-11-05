@@ -6,18 +6,26 @@
     <title>一起看 · 房间</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/account.css', v='20261029-account') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile-room.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/client-room-theme.css', v='20261022-room-controls') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/client-room-theme.css', v='20261105-screening-room') }}">
 </head>
 <body>
     <input type="hidden" id="roomData" value="{{ room_id }}">
     <input type="hidden" id="legalNoticeVersion" value="{{ legal_notice_version }}">
-    <header>
-        <div><strong id="mobileStatus">连接房间中…</strong> <span id="onlineCount"></span></div>
+    <header class="lounge-head">
+        <div><span class="lounge-kicker" lang="en">SCREENING ROOM</span><h1>放映室<span>聊天</span></h1></div>
         <button id="joinCallBtn">加入语音</button>
     </header>
+    <div class="lounge-presence"><strong id="mobileStatus">连接房间中…</strong><span id="onlineCount"></span></div>
     <p id="mobilePlayerStatus" role="status">等待 APP 播放器</p>
-    <details class="room-audio-options"><summary>个人账号 / 历史同步</summary><button type="button" data-account-open><span data-account-label>登录</span> · 管理观看记录</button></details>
-    {% include "_account.html" %}
+    <section id="callDock" class="hidden">
+        <span id="callStatus"></span> <span id="callCount"></span> <span id="callNetwork"></span>
+        <button id="muteCallBtn">静音</button> <button id="leaveCallBtn">挂断</button>
+        <label>通话音量 <input id="callVolumeSlider" type="range" min="0" max="100" value="100"><output id="callVolumeValue">100%</output></label>
+        <div id="remoteAudioContainer" class="hidden"></div>
+    </section>
+    <main id="chatContainer" aria-label="房间消息" aria-live="polite"><p class="room-welcome">灯光暗了，聊天还开着。<br><small>发条消息，或邀请朋友加入语音。</small></p></main>
+    <details class="lounge-settings"><summary><span>房间设置</span><small>弹幕 · 音量 · 账号</small></summary>
+    <div class="lounge-preferences">
     <details class="danmaku-options"><summary>弹幕设置 <span>好友 / 公共弹幕</span></summary>
         <div class="danmaku-toggles"><label><input type="checkbox" id="roomDanmakuEnabled" checked> 好友弹幕</label><label><input type="checkbox" id="publicDanmakuEnabled"> 公共弹幕</label></div>
         <p id="publicDanmakuStatus" role="status">正在检查公共弹幕服务…</p>
@@ -29,13 +37,9 @@
     <details class="room-audio-options"><summary>视频音量</summary>
         <label id="videoVolumeControl">本机音量 <input id="mobileVideoVolume" type="range" min="0" max="100" value="100"><output id="mobileVideoVolumeValue">100%</output></label>
     </details>
-    <section id="callDock" class="hidden">
-        <span id="callStatus"></span> <span id="callCount"></span> <span id="callNetwork"></span>
-        <button id="muteCallBtn">静音</button> <button id="leaveCallBtn">挂断</button>
-        <label>通话音量 <input id="callVolumeSlider" type="range" min="0" max="100" value="100"><output id="callVolumeValue">100%</output></label>
-        <div id="remoteAudioContainer" class="hidden"></div>
-    </section>
-    <main id="chatContainer" aria-live="polite"><p>和朋友聊聊吧。想开麦时，点击上方“加入语音”。</p></main>
+    <button class="lounge-account" type="button" data-account-open><span data-account-label>登录</span> · 账号与观看记录</button>
+    </div></details>
+    {% include "_account.html" %}
     <form id="chatForm">
         <select id="messageMode" aria-label="发送方式"><option value="chat">聊天</option><option value="danmaku">弹幕</option></select>
         <input id="chatInput" aria-label="聊天消息" placeholder="说点什么…" maxlength="500" autocomplete="off">
@@ -50,6 +54,6 @@
     <script src="{{ url_for('static', filename='js/account.js', v='20261104-title-history') }}" defer></script>
     <script src="{{ url_for('static', filename='js/danmaku-core.js', v='20261027-history') }}" defer></script>
     <script src="{{ url_for('static', filename='js/room-experience.js', v='20261029-account') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261027-history') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/mobile-room.js', v='20261105-screening-room') }}" defer></script>
 </body>
 </html>

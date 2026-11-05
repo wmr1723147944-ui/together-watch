@@ -78,6 +78,10 @@ exports.run = async ({createDesktop, server, output, until}) => {
         await control(bw, 'const v=document.querySelector("video");v.playbackRate=1.5;v.play()');
         await until('built-in reverse play and speed', () => aw.executeJavaScript('!document.querySelector("video").paused && document.querySelector("video").playbackRate===1.5'));
         const room = a.state().roomView.webContents;
+        if(process.env.TW_SMOKE_ROOM_DESIGN_ONLY==='1'){
+            await require('./room-design-smoke.cjs').run({client:a,server,output,until});
+            return;
+        }
         fs.writeFileSync(path.join(output,'windows-builtin-toolbar.png'), (await a.win.webContents.capturePage()).toPNG());
         a.win.setContentSize(980,680);
         fs.writeFileSync(path.join(output,'windows-builtin-toolbar-small.png'), (await a.win.webContents.capturePage()).toPNG());
@@ -104,6 +108,7 @@ exports.run = async ({createDesktop, server, output, until}) => {
         assert.equal(await aw.executeJavaScript('getComputedStyle(document.querySelector("footer")).opacity'),'0','pointer movement exits keyboard mode');
         await a.toggleFullscreen(false);
         fs.writeFileSync(path.join(output,'windows-builtin-player.png'), (await aw.capturePage()).toPNG());
+        if(process.env.TW_SMOKE_ROOM_DESIGN==='1')await require('./room-design-smoke.cjs').run({client:a,server,output,until});
         await a.action('original');
         assert.equal(a.state().builtin, null); assert.equal(a.state().roomView.webContents, room);
         assert.equal(a.state().video.webContents.isAudioMuted(), false);

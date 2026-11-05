@@ -48,7 +48,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function addMessage(message, author = '') {
         if (!message) return;
         const row = document.createElement('p');
-        row.textContent = `${author ? author + '：' : ''}${String(message).slice(0, 500)}`;
+        row.className = author ? 'chat-line' : 'room-event';
+        if (author) {
+            const sender = document.createElement('strong');
+            sender.textContent = author;
+            row.appendChild(sender);
+        }
+        row.appendChild(document.createTextNode(String(message).slice(0, 500)));
         messages.appendChild(row);
         while (messages.children.length > 100) messages.firstElementChild.remove();
         messages.scrollTop = messages.scrollHeight;
@@ -60,15 +66,17 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.emit('join', { room, username, client_key: clientKey });
         socket.emit('request_room_program', { room }, reply => acceptProgram(reply?.selection));
         status.textContent = '房间已连接';
+        status.dataset.connected = 'true';
         send.disabled = false;
         call.handleSocketReconnect();
     });
     socket.on('disconnect', () => {
         status.textContent = '房间正在重连…';
+        delete status.dataset.connected;
         send.disabled = true;
         call.handleSocketDisconnect();
     });
-    socket.on('connect_error', () => { status.textContent = '连接失败，正在重试…'; });
+    socket.on('connect_error', () => { status.textContent = '连接失败，正在重试…'; delete status.dataset.connected; });
     socket.on('presence', data => { document.getElementById('onlineCount').textContent = `${data.count} 人在线`; });
     socket.on('chat_message', data => addMessage(data.message, data.username));
     socket.on('status', data => addMessage(data.msg));
