@@ -38,12 +38,22 @@
             pending.delete(id);clearTimeout(job.timer);
             job.resolve(normalize(job,raw));
         },
+        update(documentToken,id,raw) {
+            if(documentToken!==token)return;
+            const job=pending.get(id);
+            if(!job || job.req.kind!=='search' || !job.onProgress)return;
+            const data=normalize(job,raw);
+            if(data.status!=='ok' || !data.results?.length)return;
+            // Do not settle/free the slot: the same page can still enrich covers.
+            try {job.onProgress(data);} catch {console.warn('[TogetherWatchCatalog] progress_callback_failed');}
+        },
     });
     Object.defineProperty(window,'__twMetadataQueue',{value:queue,configurable:false});
     Object.defineProperty(window,'twSourceMetadata',{value:Object.freeze({
         supportedSources,
+        supportsProgress: true,
         requestTimeoutMs: 42000,
-        request(id,kind,payload,interactive=false) {
+        request(id,kind,payload,interactive=false,onProgress=null) {
             const req=adapters.request(kind,payload);
             if(!req || !supportedSources.includes(req.source) || typeof id!=='string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(id)
                 || typeof interactive!=='boolean')return Promise.resolve({status:'unavailable'});
@@ -53,7 +63,7 @@
                 return Promise.resolve(adapters.normalizeResult(req,{status:'unavailable'}));
             return new Promise(resolve=>{
                 const clean=kind==='search'?{source:req.source,q:req.q}:{source:req.source,page_url:req.url};
-                pending.set(id,{req,payload:clean,interactive,resolve,sent:false,
+                pending.set(id,{req,payload:clean,interactive,resolve,sent:false,onProgress:typeof onProgress==='function'?onProgress:null,
                     timer:setTimeout(()=>cancel(id,'unavailable'),interactive?180000:29000)});
             });
         },cancel,

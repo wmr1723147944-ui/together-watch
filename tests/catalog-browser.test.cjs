@@ -76,7 +76,9 @@ test('unknown hosts, blank titles, script URLs and credentialed covers cannot en
 
 function fixture(sources=['ddys','huarw','cupfox']) {
     function node(tag='div') {return {tagName:tag,children:[],handlers:{},attributes:{},dataset:{},hidden:false,value:'',textContent:'',
-        addEventListener(k,f){this.handlers[k]=f;},append(...nodes){this.children.push(...nodes);},replaceChildren(...nodes){this.children=[...nodes];},
+        addEventListener(k,f){this.handlers[k]=f;},append(...nodes){for(const n of nodes){n.parent=this;this.children.push(n);}},
+        replaceChildren(...nodes){for(const n of this.children)n.parent=null;this.children=[];this.append(...nodes);},
+        remove(){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=null;},
         setAttribute(k,v){this.attributes[k]=v;},focus(){},querySelectorAll(){return [];}};}
     const elements=new Map();
     for(const id of ['sourceDiscovery','discoveryQuery','discoveryWelcome','discoveryLive','discoveryLiveResults','discoveryLiveStatus',

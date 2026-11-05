@@ -116,6 +116,16 @@ final class CatalogMetadataController {
         catalogue.evaluateJavascript("(()=>{if("+guard()+")window.__twMetadataQueue?.complete("
             +JSONObject.quote(token)+","+JSONObject.quote(id)+","+result+");})()",null);
     }
+    private void publish(Job job,JSONObject result) {
+        if(!current(job) || !job.req.optString("kind").equals("search"))return;
+        String snapshot=result.toString();
+        if(snapshot.equals(job.lastProgress))return;
+        job.lastProgress=snapshot;
+        // Public metadata only; the page queue normalizes and checks token/id
+        // again. Old catalogue scripts safely ignore this optional update.
+        catalogue.evaluateJavascript("(()=>{if("+guard()+")window.__twMetadataQueue?.update?.("
+            +JSONObject.quote(job.token)+","+JSONObject.quote(job.id)+","+snapshot+");})()",null);
+    }
     private final class Page {
         final String source;
         final WebView view;
@@ -179,6 +189,7 @@ final class CatalogMetadataController {
         long emptySince;
         long posterSince;
         JSONObject partial;
+        String lastProgress="";
         String lastStatus="unavailable";
         Job(String id,String token,int epoch,JSONObject req,Page page,boolean interactive) {
             this.id=id;this.token=token;this.epoch=epoch;this.req=req;this.page=page;this.interactive=interactive;
@@ -263,6 +274,7 @@ final class CatalogMetadataController {
                     boolean empty=state.equals("no_episodes") || job.req.optString("kind").equals("search") && result.optJSONArray("results")!=null && result.optJSONArray("results").length()==0;
                     if(!empty){
                         job.partial=result;
+                        publish(job,result);
                         JSONArray rows=result.optJSONArray("results");boolean missing=false;
                         if(job.req.optString("kind").equals("search") && rows!=null)for(int i=0;i<rows.length();i++) {
                             JSONObject row=rows.optJSONObject(i);

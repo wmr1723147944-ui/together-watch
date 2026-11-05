@@ -183,7 +183,7 @@
         if(typeof source!=='string' || !Object.hasOwn(rules,source)) return null;
         const [base,param]=rules[source],url=new URL(base);url.searchParams.set(param,q);return url.href;
     }
-    async function metadataRequest(kind,payload,fetcher,signal,interactive=false) {
+    async function metadataRequest(kind,payload,fetcher,signal,interactive=false,onProgress=null) {
         const server=()=>fetcher('/api/discover/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal});
         if (!nativeMetadata(payload.source)) return server();
@@ -193,7 +193,14 @@
         signal.addEventListener('abort',cancel,{once:true});
         try {
             let data;
-            try {data=await globalThis.twSourceMetadata.request(id,kind,payload,interactive);}
+            try {
+                const api=globalThis.twSourceMetadata;
+                // Older clients (including Windows IPC) accept four serializable
+                // arguments only. Stream callbacks stay in the Android page.
+                data=await (api.supportsProgress===true && typeof onProgress==='function'
+                    ? api.request(id,kind,payload,interactive,partial=>{if(!signal.aborted)onProgress(partial);})
+                    : api.request(id,kind,payload,interactive));
+            }
             catch(error){if(signal.aborted)throw error;data=adapters.normalizeResult(adapters.request(kind,payload),{status:'unavailable'});}
             if(signal.aborted) throw new Error('cancelled');
             // A local network failure may still have a working server path. Do

@@ -56,3 +56,31 @@ test('Android cancellation, busy limit and document tokens do not mix results',a
     api.cancel('two');assert.equal((await two).status,'cancelled');
     assert.equal(Object.isFrozen(api),true);assert.equal(Object.isFrozen(q),true);
 });
+
+test('partial results are normalized, token-bound and do not finish or free a job',async()=>{
+    const c=setup(),api=c.twSourceMetadata,q=c.__twMetadataQueue,updates=[];
+    let done=false;
+    const one=api.request('one','search',{source:'kanju',q:'测试'},false,data=>updates.push(data));
+    one.then(()=>{done=true;});
+    const two=api.request('two','search',{source:'pkavi',q:'测试'});q.drain();
+    const raw={status:'ok',cookie:'secret',results:[{title:'测试影片',page_url:'https://www.kanju.ai/player/av_demo',cookie:'secret'}]};
+    q.update('old-document','one',raw);assert.equal(updates.length,0);
+    q.update(q.token,'one',raw);await Promise.resolve();
+    assert.equal(updates.length,1);assert.equal(done,false);assert.ok(!JSON.stringify(updates).includes('secret'));
+    assert.equal((await api.request('three','search',{source:'233dm',q:'测试'})).status,'busy');
+    q.complete(q.token,'one',raw);assert.equal((await one).results.length,1);
+    q.update(q.token,'one',raw);assert.equal(updates.length,1);
+    api.cancel('two');await two;
+    const old=api.request('old','search',{source:'kanju',q:'测试'},false,data=>updates.push(data));
+    q.drain();api.cancel('old');await old;q.update(q.token,'old',raw);assert.equal(updates.length,1);
+});
+
+test('throwing progress consumers cannot poison completion; detail is never streamed',async()=>{
+    const c=setup(),api=c.twSourceMetadata,q=c.__twMetadataQueue;
+    const promise=api.request('one','search',{source:'kanju',q:'测试'},false,()=>{throw Error('consumer');});
+    const raw={status:'ok',results:[{title:'测试',page_url:'https://www.kanju.ai/player/av_demo'}]};
+    assert.doesNotThrow(()=>q.update(q.token,'one',raw));q.complete(q.token,'one',raw);await promise;
+    let called=false;
+    const detail=api.request('detail','detail',{source:'kanju',page_url:'https://www.kanju.ai/player/av_demo'},false,()=>{called=true;});
+    q.update(q.token,'detail',raw);assert.equal(called,false);api.cancel('detail');await detail;
+});

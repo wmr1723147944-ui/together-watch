@@ -50,7 +50,7 @@
         const sources = [...root.querySelectorAll('[data-live-source]')];
         const picker=doc.body?.classList?.contains('episode-picker')===true;
         let pickerClosed=false;
-        let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0;
+        let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0, searchPaused = false;
         const controllers = new Set(), cards = new Map(), retries = new Set();
         const feed = picker ? null : feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, registerPosters:shared.registerPosters, openGroup });
         if(picker) {
@@ -71,6 +71,7 @@
         function stop() {
             generation++;
             for (const controller of controllers) controller.abort();
+            for (const button of retries) button.disabled=true;
             controllers.clear(); retries.clear(); details.close();
         }
         function home(focusQuery = true) {
@@ -100,6 +101,12 @@
             return true;
         }
         function openGroup(group, trigger, fromFeed = false) {
+            if(pending>0) {
+                // A user may open the very first result while both native query
+                // slots are occupied. Give detail/episodes priority, retaining
+                // the cards and scroll position for Back.
+                stop();pending=0;searchPaused=true;progress();
+            }
             $('discoveryDetail')?.setAttribute('data-playing',String(!!group.choices[0].row.current_episode));
             const otherSources = $('catalogFindOtherSources');
             if (otherSources) {
@@ -126,9 +133,12 @@
         }
         function render() {
             const groups = groupResults(records); groupCount = groups.length;
+            const nextCards=new Map(), used=new Set();
             for (const group of groups) {
                 shared.registerPosters(doc,group);
-                let entry = cards.get(group.key);
+                const identities=new Set(group.choices.map(c=>c.source+':'+c.row.page_url));
+                let entry=[...cards.values()].find(e=>!used.has(e)
+                    && e.group.choices.some(c=>identities.has(c.source+':'+c.row.page_url)));
                 if (!entry) {
                     const card = el('article', null, 'catalog-film discovery-title-card');
                     const cover = el('button', null, 'catalog-film-poster discovery-title-art'); cover.type = 'button';
@@ -137,11 +147,14 @@
                     cover.append(el('span', '查看来源 / 选集 →', 'catalog-hover-action'));
                     const title = el('button', group.title, 'catalog-title'); title.type = 'button';
                     const facts = el('p'); card.append(cover, title, facts); results.append(card);
-                    entry = { card, cover, title, facts, group, poster: group.poster }; cards.set(group.key, entry);
+                    entry = { card, cover, title, facts, group, poster: group.poster };
                     cover.addEventListener('click', () => openGroup(entry.group, cover));
                     title.addEventListener('click', () => openGroup(entry.group, title));
                 }
                 entry.group = group;
+                used.add(entry);nextCards.set(group.key,entry);
+                entry.title.textContent=group.title;
+                entry.cover.setAttribute('aria-label','查看 '+group.title+' 的来源和集数');
                 if (!entry.poster && group.poster) {
                     entry.cover.replaceChildren();
                     shared.addPoster(doc, entry.cover, group.poster, group.choices[0].row.page_url, group.title,group);
@@ -149,22 +162,40 @@
                 }
                 entry.facts.textContent = (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个来源条目';
             }
+            for(const entry of cards.values())if(!used.has(entry))entry.card.remove();
+            cards.clear();for(const [key,entry] of nextCards)cards.set(key,entry);
             progress();
         }
         function progress() {
             $('catalogResultCount').textContent = groupCount + ' 部影片';
-            status.textContent = pending ? `正在搜索“${activeQuery}”… 已完成 ${completed} / ${sourceCount} 项查询，找到的影片会先显示。`
+            status.textContent = pending ? (groupCount ? `已找到 ${groupCount} 部，可以直接选片 · 仍在搜索 ${pending} 个来源（已完成 ${completed} / ${sourceCount}）。`
+                : `正在搜索“${activeQuery}”… 已完成 ${completed} / ${sourceCount} 个来源，找到后会立即显示。`)
+                : searchPaused ? `已显示 ${groupCount} 部影片，其余查询已暂停以优先读取选集；需要补齐时可再点搜索。`
                 : groupCount ? `找到 ${groupCount} 部影片。点封面选择来源和集数；搜索结果不等于已验证可播放。`
                 : sourceCount ? '本次没有获得匹配影片，可换个关键词再试。' : '自动搜索暂未开放，请稍后再试。';
             live.setAttribute('aria-busy', String(pending > 0));
             $('catalogSkeleton').hidden = !pending || groupCount > 0;
             $('catalogEmpty').hidden = pending > 0 || groupCount > 0;
-            for (const button of retries) button.disabled = pending > 0;
+            for (const button of retries) button.disabled = pending > 0 || searchPaused;
         }
         async function searchSource(source, current, interactive = false, notice = null) {
             const id = source.dataset.liveSource, name = source.dataset.sourceName || id;
             const controller = new AbortController(); controllers.add(controller);
             const timer = setTimeout(() => controller.abort(), shared.metadataTimeout(id,interactive));
+            function receive(data) {
+                if(current!==generation || controller.signal.aborted || data?.source_id!==id || data.status!=='ok' || !Array.isArray(data.results))return;
+                let record=records.find(item=>item.source===id);
+                if(!record){record={source:id,name,rows:[]};records.push(record);}
+                // Preserve arrival order and prior rows when a dynamic page sends
+                // an incomplete later snapshot. Replace metadata, not DOM cards.
+                for(const row of data.results.slice(0,12)) {
+                    const page=shared.safeResultUrl(id,row?.page_url);if(!page || typeof row.title!=='string')continue;
+                    const index=record.rows.findIndex(old=>old.page_url===page);
+                    if(index<0){if(record.rows.length<12)record.rows.push(row);}
+                    else {const old=record.rows[index];record.rows[index]={...old,...row,year:row.year||old.year,poster_url:row.poster_url||old.poster_url};}
+                }
+                render();
+            }
             function note(message, retryMode = null, allowOriginal = false, inspect = false) {
                 const row = notice || el('div', null, 'catalog-query-note'); row.replaceChildren();
                 row.append(el('span', name + '：' + message));
@@ -200,7 +231,7 @@
                 $('catalogSearchNotes').hidden = false;
             }
             try {
-                const response = await shared.metadataRequest('search', { source: id, q: activeQuery }, fetcher, controller.signal, interactive);
+                const response = await shared.metadataRequest('search', { source: id, q: activeQuery }, fetcher, controller.signal, interactive,receive);
                 if (current !== generation) return;
                 if (!response.ok) throw new Error(response.status === 429 ? 'rate' : 'unavailable');
                 const data = await response.json();
@@ -211,10 +242,8 @@
                 if (data.status === 'cancelled') { note('已取消原站查询，其他结果不受影响。', 'retry', true); return; }
                 if (data.status === 'client_required') { note('当前环境尚不支持此项查询，其他结果不受影响。', false, true); return; }
                 if (data.status !== 'ok' || !Array.isArray(data.results)) throw new Error('unavailable');
-                records = records.filter(item => item.source !== id);
-                records.push({ source: id, name, rows: data.results });
+                receive(data);
                 if (notice) notice.replaceChildren(el('span', name + '：已完成，结果已合入上方影片。'));
-                render();
             } catch (error) {
                 if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '连接超时或页面未能读取，不代表没有这部影片；可以重试或换个来源。',
                     'retry', true, error.message!=='rate' && shared.nativeMetadata(id));
@@ -229,12 +258,16 @@
             stop(); activeQuery = value; query.value = value; const current = generation;
             feed?.setVisible(false);
             const queue = sources.filter(source => source.checked !== false);
-            records = []; cards.clear(); results.replaceChildren(); groupCount = 0; completed = 0; pending = sourceCount = queue.length;
+            records = []; cards.clear(); results.replaceChildren(); groupCount = 0; completed = 0; searchPaused=false; pending = sourceCount = queue.length;
             welcome.hidden = true; live.hidden = false; $('discoveryClear').hidden = false;
             $('catalogSearchNotes').hidden = true; $('catalogSearchNotes').open = false; $('catalogSearchNotesBody').replaceChildren();
             $('catalogResultTitle').textContent = '“' + value + '”的搜索结果'; progress();
-            async function worker() { while (current === generation && queue.length) await searchSource(queue.shift(), current); }
-            await Promise.all([worker(), worker()]);
+            // Server requests must not hold the two on-device WebView slots (or
+            // vice versa). Bound each lane to two; never launch every site tab.
+            const local=queue.filter(source=>shared.nativeMetadata(source.dataset.liveSource));
+            const remote=queue.filter(source=>!local.includes(source));
+            async function worker(lane) { while (current === generation && lane.length) await searchSource(lane.shift(), current); }
+            await Promise.all([worker(local),worker(local),worker(remote),worker(remote)]);
         }
         $('discoveryForm').addEventListener('submit', event => { event.preventDefault(); run(); });
         $('discoveryClear').addEventListener('click', home); $('catalogBack').addEventListener('click', home);

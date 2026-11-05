@@ -148,6 +148,9 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
             await require('./film-home-smoke.cjs').run({createDesktop,server,output,until});
             return;
         }
+        if (process.env.TW_SMOKE_INCREMENTAL_SEARCH_ONLY === '1') {
+            await require('./incremental-search-smoke.cjs').run({server,output,until});return;
+        }
         if (process.env.TW_SMOKE_ANDROID_WEB_ONLY === '1') {
             await require('./android-web-smoke.cjs').run({createDesktop,server,output,until});
             return;
