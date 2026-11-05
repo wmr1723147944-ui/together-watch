@@ -56,7 +56,7 @@ test('year/cover enrichment merges in place without duplicates or losing earlier
     try{
         f.get('discoveryQuery').value='测试';const pending=browser.run();
         native.jobs[0].progress(result('kanju',[film('kanju')]));const first=f.get('discoveryLiveResults').children[0];
-        native.jobs[1].progress(result('pkavi',[film('pkavi',2024)]));assert.equal(f.get('discoveryLiveResults').children.length,2);
+        native.jobs[1].progress(result('pkavi',[film('pkavi',2024)]));assert.equal(f.get('discoveryLiveResults').children.length,1);
         native.jobs[0].progress(result('kanju',[{...film('kanju',2024),poster_url:'https://image.tmdb.org/t/p/w500/example.jpg'}]));
         const cards=f.get('discoveryLiveResults').children;assert.equal(cards.length,1);assert.equal(cards[0],first);
         assert.match(cards[0].children[2].textContent,/2 个来源/);

@@ -67,8 +67,8 @@ final class EpisodePickerController {
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
                 if(!request.isForMainFrame())return !"https".equals(request.getUrl().getScheme());
                 if(!live(epoch) || !request.hasGesture() || !CatalogMetadataPolicy.catalogue(view.getUrl(),origin))return true;
-                ProgramPolicy.Selection next=ProgramPolicy.handoff(request.getUrl().toString(),origin);
-                if(next!=null && next.source.equals(program.source) && next.item.equals(program.item) && !next.episode.equals(program.episode)){quick=false;choose.accept(next);}
+                ProgramPolicy.Selection next=ProgramPolicy.pickerSelection(request.getUrl().toString(),origin,program);
+                if(next!=null){quick=false;choose.accept(next);}
                 return true;
             }
             @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon) {

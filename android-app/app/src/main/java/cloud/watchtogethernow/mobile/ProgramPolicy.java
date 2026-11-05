@@ -56,6 +56,11 @@ final class ProgramPolicy {
             return parts.length==6 && parts[1].equals("discover") && parts[2].equals("play") ? create(parts[3],parts[4],parts[5]) : null;
         } catch(Exception ignored) {return null;}
     }
+    static Selection pickerSelection(String value,String server,Selection current) {
+        Selection next=handoff(value,server);
+        if(current==null || next==null || !next.source.matches("cupfox|yhdmoe|kanju|pkavi|233dm"))return null;
+        return next.source.equals(current.source) && next.item.equals(current.item) && next.episode.equals(current.episode)?null:next;
+    }
     static Selection fromPage(String value) {
         if(value==null || value.length()>2048 || value.contains("\\")) return null;
         for(String item:new String[]{"sintel","bunny"}) {Selection s=create("sample",item,"video");if(s.page.equals(value))return s;}

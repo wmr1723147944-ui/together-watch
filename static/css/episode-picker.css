@@ -8,7 +8,7 @@ body.episode-picker #episodePickerLoading{position:fixed;inset:0;padding:24px;co
 body.episode-picker .catalog-detail[open]{visibility:visible;position:fixed;inset:0;margin:0;width:100%;max-width:100%;height:100dvh;max-height:100dvh;border:0;border-radius:0;padding:20px;background:#171b25;color:#e6eaf2;box-sizing:border-box;overflow:auto}
 body.episode-picker .catalog-detail::backdrop{background:transparent;backdrop-filter:none}
 body.episode-picker .catalog-detail::before,body.episode-picker #catalogDetailPoster,
-body.episode-picker .catalog-source-choices,body.episode-picker #discoveryDetailOriginal,
+body.episode-picker #discoveryDetailOriginal,
 body.episode-picker .catalog-detail-heading .discovery-note,body.episode-picker #discoveryDetailDescription{display:none}
 body.episode-picker .catalog-detail header .discovery-eyebrow{display:none}
 body.episode-picker .catalog-detail header{justify-content:flex-end}

@@ -2,6 +2,15 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+test('picker permits reviewed cross-source handoffs but rejects current, retired and remote links',()=>{
+    const p=require('../src/policy.cjs'),current={source:'cupfox',item:'12',episode:'ep2'};
+    assert.deepEqual(p.pickerSelection(p.SERVER+'/discover/play/kanju/av_demo/ep-e2',current),{source:'kanju',item:'av_demo',episode:'ep-e2'});
+    assert.deepEqual(p.pickerSelection(p.SERVER+'/discover/play/cupfox/12/ep3',current),{source:'cupfox',item:'12',episode:'ep3'});
+    for(const url of [p.SERVER+'/discover/play/cupfox/12/ep2',p.SERVER+'/discover/play/huarw/12/12-1-1',
+        'https://www.kanju.ai/player/av_demo?episode=e2','https://evil.test/discover/play/kanju/av_demo/ep-e2',
+        p.SERVER+'/discover/play/kanju/av_demo/ep-e2?token=x','javascript:alert(1)'])assert.equal(p.pickerSelection(url,current),null,url);
+});
+
 test('room numbers, copied labels, shared text and web invites preserve room identity', () => {
     const p = require('../src/policy.cjs'), id = '0123456789abcdef01234567';
     for (const value of [id, id.toUpperCase(), '房间号：' + id, '房间 ' + id,

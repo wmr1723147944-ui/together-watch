@@ -25,6 +25,12 @@ exports.run=async({createDesktop,server,output,until})=>{
         await c.action('kanju');
         await c.state().discoveryView.webContents.session.protocol.handle('https',async request=>{
             if(request.url.startsWith('https://media.w3.org/'))return media(request);
+            if(request.url.startsWith('https://www.kanju.ai/')) {
+                const url=new URL(request.url);
+                return new Response(`<h1>选集测试剧</h1><a href="/player/av_switch" aria-label="打开播放器：选集测试剧">选集测试剧</a>
+                    <video controls muted src="https://media.w3.org/2010/05/sintel/trailer.mp4"></video>
+                    ${[1,2,3].map(n=>`<button data-directory-episode="e${n}" title="第 ${n} 集" class="${url.searchParams.get('episode')==='e'+n?'movie-button-primary':''}" onclick="document.querySelectorAll('[data-directory-episode]').forEach(e=>e.classList.remove('movie-button-primary'));this.classList.add('movie-button-primary')">第 ${n} 集</button>`).join('')}`,{headers:{'content-type':'text/html; charset=utf-8'}});
+            }
             return new Response(`<style>body{margin:0}video{width:100%;height:90vh}</style><video controls muted src="https://media.w3.org/2010/05/sintel/trailer.mp4"></video>
                 ${[1,2,3].map(n=>`<span class="play-btn ${n===1?'on':''}" ep_slug="ep${n}" onclick="document.querySelectorAll('.play-btn').forEach(e=>e.classList.remove('on'));this.classList.add('on')">第${n}集</span>`).join('')}`,{headers:{'content-type':'text/html'}});
         });
@@ -94,6 +100,22 @@ exports.run=async({createDesktop,server,output,until})=>{
         await host.action('back');
         assert.equal(host.state().episodeView,null);
         assert.equal(host.state().current.room,room);assert.equal(host.state().browsing,false);
+        console.log('EPISODES: searching another source while playback remains in room');
+        await host.action('episodes');finder=host.state().episodeView.webContents;
+        await until('source switch current episodes',()=>finder.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===3'));
+        await finder.executeJavaScript('document.querySelector(".catalog-source-search").open=true;document.getElementById("catalogFindOtherSources").click()');
+        try {await until('native Kanju search allowed in drawer',()=>finder.executeJavaScript('!!document.querySelector("#catalogSourceChoices [data-source=kanju]")'));}
+        catch(error){console.error('SOURCE LOOKUP',await finder.executeJavaScript('({query:document.getElementById("catalogSourceQuery").value,note:document.getElementById("catalogSourceStatus").textContent,sources:[...document.querySelectorAll("[data-live-source]")].map(e=>e.dataset.liveSource),choices:document.getElementById("catalogSourceChoices").textContent})'));throw error;}
+        assert.equal((await readProgram(room)).revision,2,'searching another source cannot change programme');
+        await finder.executeJavaScript('document.querySelector("#catalogSourceChoices [data-source=kanju]").click()');
+        await until('native Kanju details allowed in drawer',()=>finder.executeJavaScript('document.querySelector("#discoveryEpisodes a[data-suggested=true]")?.getAttribute("href")==="/discover/play/kanju/av_switch/ep-e2"'));
+        assert.equal((await readProgram(room)).revision,2,'previewing a source cannot change programme');
+        await finder.executeJavaScript('setTimeout(()=>document.querySelector("#discoveryEpisodes a[data-suggested=true]").click(),100);true');
+        await until('host changed source',async()=>{const p=await readProgram(room);return p.revision===3 && p.program.source==='kanju' && p.program.episode==='ep-e2';});
+        await until('guest follows new source and episode',()=>guest.state().video.webContents.executeJavaScript('location.hostname==="www.kanju.ai" && document.querySelector(".movie-button-primary")?.getAttribute("data-directory-episode")==="e2"'));
+        assert.equal(host.state().current.room,room);assert.equal(host.state().roomView,roomView);
+        assert.equal(guest.state().current.room,room);assert.equal(await guest.action('episodes'),false);
+        assert.equal(host.state().episodeView,null);
         preview=new BrowserWindow({show:false,width:420,height:800,webPreferences:{offscreen:true,sandbox:true,contextIsolation:true,nodeIntegration:false,partition:'episode-visual-'+process.pid}});
         preview.webContents.session.webRequest.onBeforeRequest((request,cb)=>cb({cancel:!request.url.startsWith(server+'/')}));
         await preview.loadURL(server+'/discover?picker=1');
@@ -101,6 +123,6 @@ exports.run=async({createDesktop,server,output,until})=>{
         await until('offscreen episode layout',()=>preview.webContents.executeJavaScript('document.querySelectorAll("#discoveryEpisodes a").length===3'));
         await delay(300);await capture(preview.webContents,'player-episodes-desktop.png');
         preview.setSize(390,844);await delay(300);await capture(preview.webContents,'player-episodes-mobile.png');
-        console.log('EPISODES PASS: in-player drawer, stays fullscreen, original player retained, close/back without leaving playback, no reset on current, same-room ep2, guest follows, 390px picker.');
+        console.log('EPISODES PASS: fullscreen drawer, preserved playback, close/back, same-room ep2, native Kanju search/detail, corresponding episode, host source switch and guest follows, guest cannot choose, 390px picker.');
     } finally {if(preview && !preview.isDestroyed())preview.destroy();for(const c of clients)if(!c.win.isDestroyed())c.close();}
 };

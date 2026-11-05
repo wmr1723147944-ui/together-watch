@@ -270,7 +270,7 @@
         const path = `/discover/play/${source}/${item}/${episode}`;
         return valid && value === path ? path : null;
     }
-    function createDetails(doc, fetcher) {
+    function createDetails(doc, fetcher, hooks = {}) {
         const panel = doc.getElementById('discoveryDetail');
         if (!panel) return { open() {}, close() {} };
         const title = doc.getElementById('discoveryDetailTitle');
@@ -292,6 +292,8 @@
                 if (episode.current) {
                     link.setAttribute('aria-current','true'); link.textContent += ' · 正在看';
                     link.addEventListener('click', event=>event.preventDefault());
+                } else if (episode.suggested) {
+                    link.setAttribute('data-suggested','true'); link.textContent += ' · 对应集数';
                 }
                 link.addEventListener('click', () => {
                     const meta = {...episode.meta};
@@ -361,8 +363,12 @@
                     if (!path) continue;
                     const line = typeof episode.line === 'string' ? episode.line.slice(0, 30) : '';
                     const label = (line ? line + ' · ' : '') + episode.title.slice(0, 60);
-                    episodes.push({ path, label, current:episode.id===row.current_episode, program:{source,item,episode:episode.id},
-                        meta:{title:detailTitle,label,poster:artwork[0]||'',poster_candidates:artwork,year:row.year||previous?.year,fromPicker:!!row.current_episode} });
+                    // Suggest a matching label, never equate site-specific IDs
+                    // or silently start a differently cut edition at an old time.
+                    const episodeKey=value=>String(value||'').normalize('NFKC').toLowerCase().replace(/\s+/g,'').replace(/^第?0*(\d+)(?:集|话)?$/,'$1');
+                    episodes.push({ path, label, current:episode.id===row.current_episode,
+                        suggested:!!row.suggested_episode && episodeKey(episode.title)===episodeKey(row.suggested_episode),program:{source,item,episode:episode.id},
+                        meta:{title:detailTitle,label,poster:artwork[0]||'',poster_candidates:artwork,year:row.year||previous?.year,fromPicker:!!row.current_episode||!!row.in_room} });
                 }
                 const found = episodes.length;
                 renderEpisodes(); if (filter) filter.hidden = found <= 100;
@@ -376,15 +382,17 @@
                 if (data.truncated === true) status.textContent += ' 已达选集数量上限，其余请用原站选集。';
                 if (data.selection_scope==='loaded_page') status.textContent += ' 这里只显示原站当前已加载的集数，其余请在原站选择；不表示已验证可播放。';
                 if (found && row.current_episode) status.textContent='选择另一集后，会在当前房间换集，朋友自动跟随。'+(data.selection_scope==='loaded_page'?' 仅显示原站已加载的集数。':'');
+                if (found && row.in_room && !row.current_episode) status.textContent='确认下方集数后换源，朋友自动跟随。不同来源剪辑可能不同，将从所选集开头播放。';
                 if (!found) retryActions(data.status!=='client_required');
+                hooks.onLoaded?.({source,page:url,title:detailTitle,currentTitle:data.episodes.find(e=>e?.id===row.current_episode)?.title||''});
             } catch (_) {
                 if (generation === current) {
                     status.textContent = '集数读取失败或超时，可以在这里重试；没有切换当前影片。';
                     retryActions();
                 }
-            } finally { clearTimeout(timer); }
+            } finally { clearTimeout(timer); if(controller===active)controller=null; }
         }
-        return { open, close };
+        return { open, close, cancelRead(){if(controller){cancel();status.textContent='已暂停读取集数，点来源继续。';}} };
     }
     function createLiveSearch(doc, fetcher = globalThis.fetch) {
         const section = doc.getElementById('discoveryLive');

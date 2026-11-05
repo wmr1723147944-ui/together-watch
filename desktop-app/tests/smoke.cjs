@@ -91,7 +91,8 @@ if os.environ.get('TW_SMOKE_EPISODES_ONLY') == '1':
     import app as module
     import catalog_recommendations
     import source_search
-    module.enabled_search_sources=lambda: [dict(source_search.PROVIDERS['cupfox'])]
+    module.enabled_search_sources=lambda: [dict(source_search.PROVIDERS[s]) for s in ['cupfox','kanju']]
+    module.search_provider=lambda source,q: dict(source_id=source,status='ok',results=[dict(title='选集测试剧',page_url='https://www.cupfox.in/vod-detail/12.html')])
     catalog_recommendations.load_page=lambda source, category, page: dict(source_id=source,category=category,page=page,status='ok',results=[],has_more=False,next_page=None)
     def episode_detail(source,page):
         return dict(source_id=source,page_url=page,item_id='12',title='选集测试剧',status='ok',episodes=[dict(id=f'ep{n}',title=f'第 {n} 集',launch_path=f'/discover/play/cupfox/12/ep{n}') for n in range(1,4)])
@@ -150,6 +151,9 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
         }
         if (process.env.TW_SMOKE_INCREMENTAL_SEARCH_ONLY === '1') {
             await require('./incremental-search-smoke.cjs').run({server,output,until});return;
+        }
+        if (process.env.TW_SMOKE_SOURCE_SWITCH_UI_ONLY === '1') {
+            await require('./source-switch-ui-smoke.cjs').run({server,output,until});return;
         }
         if (process.env.TW_SMOKE_ANDROID_WEB_ONLY === '1') {
             await require('./android-web-smoke.cjs').run({createDesktop,server,output,until});

@@ -395,7 +395,7 @@ public final class MainActivity extends ComponentActivity {
         findViewById(R.id.moreButton).setVisibility(sessionActive || originalFinderActive?View.VISIBLE:View.GONE);
         boolean canChoose=!sessionActive || programRevision==0 || !ownerKey.isEmpty();
         findViewById(R.id.findAgainButton).setEnabled(canChoose);
-        findViewById(R.id.findAgainButton).setTooltipText(canChoose?"选择当前影片的其他集数，保留房间":"由房主换片，你会自动跟随");
+        findViewById(R.id.findAgainButton).setTooltipText(canChoose?"在当前房间选集或更换来源":"由房主换片，你会自动跟随");
         findViewById(R.id.pickPageButton).setEnabled(canChoose);
         ((Button)findViewById(R.id.pickPageButton)).setText(sessionActive?"确认并切换到这一集":"选好这集，开始一起看");
     }
@@ -1804,7 +1804,7 @@ public final class MainActivity extends ComponentActivity {
         exit.setOnClickListener(v -> { if (nativeFullscreen) exitNativeFullscreen(); else hideFullscreenVideo(); });
         fullscreenControls.addView(exit);
         if(sessionActive && (programRevision==0 || !ownerKey.isEmpty())) {
-            Button episodes=new Button(this);episodes.setText("选集");styleFullscreenButton(episodes);
+            Button episodes=new Button(this);episodes.setText("选集 / 换源");styleFullscreenButton(episodes);
             episodes.setOnClickListener(v->showCurrentEpisodes());fullscreenControls.addView(episodes);
         }
         if (nativeMode) {

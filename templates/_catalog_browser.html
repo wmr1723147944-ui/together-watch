@@ -54,7 +54,10 @@
         <header><span class="discovery-eyebrow">选好影片，再选集</span><button id="discoveryDetailClose" type="button" autofocus aria-label="关闭详情">返回结果 ×</button></header>
         <div class="catalog-detail-heading"><div id="catalogDetailPoster"></div><div><h2 id="discoveryDetailTitle"></h2><p id="catalogDetailFacts"></p><p class="discovery-note">同名可能有不同版本，请核对年份和集数。</p></div></div>
         <div id="catalogSourceChoices" class="catalog-source-choices" role="group" aria-label="此影片的可选来源"></div>
-        <button type="button" id="catalogFindOtherSources" class="catalog-back" hidden>搜索这部影片的其他来源 →</button>
+        <details class="catalog-source-search"><summary>查找其他来源 / 换源</summary>
+            <div class="catalog-source-query"><input id="catalogSourceQuery" type="search" maxlength="80" aria-label="查找其他来源的完整片名" placeholder="完整片名，保留季度与版本"><button type="button" id="catalogFindOtherSources">查找来源</button></div>
+            <p id="catalogSourceStatus" role="status" aria-live="polite"></p>
+        </details>
         <p id="discoveryDetailDescription"></p>
         <p id="discoveryDetailStatus" role="status" aria-live="polite"></p>
         <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数" aria-label="筛选集数" hidden>

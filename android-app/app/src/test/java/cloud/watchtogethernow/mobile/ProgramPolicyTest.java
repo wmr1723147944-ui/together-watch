@@ -5,6 +5,16 @@ import static org.junit.Assert.*;
 
 public class ProgramPolicyTest {
     private final String server="https://watchtogethernow.cloud";
+    @Test public void pickerAllowsReviewedSourceSwitchButNotCurrentRetiredOrRemote() {
+        ProgramPolicy.Selection current=ProgramPolicy.create("cupfox","12","ep2");
+        ProgramPolicy.Selection next=ProgramPolicy.pickerSelection(server+"/discover/play/kanju/av_demo/ep-e2",server,current);
+        assertNotNull(next);assertEquals("kanju",next.source);assertEquals("ep-e2",next.episode);
+        assertNotNull(ProgramPolicy.pickerSelection(server+"/discover/play/cupfox/12/ep3",server,current));
+        for(String url:new String[]{server+"/discover/play/cupfox/12/ep2",server+"/discover/play/huarw/12/12-1-1",
+            "https://www.kanju.ai/player/av_demo?episode=e2","https://evil.test/discover/play/kanju/av_demo/ep-e2",
+            server+"/discover/play/kanju/av_demo/ep-e2?token=x","javascript:alert(1)"})
+            assertNull(ProgramPolicy.pickerSelection(url,server,current));
+    }
     @Test public void invitationHandoffCarriesOnlyPublicEpisodeIdentity() {
         ProgramPolicy.Selection s=ProgramPolicy.handoff(server+"/discover/play/kanju/abc/ep-part%3A2",server);
         assertNotNull(s);assertEquals("https://www.kanju.ai/player/abc?episode=part%3A2",s.page);

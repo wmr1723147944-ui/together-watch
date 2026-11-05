@@ -880,14 +880,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 trusted:event=>alive() && event.sender===wc && event.senderFrame===wc.mainFrame && policy.isDiscoveryUrl(event.senderFrame.url,server),
                 request:async data=>{
                     const req=catalogAdapters.request(data?.kind,data?.payload);
-                    if(!alive() || data?.kind!=='detail' || req?.source!==program.source || req.item!==program.item
+                    if(!alive() || !req || !['search','detail'].includes(data?.kind) || !['kanju','pkavi','233dm'].includes(req.source)
                         || typeof data.id!=='string' || !/^[a-zA-Z0-9_-]{1,80}$/.test(data.id)
                         || typeof data.interactive!=='boolean')return {status:'unavailable'};
                     if(pendingReads.size>=2 || pendingReads.has(data.id))return catalogAdapters.normalizeResult(req,{status:'busy'});
                     const token={};pendingReads.set(data.id,token);
                     const valid=()=>alive() && pendingReads.get(data.id)===token;
                     try {
-                        if(!data.interactive && req.source==='kanju') {
+                        if(!data.interactive && data.kind==='detail' && req.source==='kanju' && req.source===program.source && req.item===program.item) {
                             const playing=liveContents(video);
                             const pageEpoch=videoGeneration;
                             const result=await timeout(readPlayingMetadata(playing,req,()=>valid() && pageEpoch===videoGeneration && liveContents(video)===playing),2000).catch(()=>null);
@@ -904,9 +904,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             wc.setWindowOpenHandler(()=>({action:'deny'}));
             wc.on('will-navigate',(event,url)=>{
                 event.preventDefault();if(!alive())return;
-                const descriptor=policy.programSelection(url,server);
-                if(descriptor?.source!==program.source || descriptor.item!==program.item)return;
-                if(descriptor.episode===program.episode)return;
+                if(!policy.isDiscoveryUrl(wc.getURL(),server) || !policy.pickerSelection(url,program,server))return;
                 chooseSource(url).then(result=>{if(result?.error)status(result.error);}).catch(()=>status('换集失败，当前影片未改变。'));
             });
             wc.on('will-redirect',event=>event.preventDefault());

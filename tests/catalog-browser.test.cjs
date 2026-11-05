@@ -44,7 +44,8 @@ test('opening current episodes keeps search context and marks the selected episo
 test('dedicated picker has no background feed/search and closes synchronously',async()=>{
     const f=fixture(['cupfox']);f.doc.defaultView={};f.doc.body={classList:{contains:name=>name==='episode-picker'}};
     for(const id of ['discoveryDetail','discoveryDetailClose','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription',
-        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore','episodePickerCancel','episodePickerLoading'])f.elements.set(id,f.doc.createElement('div'));
+        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore','episodePickerCancel','episodePickerLoading',
+        'catalogFindOtherSources','catalogSourceQuery','catalogSourceStatus'])f.elements.set(id,f.doc.createElement('div'));
     const panel=f.elements.get('discoveryDetail');panel.showModal=function(){this.open=true;};panel.close=function(){this.open=false;};
     f.elements.get('discoveryQuery').value='must not search';let calls=0;
     const browser=createBrowser(f.doc,async()=>{calls++;return {ok:true,json:async()=>({status:'unavailable'})};});
@@ -54,20 +55,98 @@ test('dedicated picker has no background feed/search and closes synchronously',a
     assert.equal(browser.episodes({source:'cupfox',item:'12',episode:'ep1'}),true);
     assert.equal(navigation.pickerClosed(),false);assert.equal(f.elements.get('episodePickerLoading').hidden,true);
     assert.equal(calls,1);
+    const oldBridge=global.twSourceMetadata;
+    try {
+        global.twSourceMetadata={supportedSources:[]};
+        f.elements.get('catalogSourceQuery').value='测试影片';
+        await f.elements.get('catalogFindOtherSources').onclick();
+        assert.match(f.elements.get('catalogSourceStatus').textContent,/0\.6\.23.*0\.3\.27/);
+        assert.equal(calls,1,'old clients should explain upgrade, not query a source they cannot switch to');
+    } finally {global.twSourceMetadata=oldBridge;}
     f.elements.get('discoveryDetailClose').handlers.click();
     assert.equal(navigation.pickerClosed(),true,'do not wait for a delayed dialog close event');
     await new Promise(resolve=>setImmediate(resolve));
 });
 
+test('in-player source lookup stays in the dialog, matches full title and highlights corresponding episode',async()=>{
+    const f=fixture(['cupfox','yhdmoe']);f.doc.defaultView={};
+    for(const id of ['discoveryDetail','discoveryDetailClose','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription',
+        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore','catalogFindOtherSources','catalogSourceQuery','catalogSourceStatus'])f.elements.set(id,f.doc.createElement('div'));
+    const panel=f.elements.get('discoveryDetail');let closes=0;
+    panel.showModal=function(){this.open=true;};panel.close=function(){this.open=false;closes++;};
+    const calls=[];
+    const browser=createBrowser(f.doc,async(url,options)=>{
+        const payload=JSON.parse(options.body);calls.push(payload);
+        const source=payload.source,item=source==='cupfox'?'12':'34',prefix=source==='cupfox'?'ep':'EP';
+        return {ok:true,json:async()=>url.includes('/search')?{source_id:source,status:'ok',results:source==='cupfox'?[]:[
+            {title:'同一部剧 第二季',page_url:'https://yhdmoe.com/watch/34'},
+            {title:'同一部剧 第一季',page_url:'https://yhdmoe.com/watch/35'}]}
+            :{source_id:source,page_url:payload.page_url,item_id:item,title:'同一部剧 第二季',status:'ok',episodes:[1,2,3].map(n=>({id:prefix+n,title:'第'+n+'集',launch_path:`/discover/play/${source}/${item}/${prefix}${n}`}))}};
+    });
+    browser.episodes({source:'cupfox',item:'12',episode:'ep2'});
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(f.elements.get('catalogSourceQuery').value,'同一部剧 第二季');
+    await f.elements.get('catalogFindOtherSources').onclick();
+    assert.equal(closes,0,'looking up sources must not close native drawer or disturb the player');
+    const buttons=f.elements.get('catalogSourceChoices').children;
+    assert.equal(buttons.length,2,'do not add another season');
+    buttons[1].handlers.click();await new Promise(resolve=>setImmediate(resolve));
+    const links=f.elements.get('discoveryEpisodes').children;
+    assert.equal(links[1].href,'/discover/play/yhdmoe/34/EP2');
+    assert.equal(links[1].attributes['data-suggested'],'true');
+    assert.equal(links[1].attributes['aria-current'],undefined,'different provider is not already playing');
+    assert.match(f.elements.get('discoveryDetailStatus').textContent,/从所选集开头/);
+    assert.equal(calls.filter(c=>c.q).length,2);
+    assert.equal(panel.open,true);
+});
+
 const row=(title='开端',year='2022',page='https://ddys.io/movie/reset')=>({title,year,page_url:page,poster_url:'https://img.ddys.io/movies/reset.webp'});
-test('unified film grouping merges only equal titles AND known years, keeps all validated source choices',()=>{
+test('equal titles merge missing years, but known remake years do not absorb ambiguous entries',()=>{
     const groups=groupResults([
         {source:'ddys',name:'低端',rows:[row(),row()]},
         {source:'huarw',name:'华人',rows:[row('开端',2022,'https://huarw.com/movie/123'),row('开端',2025,'https://huarw.com/movie/456')]},
         {source:'cupfox',rows:[row('开端',null,'https://www.cupfox.in/vod-detail/10.html'),row('开端',null,'https://www.cupfox.in/vod-detail/11.html')]},
     ]);
-    assert.equal(groups.length,4);assert.equal(groups[0].choices.length,2);
-    assert.deepEqual(groups.map(g=>g.year),['2022','2025','','']);
+    assert.equal(groups.length,3);assert.equal(groups[0].choices.length,2);
+    assert.deepEqual(groups.map(g=>g.year),['2022','2025','']);
+    assert.equal(groups[2].choices.length,2);
+});
+
+test('same complete title groups across sites without a year and preserves seasons and editions',()=>{
+    const records=[{source:'cupfox',rows:[row('Re：从零开始 第四季',null,'https://www.cupfox.in/vod-detail/1.html'),
+        row('Re：从零开始 第三季',null,'https://www.cupfox.in/vod-detail/2.html'),
+        row('Re：从零开始 第四季 新编集版',null,'https://www.cupfox.in/vod-detail/3.html')]},
+        {source:'kanju',rows:[row('Re:从零开始第四季',null,'https://www.kanju.ai/player/av_four')]}];
+    let groups=groupResults(records);
+    assert.equal(groups.length,3);assert.equal(groups[0].choices.length,2);
+    records[1].rows[0].year='2026';groups=groupResults(records);
+    assert.equal(groups.length,3);assert.equal(groups[0].year,'2026');assert.equal(groups[0].choices.length,2);
+});
+
+test('closing source lookup aborts outstanding native reads and ignores late results',async()=>{
+    const saved=global.twSourceMetadata,jobs=[];
+    global.twSourceMetadata={supportedSources:['kanju','pkavi'],supportsProgress:true,
+        request:(id,kind,payload,interactive,progress)=>new Promise(resolve=>jobs.push({id,kind,payload,progress,resolve})),
+        cancel(id){const job=jobs.find(j=>j.id===id);if(job){job.cancelled=true;job.resolve({status:'cancelled',source_id:job.payload.source});}}};
+    const f=fixture(['kanju','pkavi']);f.doc.defaultView={};
+    for(const id of ['discoveryDetail','discoveryDetailClose','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription',
+        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore','catalogFindOtherSources','catalogSourceQuery','catalogSourceStatus'])f.elements.set(id,f.doc.createElement('div'));
+    const panel=f.elements.get('discoveryDetail');panel.showModal=function(){this.open=true;};panel.close=function(){this.open=false;};
+    const browser=createBrowser(f.doc,()=>assert.fail('no server fallback'));
+    try {
+        browser.episodes({source:'kanju',item:'av_demo',episode:'ep-e2'});
+        jobs[0].resolve({source_id:'kanju',page_url:'https://www.kanju.ai/player/av_demo',item_id:'av_demo',title:'测试剧',status:'ok',episodes:[]});
+        await new Promise(resolve=>setImmediate(resolve));
+        const pending=f.elements.get('catalogFindOtherSources').onclick();
+        assert.equal(jobs.length,3);assert.ok(jobs.slice(1).every(j=>j.kind==='search'));
+        browser.back();
+        // Simulate the dialog's close event (the fixture is not a real DOM).
+        panel.handlers.close();
+        assert.ok(jobs.slice(1).every(j=>j.cancelled));
+        jobs[2].progress({source_id:'pkavi',status:'ok',results:[{title:'测试剧',page_url:'https://www.pkavi.com/mv/1.html'}]});
+        await pending;
+        assert.equal(f.elements.get('catalogSourceChoices').children.length,1);
+    } finally {browser.cancel();global.twSourceMetadata=saved;}
 });
 test('unknown hosts, blank titles, script URLs and credentialed covers cannot enter film cards',()=>{
     const groups=groupResults([{source:'ddys',rows:[row('',2022),row('x',2022,'javascript:alert(1)'),row('x',2022,'https://evil.test/movie/x'),{...row(),poster_url:'https://img.ddys.io/a.jpg?token=secret'}]}]);

@@ -52,6 +52,7 @@
     Object.defineProperty(window,'twSourceMetadata',{value:Object.freeze({
         supportedSources,
         supportsProgress: true,
+        supportsSourceSwitch: true,
         requestTimeoutMs: 42000,
         request(id,kind,payload,interactive=false,onProgress=null) {
             const req=adapters.request(kind,payload);

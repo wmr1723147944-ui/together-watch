@@ -19,7 +19,7 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn('attempt>=60',picker)
         self.assertIn('TogetherWatchCatalogNavigation.episodes(',picker)
         self.assertIn('window.__twMetadataQueue',picker)
-        self.assertIn('next.item.equals(program.item)',picker)
+        self.assertIn('ProgramPolicy.pickerSelection(request.getUrl().toString(),origin,program)',picker)
         self.assertIn('request.hasGesture()',picker)
         self.assertNotIn('addJavascriptInterface',picker)
         self.assertNotIn('pauseLocally',picker)

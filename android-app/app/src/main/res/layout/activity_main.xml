@@ -33,9 +33,9 @@
                 android:id="@+id/findAgainButton"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_weight="1"
+                android:layout_weight="1.4"
                 android:padding="0dp" android:minWidth="0dp" android:background="@drawable/room_control"
-                android:text="选集"
+                android:text="选集换源"
                 android:textSize="13sp"
                 android:textAllCaps="false"
                 android:textColor="@color/text_primary" />

@@ -16,7 +16,7 @@
     function load(item) {
         destroy(); failed = ''; reusable = false; position = item.position || 0;
         episodes.disabled=!item.episodes || !window.twPlayer;
-        episodes.title=item.episodes?'选择当前影片的其他集数':'由房主选集；单视频链接不提供剧集目录';
+        episodes.title=item.episodes?'在房间中选集或更换来源':'由房主选集或换源；单视频链接不提供剧集目录';
         const id = loadId;
         notice.textContent = '正在加载公开媒体…'; notice.hidden = false;
         levels.replaceChildren(new Option('自动', '-1')); levels.disabled = true;

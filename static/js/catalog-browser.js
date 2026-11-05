@@ -21,10 +21,13 @@
             ? {title:'当前影片 · 选集',page_url:page,current_episode:episode} : null;
     }
 
-    // Without a year, two equal titles may be remakes. Keep those entries
-    // separate rather than silently offering the wrong film to a room owner.
+    // Ignore typography, never season/part/edition words. Unknown years can
+    // join an unambiguous title; conflicting known remake years stay separate.
+    function filmKey(title) {
+        return String(title || '').normalize('NFKC').toLowerCase().replace(/[\s·•:._\-—]+/g, '');
+    }
     function groupResults(records, limit = 12) {
-        const groups = new Map(), seen = new Set();
+        const groups = new Map(), seen = new Set(), titles = new Map(), entries = [];
         for (const record of records) for (const row of (record.rows || []).slice(0, limit)) {
             if (!row || typeof row.title !== 'string') continue;
             const page = shared.safeResultUrl(record.source, row.page_url);
@@ -32,9 +35,17 @@
             if (!page || !title || seen.has(record.source + ':' + page)) continue;
             seen.add(record.source + ':' + page);
             const year = /^(19|20)\d{2}$/.test(String(row.year)) ? String(row.year) : '';
-            const key = year ? title.toLowerCase() + '|' + year : record.source + ':' + page;
+            const identity = filmKey(title); if (!identity) continue;
+            if (!titles.has(identity)) titles.set(identity, new Set());
+            if (year) titles.get(identity).add(year);
+            entries.push({ record, row, page, title, year, identity });
+        }
+        for (const {record,row,page,title,year,identity} of entries) {
+            const years = titles.get(identity);
+            const groupYear = year || (years.size === 1 ? [...years][0] : '');
+            const key = identity + '|' + groupYear;
             const poster = adapters?.safePosterUrl(row.poster_url, page) || '';
-            if (!groups.has(key)) groups.set(key, { key, title, year, poster, choices: [] });
+            if (!groups.has(key)) groups.set(key, { key, title, year:groupYear, poster, choices: [] });
             const group = groups.get(key);
             if (!group.poster && poster) group.poster = poster;
             group.choices.push({ source: record.source, name: record.name, row: { ...row, title, page_url: page } });
@@ -46,12 +57,22 @@
         const $ = id => doc.getElementById(id), root = $('sourceDiscovery');
         if (!root || root.dataset.catalogMode !== 'films') return null;
         const query = $('discoveryQuery'), welcome = $('discoveryWelcome'), live = $('discoveryLive');
-        const results = $('discoveryLiveResults'), status = $('discoveryLiveStatus'), details = shared.createDetails(doc, fetcher);
+        const results = $('discoveryLiveResults'), status = $('discoveryLiveStatus'), details = shared.createDetails(doc, fetcher, {onLoaded: detailLoaded});
         const sources = [...root.querySelectorAll('[data-live-source]')];
         const picker=doc.body?.classList?.contains('episode-picker')===true;
         let pickerClosed=false;
         let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0, searchPaused = false;
         const controllers = new Set(), cards = new Map(), retries = new Set();
+        let sourceContext = null, sourceEpoch = 0;
+        const sourceControllers = new Set();
+        function cancelSourceSearch() {
+            sourceEpoch++;
+            for (const controller of sourceControllers) controller.abort();
+            sourceControllers.clear();
+            if ($('catalogFindOtherSources')) $('catalogFindOtherSources').disabled=false;
+        }
+        $('discoveryDetail')?.addEventListener('close',cancelSourceSearch);
+        $('discoveryDetailClose')?.addEventListener('click',cancelSourceSearch);
         const feed = picker ? null : feedApi?.createFeed(doc, fetcher, { groupResults, addPoster: shared.addPoster, registerPosters:shared.registerPosters, openGroup });
         if(picker) {
             $('episodePickerCancel').onclick=()=>{pickerClosed=true;};
@@ -69,6 +90,7 @@
             return node;
         }
         function stop() {
+            cancelSourceSearch();
             generation++;
             for (const controller of controllers) controller.abort();
             for (const button of retries) button.disabled=true;
@@ -96,9 +118,95 @@
             // A retained search result may provide artwork/title. Keep the search
             // and its scroll position; opening/closing this dialog is one layer.
             const known=records.find(r=>r.source===program.source)?.rows?.find(r=>r.page_url===row.page_url);
-            const choice={source:program.source,name:source.dataset.sourceName||program.source,row:{...known,...row,title:known?.title||row.title}};
-            openGroup({title:choice.row.title,year:known?.year||'',poster:known?.poster_url||'',choices:[choice]},null);
+            const saved=globalThis.TogetherWatchHistory?.store?.metadata(program);
+            const choice={source:program.source,name:source.dataset.sourceName||program.source,row:{...known,...row,title:known?.title||saved?.title||row.title,year:known?.year||saved?.year||''}};
+            const matching=known && groupResults(records).find(g=>g.choices.some(c=>c.source===program.source && c.row.page_url===row.page_url));
+            openGroup({title:choice.row.title,year:choice.row.year,poster:known?.poster_url||saved?.poster||'',choices:[choice,...(matching?.choices||[]).filter(c=>c.source!==program.source || c.row.page_url!==row.page_url)]},null);
             return true;
+        }
+        function detailLoaded(info) {
+            const context=sourceContext;
+            if (!context || info.source!==context.selected.source || info.page!==context.selected.row.page_url) return;
+            if (context.selected.row.current_episode) {
+                context.episodeLabel=info.currentTitle||context.episodeLabel;
+                if (info.title && context.group.title==='当前影片 · 选集') {
+                    context.group.title=info.title;
+                    if ($('catalogSourceQuery') && !$('catalogSourceQuery').value) $('catalogSourceQuery').value=info.title;
+                }
+                if ($('catalogDetailFacts')) $('catalogDetailFacts').textContent='正在观看'+(context.episodeLabel?' · '+context.episodeLabel:'')+' · 换源后请确认对应集数';
+            }
+        }
+        function sourceButtons() {
+            const context=sourceContext; if(!context)return;
+            const choices=$('catalogSourceChoices');choices.replaceChildren();
+            const counts=new Map();
+            for(const choice of context.group.choices) {
+                const ordinal=(counts.get(choice.source)||0)+1;counts.set(choice.source,ordinal);
+                const button=el('button',(choice.name||choice.source)+(ordinal>1?' · 条目 '+ordinal:''));
+                button.dataset.source=choice.source;button.type='button';
+                button.setAttribute('aria-pressed',String(choice===context.selected));
+                button.addEventListener('click',()=>{
+                    if(sourceContext!==context)return;
+                    cancelSourceSearch();context.selected=choice;sourceButtons();
+                    if($('catalogSourceStatus')) $('catalogSourceStatus').textContent=context.playing?'选择下方集数才会切换来源；房间保持连接。':'';
+                    details.open(choice.source,{...choice.row,in_room:context.playing,suggested_episode:context.episodeLabel},context.trigger);
+                });
+                choices.append(button);
+            }
+        }
+        async function findOtherSources(interactiveSource=null) {
+            const context=sourceContext, input=$('catalogSourceQuery'), note=$('catalogSourceStatus');
+            if(!context || !input || !note)return;
+            if(picker && globalThis.twSourceMetadata && globalThis.twSourceMetadata.supportsSourceSwitch!==true) {
+                note.textContent='播放中换源需要 Windows 0.6.23 / 安卓 0.3.27。旧版仍可选集，或返回找片页更换来源。';return;
+            }
+            const needle=shared.normalizeQuery(input.value);
+            if(!needle){note.textContent='请输入完整片名，再查找其他来源。';input.focus();return;}
+            cancelSourceSearch();details.cancelRead?.();const epoch=sourceEpoch;
+            const queue=sources.filter(s=>s.checked!==false && (interactiveSource?s.dataset.liveSource===interactiveSource:true));
+            const local=queue.filter(s=>shared.nativeMetadata(s.dataset.liveSource)), remote=queue.filter(s=>!local.includes(s));
+            let finished=0;const issues=[];
+            const alive=()=>sourceContext===context && epoch===sourceEpoch;
+            $('catalogFindOtherSources').disabled=true;
+            function report() {
+                if(!alive())return;
+                note.replaceChildren(el('span',finished<queue.length?`正在查找其他来源 ${finished} / ${queue.length}，找到后可直接选择。`:
+                    `已列出 ${context.group.choices.length} 个来源条目。只合并同名影片，请核对版本与集数。`));
+                for(const issue of issues) {
+                    const label=el('span',issue.name+(issue.verify?'：需要本人验证。':'：暂未取得同名结果。'));note.append(label);
+                    if(issue.verify && shared.nativeMetadata(issue.id)) {
+                        const button=el('button','验证并重试');button.type='button';button.disabled=finished<queue.length;
+                        button.addEventListener('click',()=>{if(alive())findOtherSources(issue.id);});note.append(button);
+                    }
+                }
+            }
+            report();
+            async function read(source) {
+                const id=source.dataset.liveSource,name=source.dataset.sourceName||id,controller=new AbortController();sourceControllers.add(controller);
+                const timer=setTimeout(()=>controller.abort(),shared.metadataTimeout(id,!!interactiveSource));let matched=false;
+                function receive(data) {
+                    if(!alive() || controller.signal.aborted || data?.source_id!==id || data.status!=='ok' || !Array.isArray(data.results))return;
+                    const groups=groupResults([{source:id,name,rows:data.results}]);
+                    for(const group of groups) {
+                        if(filmKey(group.title)!==filmKey(needle) || (context.group.year && group.year && context.group.year!==group.year))continue;
+                        matched=true;
+                        for(const choice of group.choices)if(!context.group.choices.some(c=>c.source===choice.source && c.row.page_url===choice.row.page_url)) context.group.choices.push(choice);
+                    }
+                    sourceButtons();
+                }
+                try {
+                    const response=await shared.metadataRequest('search',{source:id,q:needle},fetcher,controller.signal,!!interactiveSource,receive);
+                    if(!alive())return;
+                    if(!response.ok)throw Error('unavailable');
+                    const data=await response.json();if(!alive())return;
+                    receive(data);
+                    if(!matched)issues.push({id,name,verify:data.source_id===id && data.status==='verification_required'});
+                } catch {if(alive())issues.push({id,name});}
+                finally {clearTimeout(timer);sourceControllers.delete(controller);if(alive()){finished++;report();}}
+            }
+            async function worker(lane){while(alive() && lane.length)await read(lane.shift());}
+            await Promise.all([worker(local),worker(local),worker(remote),worker(remote)]);
+            if(alive())$('catalogFindOtherSources').disabled=false;
         }
         function openGroup(group, trigger, fromFeed = false) {
             if(pending>0) {
@@ -107,29 +215,21 @@
                 // the cards and scroll position for Back.
                 stop();pending=0;searchPaused=true;progress();
             }
-            $('discoveryDetail')?.setAttribute('data-playing',String(!!group.choices[0].row.current_episode));
+            cancelSourceSearch();
+            sourceContext={group:{...group,choices:[...group.choices]},selected:group.choices[0],trigger,playing:!!group.choices[0].row.current_episode,episodeLabel:''};
+            $('discoveryDetail')?.setAttribute('data-playing',String(sourceContext.playing));
             const otherSources = $('catalogFindOtherSources');
             if (otherSources) {
-                otherSources.hidden = !fromFeed;
-                otherSources.onclick = () => { details.close(); query.value = group.title; run(); root.scrollIntoView?.({ block: 'start' }); };
+                otherSources.hidden = false;otherSources.disabled=false;
+                otherSources.onclick = () => findOtherSources();
             }
-            const choices = $('catalogSourceChoices'); choices.replaceChildren();
+            if($('catalogSourceQuery')) $('catalogSourceQuery').value=group.title==='当前影片 · 选集'?'':group.title;
+            if($('catalogSourceStatus')) $('catalogSourceStatus').replaceChildren();
             $('catalogDetailFacts').textContent = group.choices[0].row.current_episode ? '正在观看 · 房间保持连接' : (group.year || '年份待核对') + ' · ' + group.choices.length + ' 个条目';
             const poster = $('catalogDetailPoster'); poster.replaceChildren();
             shared.addPoster(doc, poster, group.poster, group.choices[0].row.page_url, group.title,group);
-            const buttons = [];
-            function select(choice, button) {
-                for (const item of buttons) item.setAttribute('aria-pressed', String(item === button));
-                details.open(choice.source, choice.row, trigger);
-            }
-            for (const choice of group.choices) {
-                const button = el('button', choice.name || choice.source);
-                button.dataset.source = choice.source;
-                button.type = 'button'; button.setAttribute('aria-pressed', 'false');
-                button.addEventListener('click', () => select(choice, button));
-                buttons.push(button); choices.append(button);
-            }
-            select(group.choices[0], buttons[0]);
+            sourceButtons();
+            details.open(group.choices[0].source,group.choices[0].row,trigger);
         }
         function render() {
             const groups = groupResults(records); groupCount = groups.length;

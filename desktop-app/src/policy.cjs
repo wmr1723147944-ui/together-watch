@@ -105,6 +105,12 @@ function isDiscoveryUrl(value, server = SERVER) {
     try { const url = new URL(value); return !url.username && !url.password && url.origin === server && url.pathname === '/discover'; }
     catch { return false; }
 }
+function pickerSelection(value, current, server = SERVER) {
+    if (!current || !playSelection(value,server)) return null;
+    const next=programSelection(value,server);
+    if (!next || !['cupfox','yhdmoe','kanju','pkavi','233dm'].includes(next.source)) return null;
+    return next.source===current.source && next.item===current.item && next.episode===current.episode ? null : next;
+}
 function programSelection(value, server = SERVER) {
     const original=catalogAdapters.fromPage(value);
     if (original) return {source:original.source,item:original.item,episode:original.episode};
@@ -137,4 +143,4 @@ function programTarget(value, server = SERVER) {
 function isKanju(value) {
     try { const u = new URL(value); return u.protocol === 'https:' && ['www.kanju.ai','kanju.ai'].includes(u.host) && !u.username && !u.password; } catch { return false; }
 }
-module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, danmakuOverlay, panelBounds, playSelection, isDiscoveryUrl, programSelection, programTarget, isKanju };
+module.exports = { SERVER, APP_ORIGIN, publicHttps, roomFrom, isRoomUrl, timingSample, playbackCommand, danmakuOverlay, panelBounds, playSelection, isDiscoveryUrl, pickerSelection, programSelection, programTarget, isKanju };
