@@ -24,7 +24,13 @@
     // Ignore typography, never season/part/edition words. Unknown years can
     // join an unambiguous title; conflicting known remake years stay separate.
     function filmKey(title) {
-        return String(title || '').normalize('NFKC').toLowerCase().replace(/[\s·•:._\-—]+/g, '');
+        const digits={'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9};
+        return String(title || '').normalize('NFKC').toLowerCase().replace(/[\s\u200b-\u200d\ufeff·•:._\-—]+/g, '')
+            .replace(/第([一二两三四五六七八九十\d]+)(季|部)/g,(all,n,unit)=>{
+                if(!/^(?:\d+|[一二两三四五六七八九]|[一二两三四五六七八九]?十[一二两三四五六七八九]?)$/.test(n))return all;
+                const parts=n.split('十'),number=/^\d+$/.test(n)?Number(n):parts.length===2?(digits[parts[0]]||1)*10+(digits[parts[1]]||0):digits[n];
+                return number?'第'+number+unit:all;
+            });
     }
     function groupResults(records, limit = 12) {
         const groups = new Map(), seen = new Set(), titles = new Map(), entries = [];
@@ -53,7 +59,7 @@
         return [...groups.values()];
     }
 
-    function createBrowser(doc, fetcher = globalThis.fetch) {
+    function createBrowser(doc, fetcher = globalThis.fetch, {retryDelays=[1500,4000]} = {}) {
         const $ = id => doc.getElementById(id), root = $('sourceDiscovery');
         if (!root || root.dataset.catalogMode !== 'films') return null;
         const query = $('discoveryQuery'), welcome = $('discoveryWelcome'), live = $('discoveryLive');
@@ -61,7 +67,7 @@
         const sources = [...root.querySelectorAll('[data-live-source]')];
         const picker=doc.body?.classList?.contains('episode-picker')===true;
         let pickerClosed=false;
-        let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0, searchPaused = false;
+        let generation = 0, records = [], activeQuery = '', completed = 0, pending = 0, groupCount = 0, sourceCount = 0;
         const controllers = new Set(), cards = new Map(), retries = new Set();
         let sourceContext = null, sourceEpoch = 0;
         const sourceControllers = new Set();
@@ -92,6 +98,7 @@
         function stop() {
             cancelSourceSearch();
             generation++;
+            pending=0;sourceContext=null;
             for (const controller of controllers) controller.abort();
             for (const button of retries) button.disabled=true;
             controllers.clear(); retries.clear(); details.close();
@@ -120,7 +127,7 @@
             const known=records.find(r=>r.source===program.source)?.rows?.find(r=>r.page_url===row.page_url);
             const saved=globalThis.TogetherWatchHistory?.store?.metadata(program);
             const choice={source:program.source,name:source.dataset.sourceName||program.source,row:{...known,...row,title:known?.title||saved?.title||row.title,year:known?.year||saved?.year||''}};
-            const matching=known && groupResults(records).find(g=>g.choices.some(c=>c.source===program.source && c.row.page_url===row.page_url));
+            const matching=known && groupResults(records,24).find(g=>g.choices.some(c=>c.source===program.source && c.row.page_url===row.page_url));
             openGroup({title:choice.row.title,year:choice.row.year,poster:known?.poster_url||saved?.poster||'',choices:[choice,...(matching?.choices||[]).filter(c=>c.source!==program.source || c.row.page_url!==row.page_url)]},null);
             return true;
         }
@@ -135,6 +142,14 @@
                 }
                 if ($('catalogDetailFacts')) $('catalogDetailFacts').textContent='正在观看'+(context.episodeLabel?' · '+context.episodeLabel:'')+' · 换源后请确认对应集数';
             }
+            maybeFindSources();
+        }
+        function maybeFindSources() {
+            const context=sourceContext;
+            if(!context || context.autoStarted || !$('discoveryDetail')?.open || pending>0 || !$('catalogSourceQuery')?.value)return;
+            if(!picker && !context.fromFeed && filmKey(activeQuery)===filmKey(context.group.title))return;
+            if(picker && globalThis.twSourceMetadata && globalThis.twSourceMetadata.supportsSourceSwitch!==true)return;
+            context.autoStarted=true;findOtherSources();
         }
         function sourceButtons() {
             const context=sourceContext; if(!context)return;
@@ -147,12 +162,18 @@
                 button.setAttribute('aria-pressed',String(choice===context.selected));
                 button.addEventListener('click',()=>{
                     if(sourceContext!==context)return;
-                    cancelSourceSearch();context.selected=choice;sourceButtons();
+                    context.selected=choice;sourceButtons();
                     if($('catalogSourceStatus')) $('catalogSourceStatus').textContent=context.playing?'选择下方集数才会切换来源；房间保持连接。':'';
                     details.open(choice.source,{...choice.row,in_room:context.playing,suggested_episode:context.episodeLabel},context.trigger);
                 });
                 choices.append(button);
             }
+            detailFacts();
+        }
+        function detailFacts() {
+            const context=sourceContext;
+            if(!context || context.playing || !$('catalogDetailFacts'))return;
+            $('catalogDetailFacts').textContent=(context.group.year||'年份待核对')+' · '+context.group.choices.length+' 个来源条目'+(pending?' · 正在自动补齐来源':'');
         }
         async function findOtherSources(interactiveSource=null) {
             const context=sourceContext, input=$('catalogSourceQuery'), note=$('catalogSourceStatus');
@@ -162,7 +183,7 @@
             }
             const needle=shared.normalizeQuery(input.value);
             if(!needle){note.textContent='请输入完整片名，再查找其他来源。';input.focus();return;}
-            cancelSourceSearch();details.cancelRead?.();const epoch=sourceEpoch;
+            cancelSourceSearch();context.autoStarted=true;const epoch=sourceEpoch;
             const queue=sources.filter(s=>s.checked!==false && (interactiveSource?s.dataset.liveSource===interactiveSource:true));
             const local=queue.filter(s=>shared.nativeMetadata(s.dataset.liveSource)), remote=queue.filter(s=>!local.includes(s));
             let finished=0;const issues=[];
@@ -183,7 +204,7 @@
             report();
             async function read(source) {
                 const id=source.dataset.liveSource,name=source.dataset.sourceName||id,controller=new AbortController();sourceControllers.add(controller);
-                const timer=setTimeout(()=>controller.abort(),shared.metadataTimeout(id,!!interactiveSource));let matched=false;
+                const timer=setTimeout(()=>controller.abort(),shared.metadataTimeout(id,!!interactiveSource)+(shared.nativeMetadata(id)?60000:0));let matched=false;
                 function receive(data) {
                     if(!alive() || controller.signal.aborted || data?.source_id!==id || data.status!=='ok' || !Array.isArray(data.results))return;
                     const groups=groupResults([{source:id,name,rows:data.results}]);
@@ -191,8 +212,16 @@
                         if(filmKey(group.title)!==filmKey(needle) || (context.group.year && group.year && context.group.year!==group.year))continue;
                         matched=true;
                         for(const choice of group.choices)if(!context.group.choices.some(c=>c.source===choice.source && c.row.page_url===choice.row.page_url)) context.group.choices.push(choice);
+                        // Exact-title follow-up results also enrich the original
+                        // search card, not just this temporary detail panel.
+                        if(activeQuery && !context.playing && !context.fromFeed) {
+                            let record=records.find(r=>r.source===id);
+                            if(!record){record={source:id,name,rows:[]};records.push(record);}
+                            for(const choice of group.choices)if(record.rows.length<24 && !record.rows.some(r=>r.page_url===choice.row.page_url))record.rows.push(choice.row);
+                        }
                     }
                     sourceButtons();
+                    if(matched && activeQuery && !context.playing && !context.fromFeed)render();
                 }
                 try {
                     const response=await shared.metadataRequest('search',{source:id,q:needle},fetcher,controller.signal,!!interactiveSource,receive);
@@ -209,14 +238,8 @@
             if(alive())$('catalogFindOtherSources').disabled=false;
         }
         function openGroup(group, trigger, fromFeed = false) {
-            if(pending>0) {
-                // A user may open the very first result while both native query
-                // slots are occupied. Give detail/episodes priority, retaining
-                // the cards and scroll position for Back.
-                stop();pending=0;searchPaused=true;progress();
-            }
             cancelSourceSearch();
-            sourceContext={group:{...group,choices:[...group.choices]},selected:group.choices[0],trigger,playing:!!group.choices[0].row.current_episode,episodeLabel:''};
+            sourceContext={group:{...group,choices:[...group.choices]},selected:group.choices[0],trigger,fromFeed,autoStarted:false,playing:!!group.choices[0].row.current_episode,episodeLabel:''};
             $('discoveryDetail')?.setAttribute('data-playing',String(sourceContext.playing));
             const otherSources = $('catalogFindOtherSources');
             if (otherSources) {
@@ -230,9 +253,10 @@
             shared.addPoster(doc, poster, group.poster, group.choices[0].row.page_url, group.title,group);
             sourceButtons();
             details.open(group.choices[0].source,group.choices[0].row,trigger);
+            maybeFindSources();
         }
         function render() {
-            const groups = groupResults(records); groupCount = groups.length;
+            const groups = groupResults(records,24); groupCount = groups.length;
             const nextCards=new Map(), used=new Set();
             for (const group of groups) {
                 shared.registerPosters(doc,group);
@@ -264,24 +288,36 @@
             }
             for(const entry of cards.values())if(!used.has(entry))entry.card.remove();
             cards.clear();for(const [key,entry] of nextCards)cards.set(key,entry);
+            const context=sourceContext;
+            if(context && $('discoveryDetail')?.open && !context.playing && !context.fromFeed) {
+                const match=groups.find(g=>g.choices.some(c=>c.source===context.selected.source && c.row.page_url===context.selected.row.page_url));
+                if(match) {
+                    const selected=match.choices.find(c=>c.source===context.selected.source && c.row.page_url===context.selected.row.page_url);
+                    context.group=match;context.selected=selected;
+                    sourceButtons();
+                }
+            }
             progress();
         }
         function progress() {
+            detailFacts();
             $('catalogResultCount').textContent = groupCount + ' 部影片';
             status.textContent = pending ? (groupCount ? `已找到 ${groupCount} 部，可以直接选片 · 仍在搜索 ${pending} 个来源（已完成 ${completed} / ${sourceCount}）。`
                 : `正在搜索“${activeQuery}”… 已完成 ${completed} / ${sourceCount} 个来源，找到后会立即显示。`)
-                : searchPaused ? `已显示 ${groupCount} 部影片，其余查询已暂停以优先读取选集；需要补齐时可再点搜索。`
                 : groupCount ? `找到 ${groupCount} 部影片。点封面选择来源和集数；搜索结果不等于已验证可播放。`
                 : sourceCount ? '本次没有获得匹配影片，可换个关键词再试。' : '自动搜索暂未开放，请稍后再试。';
             live.setAttribute('aria-busy', String(pending > 0));
             $('catalogSkeleton').hidden = !pending || groupCount > 0;
             $('catalogEmpty').hidden = pending > 0 || groupCount > 0;
-            for (const button of retries) button.disabled = pending > 0 || searchPaused;
+            for (const button of retries) button.disabled = pending > 0;
+            if(!pending)maybeFindSources();
         }
-        async function searchSource(source, current, interactive = false, notice = null) {
+        async function searchSource(source, current, interactive = false, notice = null, attempt = 0) {
             const id = source.dataset.liveSource, name = source.dataset.sourceName || id;
             const controller = new AbortController(); controllers.add(controller);
-            const timer = setTimeout(() => controller.abort(), shared.metadataTimeout(id,interactive));
+            // A queued search may yield to a slow detail reader, then resume.
+            const timer = setTimeout(() => controller.abort(), shared.metadataTimeout(id,interactive)+(shared.nativeMetadata(id)&&!interactive?60000:0));
+            let repeat=false;
             function receive(data) {
                 if(current!==generation || controller.signal.aborted || data?.source_id!==id || data.status!=='ok' || !Array.isArray(data.results))return;
                 let record=records.find(item=>item.source===id);
@@ -341,15 +377,26 @@
                 if (data.status === 'access_blocked') { note('原站拒绝了本次访问，不是普通验证码；请换一个来源。'); return; }
                 if (data.status === 'cancelled') { note('已取消原站查询，其他结果不受影响。', 'retry', true); return; }
                 if (data.status === 'client_required') { note('当前环境尚不支持此项查询，其他结果不受影响。', false, true); return; }
-                if (data.status !== 'ok' || !Array.isArray(data.results)) throw new Error('unavailable');
+                if (data.status !== 'ok' || !Array.isArray(data.results)) throw new Error(data.status==='busy'?'busy':'unavailable');
                 receive(data);
                 if (notice) notice.replaceChildren(el('span', name + '：已完成，结果已合入上方影片。'));
             } catch (error) {
-                if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '连接超时或页面未能读取，不代表没有这部影片；可以重试或换个来源。',
+                repeat=current===generation && !interactive && error.message!=='rate' && error.message!=='invalid' && attempt<retryDelays.length;
+                if(repeat) {
+                    if(!notice){notice=el('div',null,'catalog-query-note');$('catalogSearchNotesBody').append(notice);}
+                    notice.replaceChildren(el('span',name+`：暂未读取成功，正在自动补查（${attempt+1} / ${retryDelays.length}），已有结果可直接选片。`));
+                    $('catalogSearchNotes').hidden=false;
+                } else if (current === generation) note(error.message === 'rate' ? '查询较频繁，请稍后重试。' : '自动查询结束，仍未读取成功；已有结果保留，可以换来源或稍后重试。',
                     'retry', true, error.message!=='rate' && shared.nativeMetadata(id));
             } finally {
                 clearTimeout(timer); controllers.delete(controller);
-                if (current === generation) { pending--; completed++; progress(); }
+                if (current === generation && !repeat) { pending--; completed++; progress(); }
+            }
+            if(repeat) {
+                const waiting=new AbortController();controllers.add(waiting);
+                await new Promise(resolve=>{const timer=setTimeout(resolve,retryDelays[attempt]);waiting.signal.addEventListener('abort',()=>{clearTimeout(timer);resolve();},{once:true});});
+                controllers.delete(waiting);
+                if(current===generation)return searchSource(source,current,false,notice,attempt+1);
             }
         }
         async function run() {
@@ -358,7 +405,7 @@
             stop(); activeQuery = value; query.value = value; const current = generation;
             feed?.setVisible(false);
             const queue = sources.filter(source => source.checked !== false);
-            records = []; cards.clear(); results.replaceChildren(); groupCount = 0; completed = 0; searchPaused=false; pending = sourceCount = queue.length;
+            records = []; cards.clear(); results.replaceChildren(); groupCount = 0; completed = 0; pending = sourceCount = queue.length;
             welcome.hidden = true; live.hidden = false; $('discoveryClear').hidden = false;
             $('catalogSearchNotes').hidden = true; $('catalogSearchNotes').open = false; $('catalogSearchNotesBody').replaceChildren();
             $('catalogResultTitle').textContent = '“' + value + '”的搜索结果'; progress();

@@ -86,7 +86,7 @@ test('in-player source lookup stays in the dialog, matches full title and highli
     browser.episodes({source:'cupfox',item:'12',episode:'ep2'});
     await new Promise(resolve=>setImmediate(resolve));
     assert.equal(f.elements.get('catalogSourceQuery').value,'同一部剧 第二季');
-    await f.elements.get('catalogFindOtherSources').onclick();
+    // Source discovery starts automatically after the current detail is read.
     assert.equal(closes,0,'looking up sources must not close native drawer or disturb the player');
     const buttons=f.elements.get('catalogSourceChoices').children;
     assert.equal(buttons.length,2,'do not add another season');
@@ -101,6 +101,29 @@ test('in-player source lookup stays in the dialog, matches full title and highli
 });
 
 const row=(title='开端',year='2022',page='https://ddys.io/movie/reset')=>({title,year,page_url:page,poster_url:'https://img.ddys.io/movies/reset.webp'});
+
+test('automatic exact-title follow-up enriches the original search card as well as source choices',async()=>{
+    const f=fixture(['cupfox','yhdmoe']);let queries=0;
+    for(const id of ['discoveryDetail','discoveryDetailClose','discoveryDetailTitle','discoveryDetailStatus','discoveryDetailDescription',
+        'discoveryEpisodes','discoveryDetailOriginal','discoveryEpisodeFilter','discoveryEpisodeMore','catalogFindOtherSources','catalogSourceQuery','catalogSourceStatus'])f.elements.set(id,f.doc.createElement('div'));
+    const panel=f.elements.get('discoveryDetail');panel.showModal=function(){this.open=true;};panel.close=function(){this.open=false;};
+    const browser=createBrowser(f.doc,async(url,opts)=>{
+        const {source,q,page_url}=JSON.parse(opts.body);if(q)queries++;
+        const rows=source==='cupfox'?[row('测试剧',null,'https://www.cupfox.in/vod-detail/12.html')]
+            :q==='测试剧'?[row('测试剧',null,'https://yhdmoe.com/watch/34')]:[];
+        return {ok:true,json:async()=>url.includes('/search')?{source_id:source,status:'ok',results:rows}
+            :{source_id:source,page_url,item_id:'12',title:'测试剧',status:'ok',episodes:[]}};
+    });
+    f.elements.get('discoveryQuery').value='测试';await browser.run();
+    const card=f.elements.get('discoveryLiveResults').children[0];card.children[0].handlers.click();
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(queries,4,'two broad and two automatic exact-title searches');
+    assert.equal(f.elements.get('discoveryLiveResults').children.length,1);
+    assert.equal(f.elements.get('discoveryLiveResults').children[0],card);
+    assert.match(card.children[2].textContent,/2 个来源/);
+    assert.equal(f.elements.get('catalogSourceChoices').children.length,2);
+    browser.home();
+});
 test('equal titles merge missing years, but known remake years do not absorb ambiguous entries',()=>{
     const groups=groupResults([
         {source:'ddys',name:'低端',rows:[row(),row()]},
@@ -116,7 +139,7 @@ test('same complete title groups across sites without a year and preserves seaso
     const records=[{source:'cupfox',rows:[row('Re：从零开始 第四季',null,'https://www.cupfox.in/vod-detail/1.html'),
         row('Re：从零开始 第三季',null,'https://www.cupfox.in/vod-detail/2.html'),
         row('Re：从零开始 第四季 新编集版',null,'https://www.cupfox.in/vod-detail/3.html')]},
-        {source:'kanju',rows:[row('Re:从零开始第四季',null,'https://www.kanju.ai/player/av_four')]}];
+        {source:'kanju',rows:[row('Re:从零开始\u200b第4季',null,'https://www.kanju.ai/player/av_four')]}];
     let groups=groupResults(records);
     assert.equal(groups.length,3);assert.equal(groups[0].choices.length,2);
     records[1].rows[0].year='2026';groups=groupResults(records);
@@ -189,7 +212,7 @@ test('search shows one flat grid, max two requests, folds failures away and neve
         await new Promise(r=>setTimeout(r,5));active--;
         const {source}=JSON.parse(options.body);
         return {ok:true,json:async()=>({source_id:source,status:source==='cupfox'?'unavailable':'ok',results:[row('开端',2022,source==='ddys'?'https://ddys.io/movie/reset':'https://huarw.com/movie/1')]})};
-    });
+    },{retryDelays:[]});
     assert.equal(requests.length,0,'home must not search automatically');
     f.elements.get('discoveryQuery').value='开端';await browser.run();
     assert.equal(peak,2);assert.equal(requests.length,3);
@@ -253,16 +276,30 @@ test('unsupported and verification queries offer only code-owned original search
     assert.equal(f.elements.get('discoveryLiveResults').children.length,0);
 });
 
-test('failed server search offers a bounded single-source retry and an original search with the same title',async()=>{
+test('transient server failure is retried and merged automatically without another Search click',async()=>{
     const f=fixture(['huarw']);let count=0;
-    const browser=createBrowser(f.doc,async()=>({ok:true,json:async()=>({source_id:'huarw',status:++count===1?'unavailable':'ok',results:[row('测试',2022,'https://huarw.com/movie/123')]})}));
+    const browser=createBrowser(f.doc,async()=>({ok:true,json:async()=>({source_id:'huarw',status:++count===1?'unavailable':'ok',results:[row('测试',2022,'https://huarw.com/movie/123')]})}),{retryDelays:[0,0]});
     f.elements.get('discoveryQuery').value='测试';await browser.run();
     const note=f.elements.get('catalogSearchNotesBody').children[0];
-    const retry=note.children.find(n=>n.tagName==='button'),link=note.children.find(n=>n.tagName==='a');
-    assert.equal(retry.disabled,false);assert.equal(link.href,'https://huarw.com/search?wd='+encodeURIComponent('测试'));
-    await retry.handlers.click();assert.equal(count,2);
+    assert.equal(count,2);
     assert.equal(f.elements.get('discoveryLiveResults').children.length,1);
     assert.match(note.children[0].textContent,/已完成/);
+});
+
+test('automatic retry is bounded, respects rate limits and is cancelled when leaving search',async()=>{
+    for(const [response,expected] of [[{ok:false,status:503},3],[{ok:false,status:429},1]]) {
+        const f=fixture(['cupfox']);let calls=0;
+        const browser=createBrowser(f.doc,async()=>{calls++;return response;},{retryDelays:[0,0]});
+        f.elements.get('discoveryQuery').value='测试';await browser.run();assert.equal(calls,expected);
+        assert.equal(f.elements.get('discoveryLive').attributes['aria-busy'],'false');
+        assert.ok(f.elements.get('catalogSearchNotesBody').children[0].children.some(n=>n.tagName==='button' && !n.disabled));
+        browser.home();
+    }
+    const f=fixture(['cupfox']);let calls=0;
+    const browser=createBrowser(f.doc,async()=>{calls++;return {ok:false,status:503};},{retryDelays:[60000,60000]});
+    f.elements.get('discoveryQuery').value='测试';const pending=browser.run();
+    await new Promise(resolve=>setImmediate(resolve));browser.home();await pending;
+    assert.equal(calls,1);assert.equal(f.elements.get('discoveryLiveResults').children.length,0);
 });
 
 test('verification and access-blocked failures give different actions and never auto-open original windows',async()=>{

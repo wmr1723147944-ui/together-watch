@@ -34,6 +34,17 @@ class MediaLayoutTests(unittest.TestCase):
     def setUp(self):
         self.client = application.app.test_client()
 
+    def test_health_and_catalog_assets_report_the_same_deployment_version(self):
+        version = self.client.get('/health').json['catalog_ui_version']
+        self.assertEqual(version, '20261106-continuous-search')
+        for path in ('/', '/discover', '/discover?picker=1'):
+            html = self.client.get(path).text
+            self.assertIn(f'data-catalog-version="{version}"', html)
+            for asset in ('source-discovery.js', 'catalog-browser.js'):
+                self.assertIn(f'{asset}?v={version}', html)
+                with self.client.get(f'/static/js/{asset}?v={version}') as response:
+                    self.assertEqual(response.status_code, 200)
+
     def test_pages_keep_unique_controls_and_valid_static_stylesheets(self):
         for path in ["/", "/discover", "/room/layout-test", "/mobile-room/layout-test"]:
             page = self.client.get(path)

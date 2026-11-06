@@ -8,13 +8,25 @@ test('local connection failure uses one server fallback, without cookies or unre
     try {
         const abort=new AbortController();
         const reply=await metadataRequest('search',{source:'huarw',q:'元气少女'},async(url,opts)=>{
-            calls.push(url);assert.equal(opts.credentials,'omit');assert.equal(opts.signal,abort.signal);
+            calls.push(url);assert.equal(opts.credentials,'omit');assert.ok(opts.signal instanceof AbortSignal);assert.equal(opts.signal.aborted,false);
             assert.deepEqual(JSON.parse(opts.body),{source:'huarw',q:'元气少女'});
             return {ok:true,json:async()=>({source_id:'huarw',status:'ok',results:[]})};
         },abort.signal);
         assert.equal((await reply.json()).status,'ok');assert.equal(calls.length,1);
         assert.equal(metadataTimeout('huarw'),42000);assert.equal(metadataTimeout('cupfox'),12000);
         assert.equal(metadataTimeout('huarw',true),185000);
+    } finally {global.twSourceMetadata=saved;}
+});
+
+test('cancelling the outer queued request aborts its server fallback too',async()=>{
+    const saved=global.twSourceMetadata,abort=new AbortController();let signal;
+    global.twSourceMetadata={supportedSources:['pkavi'],request:async()=>({source_id:'pkavi',status:'unavailable'}),cancel(){}};
+    try {
+        const pending=metadataRequest('search',{source:'pkavi',q:'测试'},(_url,opts)=>new Promise(resolve=>{
+            signal=opts.signal;signal.addEventListener('abort',()=>resolve({ok:false,status:499}),{once:true});
+        }),abort.signal);
+        await new Promise(resolve=>setImmediate(resolve));assert.ok(signal);abort.abort();
+        await assert.rejects(pending,/cancelled/);assert.equal(signal.aborted,true);
     } finally {global.twSourceMetadata=saved;}
 });
 

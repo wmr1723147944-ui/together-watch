@@ -262,6 +262,8 @@ TURN_CONFIGURED = any(
 
 
 app = Flask(__name__)
+CATALOG_UI_VERSION = "20261106-continuous-search"
+app.jinja_env.globals["catalog_ui_version"] = CATALOG_UI_VERSION
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
     UPLOAD_FOLDER=str(UPLOAD_DIR),
@@ -1644,6 +1646,7 @@ def health():
             "turn_configured": TURN_CONFIGURED,
             "companion_archive": COMPANION_EXTENSION_ARCHIVE.is_file(),
             "account_history_version": "20261029-v1",
+            "catalog_ui_version": CATALOG_UI_VERSION,
         }
     )
 

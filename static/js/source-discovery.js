@@ -183,18 +183,70 @@
         if(typeof source!=='string' || !Object.hasOwn(rules,source)) return null;
         const [base,param]=rules[source],url=new URL(base);url.searchParams.set(param,q);return url.href;
     }
+    // Two native readers per document, one per provider. A foreground detail
+    // may interrupt a search, but that search is requeued instead of discarded.
+    function createMetadataQueue() {
+        const waiting=[], active=new Set();
+        let pumping=false;
+        function finish(job,error,value) {
+            if(job.done)return;job.done=true;
+            job.signal.removeEventListener('abort',job.cancel);
+            if(error)job.reject(error);else job.resolve(value);
+        }
+        function pump() {
+            if(pumping)return;pumping=true;
+            try {
+                waiting.sort((a,b)=>b.priority-a.priority);
+                for(let i=0;i<waiting.length;) {
+                    const job=waiting[i];
+                    if(job.done){waiting.splice(i,1);continue;}
+                    const same=[...active].find(a=>a.key===job.key);
+                    if(same || active.size>=2) {
+                        const victim=same || [...active].find(a=>a.priority<job.priority && !a.preempted);
+                        if(victim && victim.priority<job.priority && !victim.preempted) {
+                            victim.preempted=true;victim.controller.abort();
+                        }
+                        i++;continue;
+                    }
+                    waiting.splice(i,1);active.add(job);job.preempted=false;job.controller=new AbortController();
+                    const complete=(error,value)=>{
+                        active.delete(job);
+                        if(!job.done && job.preempted && !job.signal.aborted)waiting.push(job);
+                        else finish(job,error,value);
+                        pump();
+                    };
+                    try {Promise.resolve(job.run(job.controller.signal)).then(v=>complete(null,v),e=>complete(e));}
+                    catch(error){complete(error);}
+                }
+            } finally {pumping=false;}
+        }
+        return function schedule(key,priority,signal,run) {
+            return new Promise((resolve,reject)=>{
+                const job={key,priority,signal,run,resolve,reject,done:false,preempted:false};
+                job.cancel=()=>{finish(job,new Error('cancelled'));job.controller?.abort();pump();};
+                if(signal.aborted){job.cancel();return;}
+                signal.addEventListener('abort',job.cancel,{once:true});waiting.push(job);pump();
+            });
+        };
+    }
+    const nativeQueue=createMetadataQueue();
     async function metadataRequest(kind,payload,fetcher,signal,interactive=false,onProgress=null) {
+        if(!nativeMetadata(payload.source))return readMetadata(kind,payload,fetcher,signal,interactive,onProgress);
+        return nativeQueue(payload.source,kind==='detail'||interactive?2:1,signal,
+            active=>readMetadata(kind,payload,fetcher,active,interactive,onProgress));
+    }
+    async function readMetadata(kind,payload,fetcher,signal,interactive=false,onProgress=null) {
         const server=()=>fetcher('/api/discover/'+kind,{method:'POST',headers:{'Content-Type':'application/json'},
             body:JSON.stringify(payload),credentials:'omit',referrerPolicy:'no-referrer',cache:'no-store',signal});
         if (!nativeMetadata(payload.source)) return server();
         const id='catalog-'+Date.now()+'-'+(++metadataSerial);
-        const cancel=()=>Promise.resolve(globalThis.twSourceMetadata.cancel(id)).catch(()=>{});
+        const api=globalThis.twSourceMetadata;
+        const cancel=()=>{try {Promise.resolve(api.cancel(id)).catch(()=>{});} catch (_) {}};
         if(signal.aborted) throw new Error('cancelled');
         signal.addEventListener('abort',cancel,{once:true});
         try {
             let data;
             try {
-                const api=globalThis.twSourceMetadata;
                 // Older clients (including Windows IPC) accept four serializable
                 // arguments only. Stream callbacks stay in the Android page.
                 data=await (api.supportsProgress===true && typeof onProgress==='function'
@@ -694,7 +746,7 @@
         }
         render();
     }
-    const api = { addPoster, registerPosters, createPosterPool, metadataRequest, metadataTimeout, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
+    const api = { addPoster, registerPosters, createPosterPool, createMetadataQueue, metadataRequest, metadataTimeout, nativeMetadata, originalSearch, normalizeQuery, matches, searchUrl, sourceMatches, safeResultUrl, safeLaunchPath, createDetails, createLiveSearch, initSiteDirectory, init };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else globalThis.TogetherWatchDiscovery = api;
     if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded', () => init(document));

@@ -16,15 +16,17 @@ exports.run=async({server,output,until})=>{
             window.first=__twMetadataQueue.drain();
             __twMetadataQueue.complete(first.token,first.requests[0].id,{status:'ok',title:'测试影片 第二季',episodes:[{id:'ep-e1',title:'第1集'},{id:'ep-e2',title:'第2集'}]});`);
         await until('Android picker current episode',()=>js(`!!document.querySelector('#discoveryEpisodes [aria-current]')`));
-        await js(`document.querySelector('.catalog-source-search').open=true;document.getElementById('catalogFindOtherSources').click();
+        await js(`document.querySelector('.catalog-source-search').open=true;
             window.search=__twMetadataQueue.drain();window.peer=search.requests.find(r=>r.payload.source==='pkavi');
             __twMetadataQueue.update(search.token,peer.id,{status:'ok',results:[{title:'测试影片 第二季',page_url:'https://www.pkavi.com/mv/12.html'},
                 {title:'测试影片 第一季',page_url:'https://www.pkavi.com/mv/13.html'}]});`);
         await until('partial alternative available before all finish',()=>js(`document.querySelectorAll('#catalogSourceChoices button').length===2`));
         assert.equal(await js('TogetherWatchCatalogNavigation.pickerClosed()'),false);
         assert.ok(await js(`document.getElementById('catalogFindOtherSources').disabled`));
-        await js(`document.querySelector('#catalogSourceChoices [data-source=pkavi]').click();window.detail=__twMetadataQueue.drain();`);
-        assert.equal(await js('detail.cancelled.length'),2);
+        await js(`document.querySelector('#catalogSourceChoices [data-source=pkavi]').click();`);
+        await delay(80);
+        await js(`window.detail=__twMetadataQueue.drain();`);
+        assert.equal(await js('detail.cancelled.length'),1);
         assert.equal(await js('detail.requests[0].kind'),'detail');
         await js(`__twMetadataQueue.complete(detail.token,detail.requests[0].id,{status:'ok',title:'测试影片 第二季',episodes:[{id:'1-1',title:'第1集'},{id:'1-2',title:'第2集'}]});`);
         await until('Android corresponding episode suggestion',()=>js(`!!document.querySelector('#discoveryEpisodes [data-suggested]')`));
@@ -41,6 +43,6 @@ exports.run=async({server,output,until})=>{
             __twMetadataQueue.update(search.token,peer.id,{status:'ok',results:[{title:'测试影片 第二季',page_url:'https://www.pkavi.com/mv/99.html'}]});`);
         assert.equal(await js('TogetherWatchCatalogNavigation.pickerClosed()'),true);
         assert.equal(await js(`document.querySelectorAll('#catalogSourceChoices button').length`),2);
-        console.log('SOURCE SWITCH UI PASS: Android packaged bridge, early alternative while requests pending, cancels for detail, correct episode suggestion, no season mixing, close rejects late results, 320/390/480px layout.');
+        console.log('SOURCE SWITCH UI PASS: Android packaged bridge, automatic alternatives without clicking Search, one provider yields for detail, correct episode suggestion, no season mixing, close rejects late results, 320/390/480px layout.');
     } finally {win.destroy();}
 };

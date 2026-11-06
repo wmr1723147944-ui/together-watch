@@ -65,18 +65,28 @@ test('year/cover enrichment merges in place without duplicates or losing earlier
     }finally{browser.home();global.twSourceMetadata=saved;}
 });
 
-test('opening the first result frees background query slots for episodes and Back retains results',async()=>{
+test('opening the first result prioritizes detail, resumes search and merges late sources in the open dialog',async()=>{
     const saved=global.twSourceMetadata,native=nativeFixture();global.twSourceMetadata=native.api;
     const f=fixture(['kanju','pkavi']),browser=createBrowser(f.doc,()=>assert.fail('native only'));
     try{
         f.get('discoveryQuery').value='测试';const pending=browser.run();native.jobs[0].progress(result('kanju',[film('kanju')]));
         const card=f.get('discoveryLiveResults').children[0];card.children[0].handlers.click();
-        assert.equal(native.jobs[0].cancelled,true);assert.equal(native.jobs[1].cancelled,true);
+        assert.equal(native.jobs[0].cancelled,true);assert.equal(native.jobs[1].cancelled,undefined);
+        await flush();
         const detail=native.jobs[2];assert.equal(detail.kind,'detail');assert.equal(f.get('discoveryDetail').open,true);
+        native.jobs[1].progress(result('pkavi',[film('pkavi')]));
+        assert.equal(f.get('discoveryLiveResults').children.length,1);
+        assert.equal(f.get('discoveryLiveResults').children[0],card);
+        assert.equal(f.get('catalogSourceChoices').children.length,2);
         detail.resolve({source_id:'kanju',page_url:film('kanju').page_url,item_id:'av_demo',status:'ok',episodes:[]});
+        await flush();assert.equal(native.jobs[3].kind,'search');
+        native.jobs[1].resolve(result('pkavi',[film('pkavi')]));
+        native.jobs[3].resolve(result('kanju',[film('kanju')]));
         await pending;await flush();browser.back();
         assert.equal(f.get('discoveryQuery').value,'测试');assert.equal(f.get('discoveryLiveResults').children[0],card);
-        assert.match(f.get('discoveryLiveStatus').textContent,/暂停/);
+        assert.doesNotMatch(f.get('discoveryLiveStatus').textContent,/暂停/);
+        assert.doesNotMatch(f.get('catalogDetailFacts').textContent,/正在/);
+        assert.equal(f.get('discoveryLive').attributes['aria-busy'],'false');
     }finally{browser.home();global.twSourceMetadata=saved;}
 });
 

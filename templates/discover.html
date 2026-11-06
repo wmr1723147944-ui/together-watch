@@ -11,11 +11,11 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/account.css', v='20261029-account') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/source-discovery.css', v='20261028-player-episodes') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/media-layout.css', v='20261017-ddys-ui') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser-light.css', v='20261106-source-switch') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-browser-light.css', v=catalog_ui_version) }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-mobile.css', v='20261028-spotlight-ratio') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-theater.css', v='20261101-full-stage') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/catalog-handset.css', v='20261101-cover-masthead') }}">
-    {% if request.args.get('picker') == '1' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/episode-picker.css', v='20261106-source-switch') }}">{% endif %}
+    {% if request.args.get('picker') == '1' %}<link rel="stylesheet" href="{{ url_for('static', filename='css/episode-picker.css', v=catalog_ui_version) }}">{% endif %}
 </head>
 <body class="media-app catalog-cinema{{ ' episode-picker' if request.args.get('picker') == '1' else '' }}">
     {% if request.args.get('picker') == '1' %}<aside id="episodePickerLoading" role="status">正在准备选集… <button id="episodePickerCancel" type="button">关闭</button></aside>{% endif %}
@@ -29,9 +29,9 @@
     <script src="{{ url_for('static', filename='js/watch-history.js', v='20261104-title-history') }}" defer></script>
     <script src="{{ url_for('static', filename='js/account.js', v='20261104-title-history') }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-adapters.js', v='20261102-history-covers') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/source-discovery.js', v='20261106-source-switch') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/source-discovery.js', v=catalog_ui_version) }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-feed.js', v='20261101-clear-cover') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/catalog-browser.js', v='20261106-source-switch') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/catalog-browser.js', v=catalog_ui_version) }}" defer></script>
     <script src="{{ url_for('static', filename='js/catalog-mobile.js', v='20261101-cover-masthead') }}" defer></script>
 </body>
 </html>
