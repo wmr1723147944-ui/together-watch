@@ -91,6 +91,7 @@ body #placeholder p {font-size:14px;margin:10px auto 22px}
 #play-media { background: #0998cc; color: white; border-color: #0998cc; }
 #modeLabel { color: #0785b3; font-size: 12px; min-width: 50px; }
 [hidden] { display: none !important; }
+body:has(#tools:not([hidden])) header #checkUpdates {display:none}
 .catalog-home { background: #101215; color: #e5eaf0; }
 .catalog-home header { background: #101215; border-color: #2c333c; }
 .catalog-home header button { background: #25372e; color: #8be2b4; border-color: #3d5947; }

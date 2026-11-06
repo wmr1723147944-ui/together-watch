@@ -2,6 +2,7 @@
 const $ = id => document.getElementById(id);
 let room = '', finderMode = 'catalog', gate = false, manualWeb = false, inline = false;
 const LEGAL_VERSION = '2026-07-28';
+for(const id of ['checkUpdates','checkRoomUpdates'])$(id).onclick=()=>window.desktop.action('check-updates');
 let entryMode = 'join', submitting = false;
 const samples = { sintel: 'https://media.w3.org/2010/05/sintel/trailer.mp4', bunny: 'https://media.w3.org/2010/05/bunny/trailer.mp4' };
 for (const button of document.querySelectorAll('[data-sample]')) button.onclick = () => { $('source').value = samples[button.dataset.sample]; };
@@ -63,6 +64,8 @@ $('play-media').onclick = async () => {
 for (const action of ['terms','privacy']) $(action).onclick = event => { event.preventDefault(); window.desktop.action(action); };
 $('sourceForm').onsubmit = async event => { event.preventDefault(); const result = await window.desktop.action({ type: 'source', source: $('currentSource').value }); if (result?.error) $('status').textContent = result.error; };
 window.desktop.onStatus(data => {
+    if(typeof data.updateChecking==='boolean')for(const id of ['checkUpdates','checkRoomUpdates'])$(id).disabled=data.updateChecking;
+    if(typeof data.updateAvailable==='boolean')for(const id of ['checkUpdates','checkRoomUpdates'])$(id).textContent=data.updateAvailable?'有新版本 · 查看':'检查更新';
     if (typeof data.gate === 'boolean') { gate=data.gate; $('placeholder').hidden=!room || !gate; }
     if (data.gateText) $('gateText').textContent=data.gateText;
     if (typeof data.manualWeb === 'boolean') manualWeb=data.manualWeb;

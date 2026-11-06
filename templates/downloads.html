@@ -1,0 +1,12 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>一起看 · 客户端更新</title><link rel="stylesheet" href="{{ url_for('static',filename='css/client-downloads.css') }}"></head>
+<body><main><a class="back" href="/">← 一起看</a><p class="eyebrow">TOGETHER WATCH</p><h1>新的体验，慢慢更新。</h1>
+<p class="intro">更新可以等到这集看完。先保留旧版和本机历史，不要卸载或清除应用数据。</p>
+<div class="releases">{% for release in releases %}<article>
+<small>{{ 'Windows · 64 位' if release.platform == 'windows' else '安卓 · Android 8 及以上' }}</small>
+<h2>一起看 {{ release.version }}</h2><ul>{% for note in release.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+<a class="download" href="{{ release.download_path }}">下载 {{ 'ZIP' if release.platform == 'windows' else 'APK' }} · {{ '%.1f'|format(release.size / 1048576) }} MB</a>
+<p>{% if release.platform == 'windows' %}下载后退出旧版，将压缩包完整解压到新文件夹，运行 TogetherWatch.exe。不要只复制 exe。{% else %}下载后按系统提示覆盖安装。若签名不一致，请保留原应用，不要卸载后强行安装。{% endif %}</p>
+<details><summary>文件校验 · SHA-256</summary><code>{{ release.sha256 }}</code></details></article>{% else %}
+<article><h2>安装包尚未发布</h2><p>服务器还没有准备好经过校验的安装包。你可以继续使用当前版本，稍后再来。</p></article>{% endfor %}</div>
+<p class="footnote">软件内的普通更新不会自动退出房间。首次启用更新提醒仍需手动安装新版；之后可在软件内检查。</p></main></body></html>

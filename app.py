@@ -36,6 +36,7 @@ from site_directory import DIRECTORY, site_entry, site_entries
 from source_search import SEARCH_VERSION, provider_choices, search_provider, load_detail, selection_page
 from room_program import normalize_program
 import danmaku_service
+import client_updates
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -264,6 +265,7 @@ TURN_CONFIGURED = any(
 app = Flask(__name__)
 CATALOG_UI_VERSION = "20261106-continuous-search"
 app.jinja_env.globals["catalog_ui_version"] = CATALOG_UI_VERSION
+app.config["CLIENT_RELEASE_DIR"] = os.environ.get("CLIENT_RELEASE_DIR", str(BASE_DIR / "client-releases"))
 app.config.update(
     SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
     UPLOAD_FOLDER=str(UPLOAD_DIR),
@@ -1620,6 +1622,38 @@ def mobile_room(room_id):
     )
 
 
+@app.get("/api/client-updates/<platform>")
+def client_update_check(platform):
+    if platform not in ("windows", "android"):
+        abort(404)
+    release = client_updates.release(app.config["CLIENT_RELEASE_DIR"], platform)
+    response = jsonify({"schema": 1, "available": release is not None, "release": release})
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/downloads")
+def client_downloads():
+    releases = [r for p in ("windows", "android") if (r := client_updates.release(app.config["CLIENT_RELEASE_DIR"], p))]
+    response = app.make_response(render_template("downloads.html", releases=releases))
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@app.get("/downloads/files/<filename>")
+def client_download_file(filename):
+    platform = "windows" if filename.startswith("TogetherWatch-Windows-") else "android"
+    release = client_updates.release(app.config["CLIENT_RELEASE_DIR"], platform)
+    if not release or filename != release["filename"]:
+        abort(404)
+    response = send_file(Path(app.config["CLIENT_RELEASE_DIR"]) / filename, as_attachment=True,
+                         download_name=filename, conditional=True, etag=release["sha256"],
+                         mimetype="application/zip" if platform == "windows" else "application/vnd.android.package-archive")
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @app.route("/health")
 def health():
     with room_lock:
@@ -1647,6 +1681,7 @@ def health():
             "companion_archive": COMPANION_EXTENSION_ARCHIVE.is_file(),
             "account_history_version": "20261029-v1",
             "catalog_ui_version": CATALOG_UI_VERSION,
+            "client_update_api_version": 1,
         }
     )
 

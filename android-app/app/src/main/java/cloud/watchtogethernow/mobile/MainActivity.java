@@ -160,6 +160,7 @@ public final class MainActivity extends ComponentActivity {
     private String activeNickname = "";
     private boolean finding, requestBusy, awaitingEpisode, videoLoading;
     private EpisodePickerController episodePicker;
+    private ClientUpdateController clientUpdates;
     private int flowGeneration;
     private long programRevision, appliedProgramRevision, episodeStarted;
     private ProgramPolicy.Selection programSelection;
@@ -181,6 +182,7 @@ public final class MainActivity extends ComponentActivity {
         createWebViews();
         restoreInputs();
         bindActions();
+        clientUpdates=new ClientUpdateController(this,SERVER_ORIGIN,()->sessionActive,()->foreground);
         showFinder();
         if (Intent.ACTION_SEND.equals(getIntent().getAction())) {
             showSetup();readSharedText(getIntent());
@@ -358,6 +360,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void showRoomMenu() {
         List<String> labels=new ArrayList<>();List<Runnable> actions=new ArrayList<>();
+        labels.add(clientUpdates.hasUpdate()?"发现新版本 · 查看更新":"检查更新 · "+BuildConfig.VERSION_NAME);actions.add(()->clientUpdates.check(true));
         if(sessionActive) {
             if(programRevision==0 || !ownerKey.isEmpty()) {labels.add("换一部影片");actions.add(this::showFinder);}
             labels.add(finding?"回到播放":videoContainer.getVisibility()==View.VISIBLE?"只看聊天与语音":"恢复同屏观看");
@@ -1199,6 +1202,7 @@ public final class MainActivity extends ComponentActivity {
                 // Only explicit actions from our first-party catalogue may
                 // select a room source. Source sites receive no native bridge.
                 if(!finding || !request.hasGesture() || !UrlPolicy.isTrustedServerUrl(view.getUrl(),SERVER_HOST))return true;
+                if(url.equals(SERVER_ORIGIN+"/downloads")){clientUpdates.check(true);return true;}
                 if(url.equals(SERVER_ORIGIN+"/#roomEntry")) {
                     showSetup();roomInput.setText("");videoUrlInput.setText("");return true;
                 }
@@ -1954,6 +1958,7 @@ public final class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         foreground = true;
+        if(clientUpdates!=null)clientUpdates.check(false);
         if (sessionActive) {
             mainHandler.removeCallbacks(prepareTick);mainHandler.post(prepareTick);
             final int generation = ++bridgeGeneration;
@@ -1963,6 +1968,7 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
+        if(clientUpdates!=null)clientUpdates.close();
         if(episodePicker!=null)episodePicker.close();
         finishPlayerHold(false);
         destroyed = true;

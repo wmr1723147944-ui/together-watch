@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const policy = require('./policy.cjs');
+const clientUpdates = require('./client-updates.cjs');
 const {liveContents,requestBelongsToView}=require('./view-lifecycle.cjs');
 const siteDirectory = require('./site-directory.cjs');
 const {createMetadataBrowser}=require('./metadata-browser.cjs');
@@ -88,6 +89,37 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     const catalog = new MediaCatalog(), requests = new Map();
     const activeVideo = () => builtin || video;
     const status = data => { if (!win.isDestroyed()) win.webContents.send('desktop:status', typeof data === 'string' ? { message: data } : data); };
+    let updateBusy=false,updatePrompt=false,updateTimer=null;
+    const updatePrefsPath=path.join(app.getPath('userData'),'client-update-preferences.json');
+    let updatePrefs={};
+    try {const raw=fs.readFileSync(updatePrefsPath,'utf8');if(raw.length<4096)updatePrefs=JSON.parse(raw)||{};} catch {}
+    async function checkUpdates(manual=false) {
+        if(updateBusy || updatePrompt || win.isDestroyed())return;
+        updateBusy=true;status({updateChecking:true});
+        let result;
+        try {result=await clientUpdates.check(net.fetch,server,app.getVersion());}
+        catch {result={state:'offline'};}
+        updateBusy=false;if(win.isDestroyed())return;
+        status({updateChecking:false,updateAvailable:result.state==='available'});
+        if(!clientUpdates.mayNotify(result,{...updatePrefs,manual,watching:!!current || !win.isFocused()}))return;
+        updatePrompt=true;
+        try {
+            if(result.state!=='available') {
+                const message=result.state==='current'?'当前已经是最新版本':result.state==='unpublished'?'服务器尚未发布安装包':'暂时无法检查更新';
+                await dialog.showMessageBox(win,{type:'info',title:'一起看 · 检查更新',message,
+                    detail:'当前 Windows 版本：'+app.getVersion()+'。你可以继续使用，稍后再检查。',buttons:['知道了']});return;
+            }
+            const answer=await dialog.showMessageBox(win,{type:'info',title:'一起看 · 发现新版本',message:'Windows '+result.version+' 可以下载了',
+                detail:result.notes.join('\n')+'\n\n不会自动退出房间。建议看完后下载，退出旧版并完整解压到新文件夹；不用卸载。',
+                buttons:['打开下载页','稍后提醒'],defaultId:1,cancelId:1});
+            if(win.isDestroyed())return;
+            updatePrefs={snoozeVersion:result.version,snoozeUntil:Date.now()+24*60*60*1000};
+            try {fs.writeFileSync(updatePrefsPath,JSON.stringify(updatePrefs));} catch {}
+            if(answer.response===0)await shell.openExternal(policy.SERVER+'/downloads');
+        } catch {status('无法打开更新页面，可稍后再试。');}
+        finally {updatePrompt=false;}
+    }
+    win.on('closed',()=>clearInterval(updateTimer));
     const roomTrusted = wc => !!current && wc === roomView?.webContents && policy.isRoomUrl(wc.getURL(), current.room, server);
     const sourceAllowed = url => !!policy.publicHttps(url) || (SMOKE && testSource && typeof url === 'string' && url.startsWith(testSource));
     const roomPartition = session.fromPartition(SMOKE ? `room-test-${win.id}` : 'persist:tw-room');
@@ -592,6 +624,9 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 finally { asking = false; }
             };
             const navigate = (event, url) => {
+                if(mode==='catalog' && url===server+'/downloads' && policy.isDiscoveryUrl(wc.getURL(),server)) {
+                    event.preventDefault();checkUpdates(true);return;
+                }
                 // Catalogue navigation must not become a third-party playback
                 // URL or open a web room outside the native sync session.
                 if (mode === 'catalog' && (url === server + '/#roomEntry' || url === server + '/')) {
@@ -958,6 +993,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (!current) status({finder:true});
     }
     async function action(value) {
+        if(value==='check-updates')return checkUpdates(true);
         if (value?.type === 'tools' && current && typeof value.expanded === 'boolean') { toolsExpanded=value.expanded; layout(); return; }
         if (value && typeof value === 'object' && value.type === 'source') return chooseSource(value.source, policy.playSelection(value.source,server));
         if (value === 'terms' || value === 'privacy') { await shell.openExternal(policy.SERVER + '/' + value); return; }
@@ -1032,6 +1068,10 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     win.on('closed', () => { powerMonitor.removeListener('suspend', suspend); powerMonitor.removeListener('resume', resume); });
     await win.loadURL(policy.APP_ORIGIN + '/index.html');
     if (!PACKAGE_CHECK) { await showDiscovery(); status({finder:true}); }
+    if(!SMOKE && !PACKAGE_CHECK) {
+        checkUpdates(false);
+        updateTimer=setInterval(()=>checkUpdates(false),6*60*60*1000);
+    }
     return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, inline:!!inline, mediaSession: playerPartition, roomView, discoveryView, episodeView, browsing, cinema, selected, full, current }), toggleFullscreen };
 }
 

@@ -30,8 +30,10 @@ services:
       DANDANPLAY_APP_SECRET: ${DANDANPLAY_APP_SECRET:-}
       ACCOUNT_DATABASE: /app/data/accounts.sqlite3
       ACCOUNT_REGISTRATION_ENABLED: ${ACCOUNT_REGISTRATION_ENABLED:-1}
+      CLIENT_RELEASE_DIR: /app/client-releases
     volumes:
       - account_data:/app/data
+      - ./client-releases:/app/client-releases:ro
     expose:
       - "5000"
     networks:

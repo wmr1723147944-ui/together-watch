@@ -33,4 +33,5 @@
         </form></details>
     </section>
     <p id="accountMessage" role="status" aria-live="polite"></p>
+    {% if request.endpoint in ('index', 'discover') %}<p class="account-note"><a href="/downloads">客户端版本 / 检查更新</a> · 无需登录</p>{% endif %}
 </dialog>

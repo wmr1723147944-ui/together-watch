@@ -7,6 +7,7 @@ data
 .gitignore
 .idea
 .review-artifacts
+client-releases
 .github
 android-app
 desktop-app
