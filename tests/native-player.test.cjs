@@ -132,6 +132,21 @@ test('buffer recovery requests fresh state before publishing stalled progress', 
     assert.equal(h.commands.at(-1).time, 40);
 });
 
+test('reloading a failed native URL resumes the same episode with fresh room progress', () => {
+    const h = harness();
+    h.receive({ time: 420 }); h.reply(h.state({ time: 420 })); h.clear();
+    h.receive({ session: 2, time: 420, ready: false });
+    h.reply(h.state({ time: 430, revision: 2, playing: true }));
+    assert.equal(h.commands.length, 0, 'do not command a player that is still loading');
+    h.advance(10000); h.receive({ ready: true });
+    h.reply(h.state({ time: 440, revision: 3, playing: true }));
+    const command=h.commands.at(-1);
+    assert.equal(command.session, 2); assert.equal(command.time, 440);
+    assert.equal(h.emitted.filter(e=>e.name==='video_event' || e.name==='playback_snapshot').length, 0);
+    h.receive({ time: 440, playing: true, appliedCommand: command.id });
+    assert.equal(h.emitted.at(-1).data.time, 440);
+});
+
 test('buffer recovery does not discard a fresh local play or replay the old pause', () => {
     const h = harness();
     h.receive({ time: 30 }); h.reply(h.state()); h.clear();

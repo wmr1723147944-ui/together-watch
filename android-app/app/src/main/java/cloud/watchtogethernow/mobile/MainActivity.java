@@ -98,6 +98,8 @@ public final class MainActivity extends ComponentActivity {
     private View playbackGate;
     private String requestedPageUrl="";
     private final PlaybackPreparation preparation=new PlaybackPreparation();
+    private final PlaybackRecovery.PageRefresh playbackRefresh=new PlaybackRecovery.PageRefresh();
+    private double recoveryPosition=-1;
     private final Runnable prepareTick=this::prepareBuiltin;
     private boolean resolverPageReady;
     private int confirmingPage=-1;
@@ -236,15 +238,24 @@ public final class MainActivity extends ComponentActivity {
         playbackGate.findViewById(R.id.gateOriginal).setOnClickListener(v->returnToWeb());
         playbackGate.findViewById(R.id.gateChange).setOnClickListener(v->showFinder());
         playbackGate.findViewById(R.id.gateChoices).setOnClickListener(v->choosePlayback());
-        playbackGate.findViewById(R.id.gateRetry).setOnClickListener(v->openProgramPage(requestedPageUrl));
+        playbackGate.findViewById(R.id.gateRetry).setOnClickListener(v->retryCurrentProgram());
         videoContainer.addView(catalogWebView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayerView = new PlayerView(this);
         nativePlayerView.setVisibility(View.GONE);
         nativePlayerView.setKeepScreenOn(true);
         nativePlayerView.setControllerShowTimeoutMs(2500);
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
-        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus, this::nextRoomEpisode, message->{
+        nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus, this::nextRoomEpisode, (failure,position)->{
             if(destroyed || !sessionActive)return;
+            recoveryPosition=position;
+            boolean exact=!finding && !awaitingEpisode && !protectedPage && programSelection!=null
+                && programSelection.exact() && programSelection.page.equals(requestedPageUrl);
+            if(foreground && playbackRefresh.claim(failure,exact,exact?programSelection.source:"")) {
+                openProgramPage(requestedPageUrl,true);
+                setStatus("视频地址已失效或被拒绝，正在重新读取本集线路（仅重试一次）…");
+                return;
+            }
+            String message=failure.message();
             preparationFailure=message;preparation.stop();exitNativeFullscreen();
             nativePlayerView.setVisibility(View.GONE);updatePlaybackGate();setStatus(message);
         });
@@ -581,6 +592,7 @@ public final class MainActivity extends ComponentActivity {
         if(!sessionActive)return;
         if(episodePicker!=null)episodePicker.close();
         hideFinders();finding=false;
+        nativePlayer.resumeLoading();
         nativePlayerView.setVisibility(nativePlayer.isActive()?View.VISIBLE:View.GONE);
         videoWebView.setVisibility(nativePlayer.isActive()?View.GONE:View.VISIBLE);
         setupPanel.setVisibility(View.GONE);mainContent.setVisibility(View.VISIBLE);
@@ -707,11 +719,25 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void openProgramPage(String page) {
+        openProgramPage(page,false);
+    }
+    private void retryCurrentProgram() {
+        if(!sessionActive || finding || requestedPageUrl.isEmpty())return;
+        if(nativePlayer.isActive())recoveryPosition=nativePlayer.sample().optDouble("time",0);
+        playbackRefresh.reset();
+        openProgramPage(requestedPageUrl,true);
+    }
+    private void openProgramPage(String page,boolean recovering) {
+        if(!recovering){playbackRefresh.reset();recoveryPosition=-1;}
         finishPlayerHold(false);
         if(episodePicker!=null)episodePicker.close();
         hideFullscreenVideo();
         hideFinders();
-        finding=false;appliedProgramRevision=0;awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
+        finding=false;
+        // Reloading a failed URL is not a room episode change. Keep the applied
+        // revision, otherwise the bridge can reset the episode's timeline.
+        if(!recovering)appliedProgramRevision=0;
+        awaitingEpisode=programSelection!=null && (!programSelection.exact() || programSelection.needsConfirmation());
         episodeStarted=System.currentTimeMillis();nativePlayer.release();destroyCompanion();
         mediaCandidates.clear();protectedPage=false;sourcePageUrl=page;++videoPageGeneration;
         requestedPageUrl=page;preferWebThisPage=false;lastActiveCandidate="";activeCandidateCount=0;videoLoading=true;
@@ -871,6 +897,11 @@ public final class MainActivity extends ComponentActivity {
         final int page=videoPageGeneration;
         playerBridgeNotice="";
         if(finding || (programRevision>0 && programSelection==null)) {deliverSample(generation,page,new JSONObject(),-1);return;}
+        if(!nativePlayer.isActive() && !preferWebThisPage && !preparationFailure.isEmpty()) {
+            playerBridgeNotice=preparationFailure;
+            setStatus(preparationFailure);
+            deliverSample(generation,page,new JSONObject(),-1);return;
+        }
         if(programRevision>0 && !nativePlayer.isActive() && ((!currentProgramPage() && currentHistoryContext==null) || videoLoading)) {
             if(!videoLoading)setStatus("当前页面与房间片源不同。可在「更多」中核对当前集数并恢复同步。");
             deliverSample(generation,page,new JSONObject(),-1);return;
@@ -1070,6 +1101,7 @@ public final class MainActivity extends ComponentActivity {
         videoWebView.setVisibility(View.GONE);
         nativePlayerView.setVisibility(View.VISIBLE);
         String referer = MediaSourcePolicy.origin(sourcePageUrl);
+        if(recoveryPosition>=0){position=recoveryPosition;recoveryPosition=-1;}
         nativePlayer.open(url, referer, videoWebView.getSettings().getUserAgentString(), position,
             details!=null && "application/x-mpegURL".equals(details.optString("mime")));
         showVideoTab();
@@ -1077,6 +1109,9 @@ public final class MainActivity extends ComponentActivity {
 
     private void returnToWeb() {
         if(!sessionActive || finding || requestedPageUrl.isEmpty())return;
+        // A later selection made inside the website may be a different episode.
+        // Never carry a failed native player's local position into that video.
+        recoveryPosition=-1;
         // This WebView owns the temporary blob URL. Reloading here used to
         // discard the episode/position that the gate had just confirmed.
         boolean keepPage=webPlayerReady();
@@ -1137,7 +1172,7 @@ public final class MainActivity extends ComponentActivity {
             .setItems(labels.toArray(new String[0]), (dialog, index) -> {
                 if(page!=videoPageGeneration || !sessionActive || finding){reportError("影片已切换，请重新选择播放方式。");return;}
                 if (index == 0) { returnToWeb(); }
-                else if (index == 1) { openProgramPage(requestedPageUrl); }
+                else if (index == 1) { retryCurrentProgram(); }
                 else {
                     String url = urls.get(index - 2);
                     JSONObject details = mediaCandidates.get(url);
@@ -1958,6 +1993,7 @@ public final class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         foreground = true;
+        if(nativePlayer!=null && sessionActive && !finding)nativePlayer.resumeLoading();
         if(clientUpdates!=null)clientUpdates.check(false);
         if (sessionActive) {
             mainHandler.removeCallbacks(prepareTick);mainHandler.post(prepareTick);

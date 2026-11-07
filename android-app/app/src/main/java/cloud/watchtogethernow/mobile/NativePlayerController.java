@@ -8,6 +8,8 @@ import androidx.media3.common.PlaybackException;
 import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.ui.PlayerView;
@@ -20,6 +22,7 @@ import java.util.Collections;
 @androidx.annotation.OptIn(markerClass = androidx.media3.common.util.UnstableApi.class)
 final class NativePlayerController {
     interface StatusListener { void onStatus(String message); }
+    interface FailureListener { void onFailure(PlaybackRecovery.Failure failure, double position); }
     private final Context context;
     private final PlayerView view;
     private final StatusListener listener;
@@ -32,13 +35,16 @@ final class NativePlayerController {
     private final DanmakuView danmaku;
     private final PlaybackHold hold = new PlaybackHold();
     private final android.view.View episodeButton;
-    private final java.util.function.Consumer<String> startupFailure;
+    private final FailureListener playbackFailure;
     private final android.os.Handler handler=new android.os.Handler(android.os.Looper.getMainLooper());
-    private Runnable startupTimeout;
+    private final PlaybackRecovery recovery = new PlaybackRecovery();
+    private Runnable loadTimeout, retryTask;
+    private PlaybackRecovery.Failure deferredFailure;
+    private boolean suspended;
 
     NativePlayerController(Context context, PlayerView view, StatusListener listener, Runnable nextEpisode,
-                           java.util.function.Consumer<String> startupFailure) {
-        this.startupFailure=startupFailure;
+                           FailureListener playbackFailure) {
+        this.playbackFailure=playbackFailure;
         this.context = context;
         this.view = view;
         this.listener = listener;
@@ -65,31 +71,36 @@ final class NativePlayerController {
         session++;
         error = "";
         appliedCommand = 0;
+        suspended = false;
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent).setConnectTimeoutMs(15000).setReadTimeoutMs(15000);
         if (!referer.isEmpty()) http.setDefaultRequestProperties(Collections.singletonMap("Referer", referer));
-        player = new ExoPlayer.Builder(context)
+        player = new ExoPlayer.Builder(context, new DefaultRenderersFactory(context).setEnableDecoderFallback(true))
             .setMediaSourceFactory(new DefaultMediaSourceFactory(http)).build();
         ExoPlayer current = player;
-        startupTimeout=()->failedStartup(current,"已找到本集视频，但线路在 30 秒内没有就绪。可以重新识别或换一条线路。");
-        handler.postDelayed(startupTimeout,30000);
+        watchLoading(current);
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (current != player) return;
                 if (state == Player.STATE_READY) {
-                    cancelStartupTimeout();
+                    cancelRecoveryTasks();
+                    recovery.ready();
+                    error = ""; deferredFailure = null;
                     if (pendingState != null) apply(pendingState);
                     listener.onStatus("内置播放已就绪 · 下方可聊天和通话");
-                } else if (state == Player.STATE_BUFFERING) listener.onStatus("视频缓冲中…");
+                } else if (state == Player.STATE_BUFFERING) {
+                    watchLoading(current);
+                    listener.onStatus("视频缓冲中…");
+                } else if (state == Player.STATE_ENDED) {
+                    cancelRecoveryTasks(); recovery.ready();
+                }
             }
             @Override public void onPlayerError(PlaybackException exception) {
                 if (current != player) return;
-                if(startupTimeout!=null){
-                    handler.post(()->failedStartup(current,"已找到本集视频，但内置播放器无法打开这条线路。可以重新识别或换源。"));
-                    return;
-                }
-                error = "这个来源暂时无法内置播放，请点「播放方式」返回网页或换一条线路";
-                listener.onStatus(error);
+                // ExoPlayer enters IDLE after this callback. Recover afterwards,
+                // and discard callbacks belonging to an old episode/player.
+                PlaybackRecovery.Failure failure = describe(exception);
+                handler.post(() -> recover(current, failure));
             }
         });
         // UI calls go through this wrapper; remote commands use ExoPlayer
@@ -138,10 +149,19 @@ final class NativePlayerController {
     }
     void overlay(JSONObject packet) { danmaku.update(packet); }
     void pauseLocally() {
+        suspended = true;
+        cancelRecoveryTasks(); recovery.ready();
         endHold(false);
         pendingState = null;
         events = new JSONArray();
         if (player != null) player.pause();
+    }
+    void resumeLoading() {
+        suspended = false;
+        if (player == null) return;
+        if (deferredFailure != null) recover(player, deferredFailure);
+        else if (player.getPlayerError() != null) recover(player, describe(player.getPlayerError()));
+        else if (player.getPlaybackState() == Player.STATE_BUFFERING) watchLoading(player);
     }
     private void event(String type) {
         if (player == null) return;
@@ -211,16 +231,63 @@ final class NativePlayerController {
         appliedCommand = id;
     }
 
-    private void cancelStartupTimeout() {
-        if(startupTimeout!=null)handler.removeCallbacks(startupTimeout);
-        startupTimeout=null;
+    private static PlaybackRecovery.Failure describe(PlaybackException exception) {
+        int status = 0;
+        Throwable cause = exception;
+        for (int i=0; cause!=null && i<12; i++, cause=cause.getCause()) {
+            if (cause instanceof HttpDataSource.InvalidResponseCodeException) {
+                status=((HttpDataSource.InvalidResponseCodeException)cause).responseCode; break;
+            }
+        }
+        // Never display exception messages: they can contain signed media URLs.
+        return new PlaybackRecovery.Failure(exception.errorCode, status);
     }
-    private void failedStartup(ExoPlayer expected,String message) {
-        if(player!=expected || startupTimeout==null)return;
-        release();startupFailure.accept(message);
+    private void watchLoading(ExoPlayer expected) {
+        if (suspended || expected != player || loadTimeout != null || retryTask != null) return;
+        long now=android.os.SystemClock.elapsedRealtime();
+        recovery.loading(now);
+        loadTimeout=()->{
+            loadTimeout=null;
+            if (expected!=player || suspended) return;
+            if (recovery.expired(android.os.SystemClock.elapsedRealtime()))
+                recover(expected,new PlaybackRecovery.Failure(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,0));
+        };
+        handler.postDelayed(loadTimeout,recovery.remaining(now));
+    }
+    private void cancelRecoveryTasks() {
+        if (loadTimeout!=null) handler.removeCallbacks(loadTimeout);
+        if (retryTask!=null) handler.removeCallbacks(retryTask);
+        loadTimeout=null; retryTask=null;
+    }
+    private void recover(ExoPlayer expected, PlaybackRecovery.Failure failure) {
+        if (player!=expected || retryTask!=null) return;
+        cancelRecoveryTasks();
+        deferredFailure=failure;
+        error=failure.message();
+        if (suspended) return;
+        endHold(false);
+        long delay=recovery.retryDelay(failure);
+        if (delay>=0) {
+            listener.onStatus("线路加载中断，正在自动重试… " + error);
+            retryTask=()->{
+                retryTask=null;
+                if (player!=expected || suspended) return;
+                deferredFailure=null;
+                // stop/prepare retains media, position, play intent, room session
+                // and pending room commands; never creates a seek/play event.
+                expected.stop();
+                watchLoading(expected);
+                expected.prepare();
+            };
+            handler.postDelayed(retryTask,delay);
+        } else {
+            double position=Math.max(0,expected.getCurrentPosition()/1000.0);
+            release();
+            playbackFailure.onFailure(failure,position);
+        }
     }
     void release() {
-        cancelStartupTimeout();
+        cancelRecoveryTasks(); recovery.reset(); deferredFailure=null;
         hold.reset();
         danmaku.update(null);
         pendingState = null;
