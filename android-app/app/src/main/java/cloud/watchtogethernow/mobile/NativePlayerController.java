@@ -128,6 +128,21 @@ final class NativePlayerController {
     }
 
     boolean isActive() { return player != null; }
+    int gestureSession() { return session; }
+    double gesturePosition() { return player==null?0:player.getCurrentPosition()/1000.0; }
+    double gestureDuration() { return player==null || player.getDuration()==C.TIME_UNSET?0:Math.max(0,player.getDuration()/1000.0); }
+    boolean gestureSeekable() { return player!=null && player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+        && player.isCurrentMediaItemSeekable() && !player.isCurrentMediaItemLive() && gestureDuration()>0; }
+    float gestureVolume() { return player==null?1:player.getVolume(); }
+    void gestureVolume(int expected,double volume) {
+        if(player!=null && session==expected && Double.isFinite(volume))player.setVolume((float)PlayerSwipe.clamp(volume,0,1));
+    }
+    void gestureSeek(int expected,double seconds) {
+        if(session!=expected || !gestureSeekable() || !Double.isFinite(seconds))return;
+        endHold(false);
+        player.seekTo((long)(PlayerSwipe.clamp(seconds,0,gestureDuration())*1000));
+        event("seek"); // Same single user intent as dragging the existing seek bar.
+    }
     void setEpisodeControl(boolean show,boolean enabled) {
         episodeButton.setVisibility(show?android.view.View.VISIBLE:android.view.View.GONE);
         episodeButton.setEnabled(enabled);

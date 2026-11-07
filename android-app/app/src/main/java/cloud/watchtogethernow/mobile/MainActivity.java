@@ -123,6 +123,11 @@ public final class MainActivity extends ComponentActivity {
     private long holdDownTime;
     private int holdToken;
     private View holdTouchTarget;
+    private final PlayerSwipe playerSwipe=new PlayerSwipe();
+    private TextView swipeHint;
+    private float swipeOriginX,swipeOriginY,swipeBrightnessBefore;
+    private float brightnessBeforeSwipes=Float.NaN;
+    private int localVolumeRevision;
     private final Runnable hideFullscreenUi = () -> {
         if (fullscreenControls != null) fullscreenControls.setVisibility(View.GONE);
         if (nativeFullscreen && nativePlayerView != null) nativePlayerView.hideController();
@@ -247,6 +252,7 @@ public final class MainActivity extends ComponentActivity {
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
         nativePlayer = new NativePlayerController(this, nativePlayerView, this::setStatus, this::nextRoomEpisode, (failure,position)->{
             if(destroyed || !sessionActive)return;
+            finishPlayerHold(false);
             recoveryPosition=position;
             boolean exact=!finding && !awaitingEpisode && !protectedPage && programSelection!=null
                 && programSelection.exact() && programSelection.page.equals(requestedPageUrl);
@@ -546,6 +552,7 @@ public final class MainActivity extends ComponentActivity {
     private void showFinder(boolean original) {
         finishPlayerHold(false);
         if(requestBusy)return;
+        restoreWindowBrightness();
         if(episodePicker!=null)episodePicker.close();
         pendingSetupSelection=null;
         originalFinderActive=original;
@@ -775,6 +782,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void showRoomTab() {
         if(!sessionActive){reportError("选好影片并创建房间后，就能聊天和通话。");return;}
+        finishPlayerHold(false);restoreWindowBrightness();
         exitNativeFullscreen();
         videoContainer.setVisibility(View.GONE);
         roomContainer.setVisibility(View.VISIBLE);
@@ -783,6 +791,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showSetup() {
+        finishPlayerHold(false);restoreWindowBrightness();
         if(episodePicker!=null)episodePicker.close();
         pendingSetupSelection=null;
         roomInput.setText("");videoUrlInput.setText("");
@@ -851,6 +860,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     @Override public void onConfigurationChanged(Configuration configuration) {
+        finishPlayerHold(false);
         super.onConfigurationChanged(configuration);
         arrangePanels();
         if(episodePicker!=null)episodePicker.resize();
@@ -941,6 +951,7 @@ public final class MainActivity extends ComponentActivity {
         if(!bridgeCurrent(generation))return;
         if(page!=videoPageGeneration){scheduleBridge(generation);return;}
         final long revision=programRevision;
+        final int volumeRevision=localVolumeRevision;
         danmakuTime=sample.optDouble("visualTime",sample.optDouble("time",0));danmakuSpeed=sample.optDouble("visualSpeed",sample.optDouble("speed",1));
         if (holdGestureActive) {
             if(sample.optBoolean("holding"))holdObserved=true;
@@ -980,6 +991,8 @@ public final class MainActivity extends ComponentActivity {
                     JSONArray commands=response.optJSONArray("commands");
                     if(commands!=null)for(int i=0;i<Math.min(16,commands.length());i++){
                         JSONObject command=commands.optJSONObject(i);if(command==null)continue;
+                        if("volume".equals(command.optString("type")) &&
+                            (playerSwipe.mode==PlayerSwipe.VOLUME || volumeRevision!=localVolumeRevision))continue;
                         if(nativePlayer.isActive() && !finding && !awaitingEpisode)nativePlayer.apply(command);
                         else if(localSession>=0){JSONObject clean=PlaybackBoundary.command(command,page,localSession);if(clean!=null)videoWebView.evaluateJavascript("window.__twAndroidPage?.apply("+clean+")",null);}
                     }
@@ -1654,7 +1667,8 @@ public final class MainActivity extends ComponentActivity {
     private boolean touchesPlayerControl(View view, float x, float y) {
         if (!containsTouch(view,x,y)) return false;
         if (view instanceof Button || view instanceof android.widget.ImageButton || view instanceof android.widget.SeekBar
-                || view instanceof androidx.media3.ui.DefaultTimeBar) return true;
+                || view instanceof androidx.media3.ui.DefaultTimeBar
+                || view instanceof android.widget.ImageView && view.isClickable()) return true;
         if (view instanceof ViewGroup) {
             ViewGroup group=(ViewGroup)view;
             for(int i=0;i<group.getChildCount();i++) if(touchesPlayerControl(group.getChildAt(i),x,y))return true;
@@ -1670,7 +1684,7 @@ public final class MainActivity extends ComponentActivity {
             holdX=event.getRawX();holdY=event.getRawY();holdDownTime=event.getDownTime();
             holdNativeMode=nativePlayer!=null && nativePlayer.isActive();
             holdTouchTarget=fullscreenView!=null?fullscreenView:holdNativeMode?nativePlayerView:videoWebView;
-            touchCandidate=foreground && sessionActive && !finding && !awaitingEpisode && !videoLoading
+            touchCandidate=foreground && sessionActive && !finding && !awaitingEpisode && (holdNativeMode || !videoLoading)
                 && containsTouch(holdTouchTarget,holdX,holdY) && !containsTouch(fullscreenControls,holdX,holdY)
                 && !(holdNativeMode && touchesPlayerControl(nativePlayerView,holdX,holdY));
             if(touchCandidate) {
@@ -1679,6 +1693,15 @@ public final class MainActivity extends ComponentActivity {
                 holdNy=(holdY-location[1])/Math.max(1,holdTouchTarget.getHeight());
                 // Keep the seek bar / native fullscreen controls available for dragging.
                 if((holdNativeMode || fullscreenView!=null) && holdNy>.80f)touchCandidate=false;
+                if(holdNativeMode && (holdX-location[0]<dp(24) || location[0]+holdTouchTarget.getWidth()-holdX<dp(24)))touchCandidate=false;
+                if(touchCandidate && holdNativeMode) {
+                    swipeOriginX=location[0];swipeOriginY=location[1];
+                    swipeBrightnessBefore=getWindow().getAttributes().screenBrightness;
+                    playerSwipe.begin(nativePlayer.gestureSession(),holdX-swipeOriginX,holdY-swipeOriginY,
+                        holdTouchTarget.getWidth(),holdTouchTarget.getHeight(),ViewConfiguration.get(this).getScaledTouchSlop()*2,
+                        nativePlayer.gesturePosition(),nativePlayer.gestureDuration(),nativePlayer.gestureSeekable(),
+                        nativePlayer.gestureVolume(),currentWindowBrightness());
+                }
             }
             if(touchCandidate) {
                 final int token=holdToken;
@@ -1692,11 +1715,33 @@ public final class MainActivity extends ComponentActivity {
             if(action==MotionEvent.ACTION_CANCEL)playerTouchConsumed=false;
             if(consumed)return true;
         } else if(action==MotionEvent.ACTION_MOVE && touchCandidate) {
+            if(playerSwipe.armed && !holdRequested && !holdGestureActive) {
+                if(!nativePlayer.isActive() || nativePlayer.gestureSession()!=playerSwipe.session) {
+                    boolean consumed=playerTouchConsumed;finishPlayerHold(false);if(consumed)return true;
+                } else {
+                    int previous=playerSwipe.mode;
+                    if(Math.hypot(event.getRawX()-holdX,event.getRawY()-holdY)>ViewConfiguration.get(this).getScaledTouchSlop()*2)
+                        mainHandler.removeCallbacks(startPlayerHold);
+                    int mode=playerSwipe.move(event.getRawX()-swipeOriginX,event.getRawY()-swipeOriginY);
+                    if(mode!=PlayerSwipe.NONE) {
+                        if(previous==PlayerSwipe.NONE) {
+                            mainHandler.removeCallbacks(startPlayerHold);playerTouchConsumed=true;
+                            MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
+                            super.dispatchTouchEvent(cancel);cancel.recycle();
+                            if(mode==PlayerSwipe.VOLUME)localVolumeRevision++;
+                            nativePlayerView.hideController();mainHandler.removeCallbacks(hideFullscreenUi);hideFullscreenUi.run();
+                        }
+                        updateSwipeHint();return true;
+                    }
+                    return super.dispatchTouchEvent(event);
+                }
+            }
             if(Math.hypot(event.getRawX()-holdX,event.getRawY()-holdY)>ViewConfiguration.get(this).getScaledTouchSlop()*2) {
                 boolean consumed=playerTouchConsumed;finishPlayerHold(false);if(consumed)return true;
             }
         } else if(action==MotionEvent.ACTION_UP) {
             boolean consumed=playerTouchConsumed, tap=touchCandidate;
+            finishPlayerSwipe(true);
             finishPlayerHold(holdGestureActive);
             playerTouchConsumed=false;
             if(consumed)return true;
@@ -1716,6 +1761,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void startPlayerHold() {
         if(!touchCandidate || destroyed || !foreground || (!holdNativeMode && !webHoldEligible))return;
+        playerSwipe.reset(); // A long press cannot turn into a swipe mid-gesture.
         holdRequested=true;playerTouchConsumed=true;
         final int token=holdToken;
         MotionEvent cancel=MotionEvent.obtain(holdDownTime,android.os.SystemClock.uptimeMillis(),MotionEvent.ACTION_CANCEL,holdX,holdY,0);
@@ -1740,6 +1786,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void finishPlayerHold(boolean commit) {
+        finishPlayerSwipe(false);
         mainHandler.removeCallbacks(startPlayerHold);
         boolean requested=holdRequested, active=holdGestureActive;
         touchCandidate=false;holdRequested=false;holdGestureActive=false;webHoldEligible=false;holdToken++;
@@ -1748,6 +1795,69 @@ public final class MainActivity extends ComponentActivity {
             videoWebView.evaluateJavascript("window.__twAndroidPage?.endHold("+(commit && active)+")",null);
         if(holdSpeedHint!=null && holdSpeedHint.getParent() instanceof ViewGroup)((ViewGroup)holdSpeedHint.getParent()).removeView(holdSpeedHint);
         holdSpeedHint=null;
+    }
+
+    private float currentWindowBrightness() {
+        float value=getWindow().getAttributes().screenBrightness;
+        if(value<0)try {
+            value=android.provider.Settings.System.getInt(getContentResolver(),android.provider.Settings.System.SCREEN_BRIGHTNESS,128)/255f;
+        }catch(RuntimeException ignored){value=.5f;}
+        return (float)PlayerSwipe.clamp(value,.05,1);
+    }
+    private void windowBrightness(float value) {
+        WindowManager.LayoutParams attributes=getWindow().getAttributes();
+        attributes.screenBrightness=value;getWindow().setAttributes(attributes);
+    }
+    private void restoreWindowBrightness() {
+        if(!Float.isNaN(brightnessBeforeSwipes)){windowBrightness(brightnessBeforeSwipes);brightnessBeforeSwipes=Float.NaN;}
+    }
+    private static String swipeTime(double seconds) {
+        long s=Math.max(0,Math.round(seconds));
+        return s>=3600?String.format(java.util.Locale.ROOT,"%d:%02d:%02d",s/3600,s/60%60,s%60):
+            String.format(java.util.Locale.ROOT,"%02d:%02d",s/60,s%60);
+    }
+    private void updateSwipeHint() {
+        String label;
+        if(playerSwipe.mode==PlayerSwipe.SEEK) {
+            long delta=Math.round(playerSwipe.target-playerSwipe.startTime);
+            label=(delta>=0?"快进  +":"后退  ")+delta+" 秒\n"+swipeTime(playerSwipe.target)+" / "+swipeTime(playerSwipe.duration)+"\n松手跳转";
+        } else if(playerSwipe.mode==PlayerSwipe.VOLUME) {
+            nativePlayer.gestureVolume(playerSwipe.session,playerSwipe.value);
+            label="视频音量  "+Math.round(playerSwipe.value*100)+"%";
+        } else if(playerSwipe.mode==PlayerSwipe.BRIGHTNESS) {
+            if(Float.isNaN(brightnessBeforeSwipes))brightnessBeforeSwipes=swipeBrightnessBefore;
+            windowBrightness((float)playerSwipe.value);
+            label="屏幕亮度  "+Math.round(playerSwipe.value*100)+"%";
+        } else label="当前视频暂不支持拖动进度";
+        if(swipeHint==null) {
+            swipeHint=new TextView(this);swipeHint.setTextColor(0xffffffff);swipeHint.setTextSize(16);
+            swipeHint.setGravity(Gravity.CENTER);swipeHint.setPadding(dp(20),dp(14),dp(20),dp(14));
+            android.graphics.drawable.GradientDrawable background=new android.graphics.drawable.GradientDrawable();
+            background.setColor(0xcc161820);background.setCornerRadius(dp(14));swipeHint.setBackground(background);
+            swipeHint.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+            FrameLayout host=nativeFullscreen?fullscreenContainer:videoContainer;
+            host.addView(swipeHint,new FrameLayout.LayoutParams(-2,-2,Gravity.CENTER));
+        }
+        swipeHint.setText(label);
+    }
+    private void finishPlayerSwipe(boolean commit) {
+        int mode=playerSwipe.mode, expected=playerSwipe.session;
+        boolean current=nativePlayer!=null && nativePlayer.isActive() && nativePlayer.gestureSession()==expected;
+        double volume=commit?playerSwipe.value:playerSwipe.startVolume;
+        if(mode==PlayerSwipe.VOLUME) {
+            localVolumeRevision++;
+            if(current)nativePlayer.gestureVolume(expected,volume);
+            if(commit && current && trustedRoomPage()) {
+                // Reuse the existing local-only slider and persistence, including
+                // older server pages. No room-wide sound or voice volume command.
+                int percent=(int)Math.round(volume*100);
+                roomWebView.evaluateJavascript("(()=>{const s=document.getElementById('mobileVideoVolume');if(s){s.value="+percent+";s.dispatchEvent(new Event('input',{bubbles:true}));}})()",null);
+            }
+        } else if(mode==PlayerSwipe.BRIGHTNESS && !commit)windowBrightness(swipeBrightnessBefore);
+        double target=playerSwipe.seekOnRelease(current?nativePlayer.gestureSession():-1,commit);
+        if(current && Double.isFinite(target))nativePlayer.gestureSeek(expected,target);
+        if(swipeHint!=null && swipeHint.getParent() instanceof ViewGroup)((ViewGroup)swipeHint.getParent()).removeView(swipeHint);
+        swipeHint=null;
     }
 
     private void showFullscreenVideo(View view, WebChromeClient.CustomViewCallback callback) {
@@ -1973,6 +2083,7 @@ public final class MainActivity extends ComponentActivity {
     protected void onStop() {
         if(episodePicker!=null)episodePicker.close();
         finishPlayerHold(false);
+        restoreWindowBrightness();
         mainHandler.removeCallbacks(hideFullscreenUi);
         hideFullscreenUi.run();
         foreground = false;
