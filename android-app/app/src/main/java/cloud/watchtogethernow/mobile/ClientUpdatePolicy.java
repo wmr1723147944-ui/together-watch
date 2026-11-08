@@ -32,7 +32,7 @@ final class ClientUpdatePolicy {
         boolean newer=(Integer)code>installedCode && compare(version,installed)>=0;
         return new Result(newer?"available":"current",version,text.toString());
     }
-    static boolean mayNotify(Result result,boolean manual,boolean watching,String snoozeVersion,long until,long now) {
-        return manual || (result!=null && "available".equals(result.state) && !watching && !(result.version.equals(snoozeVersion) && until>now));
+    static boolean mayNotify(Result result,boolean manual,boolean watching,java.util.Set<String> notifiedVersions) {
+        return result!=null && (manual || ("available".equals(result.state) && !watching && !notifiedVersions.contains(result.version)));
     }
 }

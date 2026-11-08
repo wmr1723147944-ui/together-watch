@@ -27,7 +27,7 @@ async function check(fetcher,origin,installed) {
         return parse(JSON.parse(Buffer.concat(chunks).toString('utf8')),installed);
     } finally {clearTimeout(timer);}
 }
-function mayNotify(result,{manual=false,watching=false,snoozeUntil=0,snoozeVersion='',now=Date.now()}={}) {
-    return manual || (result?.state==='available' && !watching && !(snoozeVersion===result.version && snoozeUntil>now));
+function mayNotify(result,{manual=false,watching=false,notifiedVersions=new Set()}={}) {
+    return !!result && (manual || (result.state==='available' && !watching && !notifiedVersions.has(result.version)));
 }
 module.exports={compare,parse,check,mayNotify};

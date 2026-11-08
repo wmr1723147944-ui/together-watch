@@ -24,11 +24,20 @@ public class ClientUpdatePolicyTest {
             try {ClientUpdatePolicy.parse(json(r),"0.3.28",33);fail("must reject");}catch(IllegalArgumentException expected){}
         }
     }
-    @Test public void automaticPromptsRespectWatchingAndSnooze() {
+    @Test public void automaticPromptsRespectWatchingAndOneOfferPerLaunch() {
         ClientUpdatePolicy.Result result=new ClientUpdatePolicy.Result("available","0.3.29","");
-        assertFalse(ClientUpdatePolicy.mayNotify(result,false,true,"",0,100));
-        assertFalse(ClientUpdatePolicy.mayNotify(result,false,false,"0.3.29",200,100));
-        assertTrue(ClientUpdatePolicy.mayNotify(result,false,false,"0.3.28",200,100));
-        assertTrue(ClientUpdatePolicy.mayNotify(result,true,true,"0.3.29",200,100));
+        java.util.Set<String> offered=new java.util.HashSet<>();
+        assertFalse(ClientUpdatePolicy.mayNotify(result,false,true,offered));
+        assertTrue(ClientUpdatePolicy.mayNotify(result,false,false,offered));
+        offered.add("0.3.29");
+        assertFalse(ClientUpdatePolicy.mayNotify(result,false,false,offered));
+        assertTrue(ClientUpdatePolicy.mayNotify(result,true,true,offered));
+        assertTrue(ClientUpdatePolicy.mayNotify(result,false,false,new java.util.HashSet<>()));
+        assertTrue(ClientUpdatePolicy.mayNotify(new ClientUpdatePolicy.Result("available","0.3.30",""),false,false,offered));
+    }
+    @Test public void offlineCurrentAndUnpublishedAreSilentAtStartup() {
+        for(String state:new String[]{"offline","current","unpublished"})
+            assertFalse(ClientUpdatePolicy.mayNotify(new ClientUpdatePolicy.Result(state,"",""),false,false,new java.util.HashSet<>()));
+        assertFalse(ClientUpdatePolicy.mayNotify(null,true,false,new java.util.HashSet<>()));
     }
 }

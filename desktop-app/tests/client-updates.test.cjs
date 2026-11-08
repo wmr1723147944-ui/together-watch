@@ -9,13 +9,15 @@ test('numeric versions prevent downgrade and invalid or remote paths are rejecte
         {size:NaN},{notes:['a'.repeat(241)]},{sha256:'bad'},{platform:'android'}])assert.throws(()=>parse(data({...release,...patch}),'0.6.24'));
     assert.equal(parse({schema:1,available:false},'0.6.24').state,'unpublished');
 });
-test('watching and snoozing suppress automatic prompts, manual checks stay available',()=>{
+test('startup asks once per version per launch, defers watching, and manual checks stay available',()=>{
     const result={state:'available',version:'0.6.25'};
     assert.equal(mayNotify(result,{watching:true}),false);
-    assert.equal(mayNotify(result,{snoozeVersion:'0.6.25',snoozeUntil:200,now:100}),false);
-    assert.equal(mayNotify(result,{snoozeVersion:'0.6.24',snoozeUntil:200,now:100}),true);
+    assert.equal(mayNotify(result,{notifiedVersions:new Set(['0.6.25'])}),false);
+    assert.equal(mayNotify(result,{notifiedVersions:new Set(['0.6.24'])}),true);
+    assert.equal(mayNotify(result,{notifiedVersions:new Set()}),true,'next launch asks again');
     assert.equal(mayNotify(result,{manual:true,watching:true}),true);
-    assert.equal(mayNotify({state:'offline'}),false);
+    for(const state of ['offline','current','unpublished'])assert.equal(mayNotify({state}),false);
+    assert.equal(mayNotify(null,{manual:true}),false);
 });
 test('update fetch omits cookies, disallows redirects and bounds malformed/oversized responses',async()=>{
     const result=await check(async(url,opts)=>{

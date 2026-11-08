@@ -48,7 +48,7 @@ function installAssets(ses) {
     });
 }
 
-async function createDesktop({ server = policy.SERVER, testSource = '', visible = true } = {}) {
+async function createDesktop({ server = policy.SERVER, testSource = '', visible = true, testUpdates = false } = {}) {
     if (!SMOKE && server !== policy.SERVER) throw new Error('Untrusted server');
     const win = new BrowserWindow({ title: '一起看 · Windows', width: 1360, height: 850, minWidth: 980, minHeight: 680,
         backgroundColor: '#111020', show: visible, autoHideMenuBar: true, icon: path.join(__dirname, '../assets/app.ico'),
@@ -89,10 +89,10 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     const catalog = new MediaCatalog(), requests = new Map();
     const activeVideo = () => builtin || video;
     const status = data => { if (!win.isDestroyed()) win.webContents.send('desktop:status', typeof data === 'string' ? { message: data } : data); };
-    let updateBusy=false,updatePrompt=false,updateTimer=null;
-    const updatePrefsPath=path.join(app.getPath('userData'),'client-update-preferences.json');
-    let updatePrefs={};
-    try {const raw=fs.readFileSync(updatePrefsPath,'utf8');if(raw.length<4096)updatePrefs=JSON.parse(raw)||{};} catch {}
+    let updateBusy=false,updatePrompt=false,updateTimer=null,updateResult=null;
+    // "Later" lasts for this launch, not across tomorrow's/new app launch.
+    // Keep a result received out of focus/in a room so it can be offered later.
+    const notifiedVersions=new Set();
     async function checkUpdates(manual=false) {
         if(updateBusy || updatePrompt || win.isDestroyed())return;
         updateBusy=true;status({updateChecking:true});
@@ -100,25 +100,31 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         try {result=await clientUpdates.check(net.fetch,server,app.getVersion());}
         catch {result={state:'offline'};}
         updateBusy=false;if(win.isDestroyed())return;
+        updateResult=result;
         status({updateChecking:false,updateAvailable:result.state==='available'});
-        if(!clientUpdates.mayNotify(result,{...updatePrefs,manual,watching:!!current || !win.isFocused()}))return;
+        return notifyUpdate(manual);
+    }
+    async function notifyUpdate(manual=false) {
+        if(updatePrompt || win.isDestroyed())return;
+        const result=updateResult;
+        if(!clientUpdates.mayNotify(result,{manual,notifiedVersions,watching:!!current || !win.isFocused()}))return;
         updatePrompt=true;
+        if(result.state==='available')notifiedVersions.add(result.version);
         try {
             if(result.state!=='available') {
                 const message=result.state==='current'?'当前已经是最新版本':result.state==='unpublished'?'服务器尚未发布安装包':'暂时无法检查更新';
                 await dialog.showMessageBox(win,{type:'info',title:'一起看 · 检查更新',message,
                     detail:'当前 Windows 版本：'+app.getVersion()+'。你可以继续使用，稍后再检查。',buttons:['知道了']});return;
             }
-            const answer=await dialog.showMessageBox(win,{type:'info',title:'一起看 · 发现新版本',message:'Windows '+result.version+' 可以下载了',
-                detail:result.notes.join('\n')+'\n\n不会自动退出房间。建议看完后下载，退出旧版并完整解压到新文件夹；不用卸载。',
-                buttons:['打开下载页','稍后提醒'],defaultId:1,cancelId:1});
+            const answer=await dialog.showMessageBox(win,{type:'info',title:'一起看 · 发现新版本',message:'发现 Windows '+result.version+'，是否更新？',
+                detail:result.notes.join('\n')+'\n\n点击「立即更新」打开官方下载页；下载后退出旧版，完整解压到新文件夹即可。稍后再说：本次不再提醒，下次启动时重新检查。不会自动安装或退出房间。',
+                buttons:['立即更新','稍后再说'],defaultId:0,cancelId:1});
             if(win.isDestroyed())return;
-            updatePrefs={snoozeVersion:result.version,snoozeUntil:Date.now()+24*60*60*1000};
-            try {fs.writeFileSync(updatePrefsPath,JSON.stringify(updatePrefs));} catch {}
             if(answer.response===0)await shell.openExternal(policy.SERVER+'/downloads');
         } catch {status('无法打开更新页面，可稍后再试。');}
         finally {updatePrompt=false;}
     }
+    win.on('focus',()=>notifyUpdate(false));
     win.on('closed',()=>clearInterval(updateTimer));
     const roomTrusted = wc => !!current && wc === roomView?.webContents && policy.isRoomUrl(wc.getURL(), current.room, server);
     const sourceAllowed = url => !!policy.publicHttps(url) || (SMOKE && testSource && typeof url === 'string' && url.startsWith(testSource));
@@ -1006,6 +1012,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
             closeViews(true);
             if (value === 'leave') {await showDiscovery();status({finder:true,message:'已离开房间，选好影片即可再次开始。'});}
             else status({setup:true,message:'粘贴朋友的邀请；自己的影片直接在首页选择。'});
+            notifyUpdate(false);
             return;
         }
         if (value === 'back' || value === 'finder-back') return goBack();
@@ -1067,12 +1074,14 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     powerMonitor.on('suspend', suspend); powerMonitor.on('resume', resume);
     win.on('closed', () => { powerMonitor.removeListener('suspend', suspend); powerMonitor.removeListener('resume', resume); });
     await win.loadURL(policy.APP_ORIGIN + '/index.html');
-    if (!PACKAGE_CHECK) { await showDiscovery(); status({finder:true}); }
-    if(!SMOKE && !PACKAGE_CHECK) {
+    // Do not wait for the remote catalogue before checking at startup.
+    if((!SMOKE || testUpdates) && !PACKAGE_CHECK) {
         checkUpdates(false);
         updateTimer=setInterval(()=>checkUpdates(false),6*60*60*1000);
     }
-    return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, inline:!!inline, mediaSession: playerPartition, roomView, discoveryView, episodeView, browsing, cinema, selected, full, current }), toggleFullscreen };
+    if (!PACKAGE_CHECK) { await showDiscovery(); status({finder:true}); }
+    return { win, start, action, close: () => win.close(), state: () => ({ video, builtin, inline:!!inline, mediaSession: playerPartition, roomView, discoveryView, episodeView, browsing, cinema, selected, full, current }), toggleFullscreen,
+        ...(SMOKE ? {checkUpdates,notifyUpdate} : {}) };
 }
 
 app.whenReady().then(async () => {

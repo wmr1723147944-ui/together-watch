@@ -821,6 +821,7 @@ public final class MainActivity extends ComponentActivity {
         mainContent.setVisibility(View.GONE);
         findViewById(R.id.moreButton).setVisibility(View.GONE);
         configureEntry(false);
+        if(clientUpdates!=null)clientUpdates.check(false);
     }
 
     private void configureEntry(boolean selected) {
