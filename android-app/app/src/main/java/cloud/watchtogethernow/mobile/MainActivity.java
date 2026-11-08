@@ -155,6 +155,7 @@ public final class MainActivity extends ComponentActivity {
     private WebView routingPopup;
     private PermissionRequest pendingAudioPermission;
     private OnBackPressedCallback navigationBack;
+    private FullscreenBackGuard fullscreenBack;
     private View fullscreenView;
     private DanmakuView webFullscreenDanmaku;
     private JSONObject lastDanmakuPacket;
@@ -334,10 +335,11 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void bindActions() {
-        navigationBack = new OnBackPressedCallback(false) {
+        navigationBack = new OnBackPressedCallback(true) {
             @Override public void handleOnBackPressed() { handleBackNavigation(); }
         };
         getOnBackPressedDispatcher().addCallback(this, navigationBack);
+        fullscreenBack=new FullscreenBackGuard(FullscreenBackPlatform.create(this),this::handleFullscreenBack);
         findViewById(R.id.openVideoButton).setOnClickListener(view -> startSession());
         findViewById(R.id.previousButton).setOnClickListener(view -> handleBackNavigation());
         findViewById(R.id.setupBackButton).setOnClickListener(view -> showPreviousFinder());
@@ -1869,6 +1871,7 @@ public final class MainActivity extends ComponentActivity {
             return;
         }
         fullscreenView = view;
+        updateFullscreenBack();
         fullscreenCallback = callback;
         mainContent.setVisibility(View.GONE);
         setupPanel.setVisibility(View.GONE);
@@ -1892,6 +1895,7 @@ public final class MainActivity extends ComponentActivity {
         removeFullscreenControls();
         fullscreenContainer.setVisibility(View.GONE);
         fullscreenView = null;
+        updateFullscreenBack();
         if (fullscreenCallback != null) fullscreenCallback.onCustomViewHidden();
         fullscreenCallback = null;
         leaveImmersive();
@@ -1918,6 +1922,7 @@ public final class MainActivity extends ComponentActivity {
         finishPlayerHold(false);
         hideFullscreenVideo();
         nativeFullscreen = true;
+        updateFullscreenBack();
         ((ViewGroup) nativePlayerView.getParent()).removeView(nativePlayerView);
         fullscreenContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
         mainContent.setVisibility(View.GONE);
@@ -1933,6 +1938,7 @@ public final class MainActivity extends ComponentActivity {
         if (!nativeFullscreen) return;
         finishPlayerHold(false);
         nativeFullscreen = false;
+        updateFullscreenBack();
         fullscreenContainer.removeView(nativePlayerView);
         removeFullscreenControls();
         videoContainer.addView(nativePlayerView, new FrameLayout.LayoutParams(-1, -1));
@@ -2047,14 +2053,22 @@ public final class MainActivity extends ComponentActivity {
         return JSONObject.quote(value == null ? "" : value);
     }
 
+    private void updateFullscreenBack() {
+        if(fullscreenBack!=null)fullscreenBack.update(nativeFullscreen || fullscreenView!=null,foreground);
+    }
+
+    private void handleFullscreenBack() {
+        // One gesture dismisses one layer; never forward a stale callback to the app exit path.
+        if(episodePicker!=null && episodePicker.isOpen()){episodePicker.close();return;}
+        if (nativeFullscreen) { showVideoTab(); return; }
+        if (fullscreenView != null) hideFullscreenVideo();
+    }
+
     private void handleBackNavigation() {
         if(episodePicker!=null && episodePicker.isOpen()){episodePicker.close();return;}
+        // Loading a new episode must not block leaving the fullscreen overlay.
+        if(nativeFullscreen || fullscreenView!=null){handleFullscreenBack();return;}
         if(requestBusy || backPending)return;
-        if (nativeFullscreen) { showVideoTab(); return; }
-        if (fullscreenView != null) {
-            hideFullscreenVideo();
-            return;
-        }
         if(setupPanel.getVisibility()==View.VISIBLE){showPreviousFinder();return;}
         if (videoContainer.getVisibility() != View.VISIBLE) {
             showVideoTab();
@@ -2088,6 +2102,7 @@ public final class MainActivity extends ComponentActivity {
         mainHandler.removeCallbacks(hideFullscreenUi);
         hideFullscreenUi.run();
         foreground = false;
+        updateFullscreenBack();
         if(catalogMetadata!=null)catalogMetadata.flush();
         cancelPendingMicrophone();
         closeRoutingPopup();
@@ -2105,6 +2120,7 @@ public final class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         foreground = true;
+        updateFullscreenBack();
         if(nativePlayer!=null && sessionActive && !finding)nativePlayer.resumeLoading();
         if(clientUpdates!=null)clientUpdates.check(false);
         if (sessionActive) {
@@ -2116,6 +2132,7 @@ public final class MainActivity extends ComponentActivity {
 
     @Override
     protected void onDestroy() {
+        if(fullscreenBack!=null)fullscreenBack.close();
         if(clientUpdates!=null)clientUpdates.close();
         if(episodePicker!=null)episodePicker.close();
         finishPlayerHold(false);

@@ -304,6 +304,25 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("AspectRatioFrameLayout.RESIZE_MODE_FIT", activity)
         self.assertIn("setFullscreenButtonState(false)", activity)
 
+    def test_fullscreen_back_precedes_loading_and_preserves_room(self):
+        activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")
+        platform = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/FullscreenBackPlatform.java").read_text(encoding="utf-8")
+        manifest = ET.parse(ANDROID / "app/src/main/AndroidManifest.xml").getroot()
+        self.assertEqual(manifest.find('./application/activity').get('{http://schemas.android.com/apk/res/android}enableOnBackInvokedCallback'), 'true')
+        self.assertIn('new OnBackPressedCallback(true)', activity)
+        self.assertIn('PRIORITY_OVERLAY', platform)
+        self.assertIn('unregisterOnBackInvokedCallback', platform)
+        route=activity.split('private void handleBackNavigation() {',1)[1].split('@Override',1)[0]
+        self.assertLess(route.index('handleFullscreenBack()'), route.index('if(requestBusy || backPending)'))
+        back=activity.split('private void handleFullscreenBack() {',1)[1].split('private void handleBackNavigation()',1)[0]
+        for forbidden in ('finish()', 'showPreviousFinder()', 'startSession(', '.release()', 'loadUrl('):
+            self.assertNotIn(forbidden,back)
+        for signature in ('private void enterNativeFullscreen()', 'private void exitNativeFullscreen()',
+                          'private void showFullscreenVideo(', 'private void hideFullscreenVideo()',
+                          'protected void onResume()', 'protected void onStop()'):
+            method=activity.split(signature,1)[1].split('\n    private ',1)[0].split('\n    @Override',1)[0]
+            self.assertIn('updateFullscreenBack()',method,signature)
+
 
 if __name__ == "__main__":
     unittest.main()
