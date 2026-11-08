@@ -17,8 +17,14 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertNotIn('exitNativeFullscreen()',entry)
         picker = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/EpisodePickerController.java').read_text(encoding='utf-8')
         self.assertIn('attempt>=60',picker)
-        self.assertIn('TogetherWatchCatalogNavigation.episodes(',picker)
-        self.assertIn('window.__twMetadataQueue',picker)
+        probe = (ANDROID / 'app/src/main/assets/episode-picker-probe.js').read_text(encoding='utf-8')
+        self.assertIn('nav.episodes(program)',probe)
+        self.assertIn('window.__twMetadataQueue',probe)
+        for marker in ('watchLoad(epoch)', 'loadState.request', 'loadState.reply', 'toolbarButton("关闭")',
+                       'toolbarButton("重试")', 'onReceivedHttpError', 'onReceivedError', 'onRenderProcessGone'):
+            self.assertIn(marker,picker)
+        self.assertIn('getBoundingClientRect()',probe)
+        self.assertIn('handler.removeCallbacksAndMessages(null)',picker)
         self.assertIn('ProgramPolicy.pickerSelection(request.getUrl().toString(),origin,program)',picker)
         self.assertIn('request.hasGesture()',picker)
         self.assertNotIn('addJavascriptInterface',picker)
