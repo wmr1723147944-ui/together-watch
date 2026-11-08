@@ -63,5 +63,20 @@ exports.run=async({server,output,until})=>{
         }
         console.log('SOURCE SWITCH UI PASS: Android packaged bridge, automatic alternatives without clicking Search, one provider yields for detail, correct episode suggestion, no season mixing, close rejects late results, 320/390/480px layout.');
         console.log('PICKER VISIBILITY PASS: five provider entry points, visible DOM handshake, hidden-panel detection, close detection. Fixture data only; no live provider playback.');
+        const backScript=fs.readFileSync(path.resolve(__dirname,'../../android-app/app/src/main/assets/catalog-back.js'),'utf8');
+        const back=()=>js(`(${backScript})(${JSON.stringify(server)})`);
+        await win.loadURL(server+'/discover');
+        await js(`TogetherWatchCatalogNavigation.home(false);`);
+        assert.equal(await back(),'home');
+        for(const id of ['accountDialog','watchHistoryDialog']) {
+            await js(`document.getElementById(${JSON.stringify(id)}).showModal();`);
+            assert.equal(await back(),'handled');assert.equal(await back(),'home');
+        }
+        await js(fs.readFileSync(path.resolve(__dirname,'../../android-app/app/src/main/assets/catalog-metadata-bridge.js'),'utf8'));
+        await js(`for(const c of document.querySelectorAll('[data-live-source]'))c.checked=c.dataset.liveSource==='kanju';
+            document.getElementById('discoveryQuery').value='返回测试';
+            document.getElementById('discoveryForm').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));`);
+        assert.equal(await back(),'handled');assert.equal(await back(),'home');
+        console.log('ANDROID HOME BACK PASS: real catalogue home requests exit, account/history/search dismiss one layer, no playback bounce.');
     } finally {win.destroy();}
 };

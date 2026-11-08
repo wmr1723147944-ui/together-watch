@@ -108,6 +108,7 @@ public final class MainActivity extends ComponentActivity {
     private int readyWebSamples;
     private final LinkedHashMap<String, JSONObject> mediaCandidates = new LinkedHashMap<>();
     private String discoveryScript = "";
+    private String catalogueBackScript = "";
     private String sourcePageUrl = "";
     private boolean preferWebThisPage;
     private boolean sessionActive;
@@ -285,6 +286,7 @@ public final class MainActivity extends ComponentActivity {
         playerAgent = readAsset("danmaku-overlay.js") + "\n" + readAsset("player-agent.js");
         webSyncScript = readAsset("android-web-sync.js");
         catalogScript = readAsset("catalog-adapters.js");
+        catalogueBackScript = readAsset("catalog-back.js");
         pageLayoutScript = readAsset("android-page-layout.js");
         catalogMetadata = new CatalogMetadataController(this,catalogWebView,videoContainer,catalogScript,
             readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
@@ -2079,15 +2081,15 @@ public final class MainActivity extends ComponentActivity {
             return;
         }
         if(finding) {
+            if(catalogueBackScript.isEmpty()){reportError("返回组件暂不可用，请重新打开软件。");return;}
             backPending=true;
             final int epoch=flowGeneration;
-            catalogWebView.evaluateJavascript("window.TogetherWatchCatalogNavigation?.back() === true", handled->{
+            catalogWebView.evaluateJavascript(catalogueBackScript.trim()+"("+js(SERVER_ORIGIN)+")", handled->{
                 backPending=false;
-                if(destroyed || epoch!=flowGeneration || !finding || originalFinderActive || "true".equals(handled))return;
-                if(sessionActive)resumePlayback();
-                else new AlertDialog.Builder(this).setTitle("退出一起看？")
-                    .setMessage("已经在推荐首页。退出后，本次搜索位置不会保留。")
-                    .setNegativeButton("继续找片",null).setPositiveButton("退出",(dialog,which)->finish()).show();
+                if(destroyed || epoch!=flowGeneration || !finding || originalFinderActive || "\"handled\"".equals(handled))return;
+                // The recommendation home is the end of navigation, even if a room was retained.
+                if("\"home\"".equals(handled))finish();
+                else reportError("页面还未准备好，请稍后再按返回。");
             });
             return;
         }

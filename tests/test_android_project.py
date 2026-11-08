@@ -148,7 +148,10 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertNotIn('.loadUrl(', resume)
         self.assertNotIn('startResolved', resume)
         back = activity.split('private void handleBackNavigation()', 1)[1].split('protected void onStop', 1)[0]
-        self.assertIn('TogetherWatchCatalogNavigation?.back()', back)
+        self.assertIn('catalogueBackScript.trim()', back)
+        self.assertIn('if("\\"home\\"".equals(handled))finish()', back)
+        self.assertNotIn('resumePlayback()', back)
+        self.assertNotIn('退出一起看？', back)
         self.assertIn('originalFinderWebView.goBack()', back)
         self.assertIn('showPreviousFinder()', back)
         self.assertNotIn('showSetup()', back)
