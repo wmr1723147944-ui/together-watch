@@ -1,12 +1,83 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>一起看 · 客户端更新</title><link rel="stylesheet" href="{{ url_for('static',filename='css/client-downloads.css') }}"></head>
-<body><main><a class="back" href="/">← 一起看</a><p class="eyebrow">TOGETHER WATCH</p><h1>新的体验，慢慢更新。</h1>
-<p class="intro">更新可以等到这集看完。先保留旧版和本机历史，不要卸载或清除应用数据。</p>
-<div class="releases">{% for release in releases %}<article>
-<small>{{ 'Windows · 64 位' if release.platform == 'windows' else '安卓 · Android 8 及以上' }}</small>
-<h2>一起看 {{ release.version }}</h2><ul>{% for note in release.notes %}<li>{{ note }}</li>{% endfor %}</ul>
-<a class="download" href="{{ release.download_path }}">下载 {{ 'ZIP' if release.platform == 'windows' else 'APK' }} · {{ '%.1f'|format(release.size / 1048576) }} MB</a>
-<p>{% if release.platform == 'windows' %}下载后退出旧版，将压缩包完整解压到新文件夹，运行 TogetherWatch.exe。不要只复制 exe。{% else %}下载后按系统提示覆盖安装。若签名不一致，请保留原应用，不要卸载后强行安装。{% endif %}</p>
-<details><summary>文件校验 · SHA-256</summary><code>{{ release.sha256 }}</code></details></article>{% else %}
-<article><h2>安装包尚未发布</h2><p>服务器还没有准备好经过校验的安装包。你可以继续使用当前版本，稍后再来。</p></article>{% endfor %}</div>
-<p class="footnote">软件内的普通更新不会自动退出房间。首次启用更新提醒仍需手动安装新版；之后可在软件内检查。</p></main></body></html>
+{% set android = releases|selectattr('platform', 'equalto', 'android')|first|default(none) %}
+{% set windows = releases|selectattr('platform', 'equalto', 'windows')|first|default(none) %}
+{% macro icon(name) -%}
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{% if name == 'download' %}<path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/>
+{% elif name == 'arrow' %}<path d="m9 5 7 7-7 7"/>
+{% elif name == 'windows' %}<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>
+{% else %}<path d="m5 12 4 4L19 6"/>{% endif %}</svg>
+{%- endmacro %}
+{% macro release_details(release) -%}
+<details class="release-details">
+  <summary><span>这次更新了什么</span><small>{{ release.notes|length }} 项更新</small>{{ icon('arrow') }}</summary>
+  {% if release.notes %}<ul>{% for note in release.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+  {% else %}<p>此版本暂无更新说明。</p>{% endif %}
+</details>
+<details class="checksum">
+  <summary><span>文件校验</span><small>SHA-256</small>{{ icon('arrow') }}</summary>
+  <code>{{ release.sha256 }}</code>
+</details>
+{%- endmacro %}
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#faf8f5">
+  <meta name="color-scheme" content="light">
+  <title>下载一起看 · 安卓与 Windows 客户端</title>
+  <link rel="icon" href="{{ url_for('static',filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="stylesheet" href="{{ url_for('static',filename='css/client-downloads.css',v='20261108-mobile') }}">
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="/" aria-label="一起看首页"><img src="{{ url_for('static',filename='favicon.svg') }}" width="34" height="34" alt=""><span>一起看</span></a>
+  <a class="back" href="/">返回首页 {{ icon('arrow') }}</a>
+</header>
+<main>
+  <section class="hero" aria-labelledby="page-title">
+    <p class="eyebrow"><span></span> TOGETHER WATCH · 客户端</p>
+    <h1 id="page-title">下一集，<br><em>我们一起看。</em></h1>
+    <p class="intro">把陪伴装进口袋。<br>同步播放，边看边聊，让相隔的屏幕播放同一刻。</p>
+    <ul class="features"><li>{{ icon('check') }}同步观影</li><li>{{ icon('check') }}语音陪伴</li><li>{{ icon('check') }}记住进度</li></ul>
+  </section>
+  <section class="releases" aria-label="客户端安装包">
+    <article class="android-card" data-platform="android" aria-labelledby="android-title">
+      <div class="app-heading">
+        <img class="app-icon" src="{{ url_for('static',filename='favicon.svg') }}" width="68" height="68" alt="">
+        <div><p class="platform-label">ANDROID</p><h2 id="android-title">一起看 · 安卓版</h2><p class="compatibility">Android 8.0 及以上</p></div>
+      </div>
+      {% if android %}
+      <div class="version-row"><span class="version">v{{ android.version }}</span><span>APK 安装包 · {{ '%.1f'|format(android.size / 1048576) }} MB</span></div>
+      <a class="download" href="{{ android.download_path }}" download>{{ icon('download') }}<span>下载安卓版</span>{{ icon('arrow') }}</a>
+      <p class="install-hint">已有旧版？直接覆盖安装，<strong>不要先卸载。</strong></p>
+      {{ release_details(android) }}
+      {% else %}
+      <div class="unpublished" role="status"><strong>安卓安装包尚未发布</strong><p>你可以继续使用当前版本，稍后再来。</p></div>
+      {% endif %}
+    </article>
+    <details class="other-platform" data-platform="windows">
+      <summary><span class="platform-icon">{{ icon('windows') }}</span><span class="platform-copy">在电脑上一起看<small>Windows 64 位{% if windows %} · v{{ windows.version }}{% endif %}</small></span>{{ icon('arrow') }}</summary>
+      <div class="windows-content">
+        {% if windows %}
+        <p>大屏小屏，都能在同一个房间同步观看。</p>
+        <a class="download secondary" href="{{ windows.download_path }}" download>{{ icon('download') }}<span>下载 Windows 版</span><small>{{ '%.1f'|format(windows.size / 1048576) }} MB</small></a>
+        <p class="windows-install">退出旧版后，完整解压到新文件夹，运行 TogetherWatch.exe。不要只复制 exe。</p>
+        {{ release_details(windows) }}
+        {% else %}<p>Windows 安装包尚未发布，你可以继续使用当前版本。</p>{% endif %}
+      </div>
+    </details>
+  </section>
+  <section class="installation" aria-labelledby="install-title">
+    <div class="section-heading"><h2 id="install-title">安装，只需三步</h2><span>保留旧版与本机记录</span></div>
+    <ol class="install-steps">
+      <li><span class="step-number">01</span><div><h3>下载安装包</h3><p>点击「下载安卓版」，等待下载完成。</p></div></li>
+      <li><span class="step-number">02</span><div><h3>打开下载文件</h3><p>在浏览器下载记录中，打开 TogetherWatch 的 APK 文件。</p></div></li>
+      <li><span class="step-number">03</span><div><h3>按提示覆盖安装</h3><p>无需先卸载，安装完成后打开一起看。</p></div></li>
+    </ol>
+    <details class="help"><summary><span>下载或安装遇到问题？</span>{{ icon('arrow') }}</summary><p>点击下载没有反应？试试在手机浏览器中打开本页，并检查浏览器的下载记录。</p><p>若提示签名不一致，请保留原应用，先核对安装包来源和版本；不要卸载后强行安装，也不要关闭安全检测。</p></details>
+  </section>
+</main>
+<footer><p>一起看 · 让陪伴发生</p><p>更新由你决定，不会自动安装或退出房间。</p><nav aria-label="法律信息"><a href="/terms">用户协议</a><span>·</span><a href="/privacy">隐私政策</a></nav></footer>
+</body>
+</html>

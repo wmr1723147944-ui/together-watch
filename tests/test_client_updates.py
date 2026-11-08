@@ -1,4 +1,5 @@
 import hashlib
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import tempfile
@@ -7,6 +8,16 @@ from unittest.mock import patch
 import app as application
 import client_updates
 from scripts.prepare_client_release import prepare
+
+
+class PageElements(HTMLParser):
+    def __init__(self, html):
+        super().__init__()
+        self.elements = []
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        self.elements.append((tag, dict(attrs)))
 
 
 class ClientUpdateTests(unittest.TestCase):
@@ -67,6 +78,47 @@ class ClientUpdateTests(unittest.TestCase):
         page = self.client.get('/downloads').text
         self.assertIn('安装包尚未发布', page)
         self.assertNotIn('class="download"', page)
+        self.assertNotIn('/downloads/files/', page)
+
+    def test_download_page_android_first_collapsed_windows_and_live_metadata(self):
+        android = {**self.item, 'version': '1.2.3', 'version_code': 77,
+                   'filename': 'TogetherWatch-Android-1.2.3.apk', 'notes': []}
+        (self.root / android['filename']).write_bytes(b'fixture-only')
+        (self.root / 'manifest.json').write_text(json.dumps(dict(schema=1,
+            releases={'windows': self.item, 'android': android})), encoding='utf-8')
+        response = self.client.get('/downloads')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers['Cache-Control'], 'no-store')
+        page = response.text
+        elements = PageElements(page).elements
+        platforms = [(tag, attrs) for tag, attrs in elements if 'data-platform' in attrs]
+        self.assertEqual([attrs['data-platform'] for _, attrs in platforms], ['android', 'windows'])
+        self.assertEqual(platforms[1][0], 'details')
+        self.assertNotIn('open', platforms[1][1])
+        links = [attrs for tag, attrs in elements if tag == 'a' and 'download' in attrs]
+        self.assertEqual([a['href'] for a in links], [
+            '/downloads/files/' + android['filename'], '/downloads/files/' + self.item['filename']])
+        self.assertIn('v1.2.3', page)
+        self.assertIn('此版本暂无更新说明', page)
+        self.assertIn('viewport-fit=cover', page)
+        self.assertIn('不要先卸载', page)
+        self.assertFalse(any(tag == 'script' for tag, _ in elements), 'download works without JavaScript')
+
+    def test_download_page_only_offers_each_available_platform(self):
+        # Windows-only servers still offer their actual release, never a fake APK.
+        page = self.client.get('/downloads').text
+        self.assertIn('安卓安装包尚未发布', page)
+        self.assertIn('/downloads/files/' + self.item['filename'], page)
+        self.assertNotIn('>下载安卓版<', page)
+        android = {**self.item, 'version': '1.2.3', 'version_code': 77,
+                   'filename': 'TogetherWatch-Android-1.2.3.apk'}
+        (self.root / android['filename']).write_bytes(b'fixture-only')
+        (self.root / 'manifest.json').write_text(json.dumps(dict(schema=1,
+            releases={'android': android})), encoding='utf-8')
+        page = self.client.get('/downloads').text
+        self.assertIn('/downloads/files/' + android['filename'], page)
+        self.assertNotIn('/downloads/files/' + self.item['filename'], page)
+        self.assertIn('Windows 安装包尚未发布', page)
 
     def test_android_requires_integer_build_number(self):
         item = {**self.item, 'version': '0.3.28', 'filename': 'TogetherWatch-Android-0.3.28.apk'}
