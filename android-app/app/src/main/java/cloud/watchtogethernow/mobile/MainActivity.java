@@ -270,7 +270,7 @@ public final class MainActivity extends ComponentActivity {
             nativePlayerView.setVisibility(View.GONE);updatePlaybackGate();setStatus(message);
         });
         nativePlayerView.setFullscreenButtonClickListener(fullscreen -> {
-            if (nativeFullscreen) exitNativeFullscreen(); else enterNativeFullscreen();
+            FullscreenRequest.apply(fullscreen,nativeFullscreen,this::enterNativeFullscreen,this::exitNativeFullscreen);
         });
         nativePlayerView.setControllerVisibilityListener((PlayerView.ControllerVisibilityListener) visibility -> {
             if (nativeFullscreen && fullscreenControls != null) {
@@ -296,7 +296,7 @@ public final class MainActivity extends ComponentActivity {
             view -> configureWebView(view,false),networkExecutor);
         episodeMediaGuardScript=readAsset("episode-media-guard.js");
         episodePicker=new EpisodePickerController(this,SERVER_ORIGIN,catalogScript,readAsset("catalog-metadata-bridge.js"),readAsset("next-episode.js"),
-            ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor);
+            ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor,()->videoWebView);
         arrangePanels();
     }
 
@@ -2145,7 +2145,8 @@ public final class MainActivity extends ComponentActivity {
             final int epoch=flowGeneration;
             catalogWebView.evaluateJavascript(catalogueBackScript.trim()+"("+js(SERVER_ORIGIN)+")", handled->{
                 backPending=false;
-                if(destroyed || epoch!=flowGeneration || !finding || originalFinderActive || "\"handled\"".equals(handled))return;
+                if(destroyed || epoch!=flowGeneration || !foreground || nativeFullscreen || fullscreenView!=null
+                    || !finding || originalFinderActive || "\"handled\"".equals(handled))return;
                 // The recommendation home is the end of navigation, even if a room was retained.
                 if("\"home\"".equals(handled))finish();
                 else reportError("页面还未准备好，请稍后再按返回。");

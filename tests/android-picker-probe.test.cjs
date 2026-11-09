@@ -3,17 +3,28 @@ const fs=require('node:fs'),vm=require('node:vm'),path=require('node:path');
 const script=fs.readFileSync(path.join(__dirname,'../android-app/app/src/main/assets/episode-picker-probe.js'),'utf8');
 function fixture(){
     const calls=[],style={visibility:'visible',display:'block',opacity:'1'};
-    const panel={open:false,getBoundingClientRect:()=>({width:390,height:600})};
+    const panel={open:false,getBoundingClientRect:()=>({width:390,height:600,left:0,top:0,right:390,bottom:600})};
+    const list={querySelector:()=>({})},status={textContent:'选择集数'};
     const window={__twMetadataQueue:{},TogetherWatchCatalogNavigation:{pickerClosed:()=>false,episodes:p=>{calls.push(p);panel.open=true;return true;}}};
     const context=vm.createContext({window,location:{origin:'https://watchtogethernow.cloud',pathname:'/discover'},
-        document:{getElementById:()=>panel},getComputedStyle:()=>style});
-    return {calls,style,panel,window,context,probe:source=>vm.runInContext(script,context)({source,item:'123',episode:'ep1'},'https://watchtogethernow.cloud')};
+        innerWidth:390,innerHeight:800,document:{getElementById:id=>({discoveryDetail:panel,discoveryEpisodes:list,discoveryDetailStatus:status})[id]},getComputedStyle:()=>style});
+    return {calls,style,panel,list,status,window,context,probe:source=>vm.runInContext(script,context)({source,item:'123',episode:'ep1'},'https://watchtogethernow.cloud')};
 }
 test('all supported providers share the same visible-panel handshake and open once',()=>{
     for(const source of ['kanju','pkavi','233dm','cupfox','yhdmoe']){
         const f=fixture();assert.equal(f.probe(source),'ready');assert.equal(f.probe(source),'ready');
         assert.equal(f.calls.length,1);assert.equal(f.calls[0].source,source);
     }
+});
+test('visible but empty content is loading, not success; failed reads and verification are distinct',()=>{
+    const f=fixture();f.list.querySelector=()=>null;f.status.textContent='正在读取集数…';
+    assert.equal(f.probe('kanju'),'loading');f.status.textContent='';assert.equal(f.probe('kanju'),'loading');
+    f.status.textContent='集数读取失败，可重试';assert.equal(f.probe('kanju'),'notice');
+    f.window.__twMetadataQueue.interactivePending=()=>true;assert.equal(f.probe('kanju'),'verifying');
+});
+test('off-screen panel after a rotation is not ready',()=>{
+    const f=fixture();f.panel.getBoundingClientRect=()=>({width:390,height:600,left:500,top:0,right:890,bottom:600});
+    assert.equal(f.probe('kanju'),'waiting');
 });
 test('API success with hidden, missing or zero-size drawer is not ready',()=>{
     const f=fixture();f.style.visibility='hidden';assert.equal(f.probe('kanju'),'waiting');

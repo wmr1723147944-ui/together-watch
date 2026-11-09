@@ -29,6 +29,7 @@ import org.json.JSONObject;
 import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** A first-party episode drawer above the existing player, not a finder tab.
  * Opening/closing does not pause, release, reparent or navigate the player. */
@@ -52,16 +53,25 @@ final class EpisodePickerController {
     private TextView loading;
     private final PickerLoadState loadState=new PickerLoadState();
     private String probe="";
+    private String playingDirectory="";
+    private final Supplier<WebView> playingPage;
 
     EpisodePickerController(Activity activity,String origin,String adapters,String bridge,String nextScript,BooleanSupplier foreground,
-                            Consumer<WebView> configure,Consumer<ProgramPolicy.Selection> choose,Consumer<String> error,Executor disk) {
+                            Consumer<WebView> configure,Consumer<ProgramPolicy.Selection> choose,Consumer<String> error,Executor disk,Supplier<WebView> playingPage) {
         this.activity=activity;this.origin=origin;this.adapters=adapters;this.bridge=bridge;this.foreground=foreground;
         this.configure=configure;this.choose=choose;this.error=error;this.disk=disk;this.nextScript=nextScript;
+        this.playingPage=playingPage;
         try(java.io.InputStream input=activity.getAssets().open("episode-picker-probe.js")) {
             java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
             byte[] buffer=new byte[4096];int count;
             while((count=input.read(buffer))!=-1)bytes.write(buffer,0,count);
             probe=bytes.toString("UTF-8");
+        }catch(java.io.IOException ignored){}
+        try(java.io.InputStream input=activity.getAssets().open("playing-directory.js")) {
+            java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
+            byte[] buffer=new byte[4096];int count;
+            while((count=input.read(buffer))!=-1)bytes.write(buffer,0,count);
+            playingDirectory=bytes.toString("UTF-8");
         }catch(java.io.IOException ignored){}
     }
     boolean isOpen(){return dialog!=null;}
@@ -95,6 +105,7 @@ final class EpisodePickerController {
         loading.setClickable(true);loading.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         host.addView(loading,new FrameLayout.LayoutParams(-1,-1));
         metadata=new CatalogMetadataController(activity,page,host,adapters,bridge,origin,()->live(epoch) && foreground.getAsBoolean(),configure,disk);
+        metadata.preferPlayingPage(playingPage,playingDirectory);
         page.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
                 if(!request.isForMainFrame())return !"https".equals(request.getUrl().getScheme());
@@ -168,12 +179,24 @@ final class EpisodePickerController {
         loadState.request(SystemClock.elapsedRealtime());
         page.evaluateJavascript(probe.trim()+"("+program+","+JSONObject.quote(origin)+")",raw->{
             if(!live(epoch))return;
-            boolean ready="\"ready\"".equals(raw);loadState.reply(ready);
+            String state=probeState(raw);loadState.reply(state,SystemClock.elapsedRealtime());
             if("\"closed\"".equals(raw))close();
             else if("\"waiting\"".equals(raw) || "null".equals(raw))handler.postDelayed(()->open(epoch,attempt+1),250);
-            else if(ready){loading.setVisibility(View.GONE);watchClose(epoch);if(quick)advanceDrawer(epoch,0);}
+            else if(showProbe(state)){watchClose(epoch);}
             else fail("选集界面未能打开。可点「重试」重新读取，或关闭面板继续观看。");
         });
+    }
+    private static String probeState(String raw) {
+        try {Object value=new org.json.JSONTokener(raw).nextValue();return value instanceof String?(String)value:"waiting";}
+        catch(Exception ignored){return "waiting";}
+    }
+    private boolean showProbe(String state) {
+        if(!state.matches("ready|notice|loading|verifying"))return false;
+        boolean waiting=state.equals("loading");
+        loading.setText("正在读取集数…\n当前影片不会切换；上方可重试或关闭");
+        loading.setVisibility(waiting?View.VISIBLE:View.GONE);
+        if(state.equals("ready") && quick && !checking){checking=true;advanceDrawer(generation,0);}
+        return true;
     }
     private void readNext(WebView web,ProgramPolicy.Selection p,boolean expand,Consumer<String> result) {
         if(!CatalogMetadataPolicy.catalogue(web.getUrl(),origin) || nextScript.isEmpty()){result.accept("missing");return;}
@@ -219,9 +242,9 @@ final class EpisodePickerController {
         String program="{source:"+JSONObject.quote(selection.source)+",item:"+JSONObject.quote(selection.item)+",episode:"+JSONObject.quote(selection.episode)+"}";
         page.evaluateJavascript(probe.trim()+"("+program+","+JSONObject.quote(origin)+")",raw->{
             if(!live(epoch))return;
-            boolean ready="\"ready\"".equals(raw);loadState.reply(ready);
+            String state=probeState(raw);loadState.reply(state,SystemClock.elapsedRealtime());
             if("\"closed\"".equals(raw))close();
-            else if(ready)handler.postDelayed(()->watchClose(epoch),300);
+            else if(showProbe(state))handler.postDelayed(()->watchClose(epoch),300);
             else fail("选集页面显示异常。可重试重新打开；当前影片不会切换。");
         });
     }

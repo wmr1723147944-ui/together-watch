@@ -320,6 +320,8 @@ class AndroidProjectTests(unittest.TestCase):
         self.assertIn("AspectRatioFrameLayout.RESIZE_MODE_ZOOM", activity)
         self.assertIn("AspectRatioFrameLayout.RESIZE_MODE_FIT", activity)
         self.assertIn("setFullscreenButtonState(false)", activity)
+        self.assertIn("FullscreenRequest.apply(fullscreen,nativeFullscreen", activity)
+        self.assertNotIn("if (nativeFullscreen) exitNativeFullscreen(); else enterNativeFullscreen();", activity)
 
     def test_fullscreen_back_precedes_loading_and_preserves_room(self):
         activity = (ANDROID / "app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java").read_text(encoding="utf-8")

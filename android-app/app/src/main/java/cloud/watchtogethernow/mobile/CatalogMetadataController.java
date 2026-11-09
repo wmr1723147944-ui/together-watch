@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.concurrent.Executor;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Polls only our catalogue main frame; original sites receive no native bridge. */
 final class CatalogMetadataController {
@@ -44,6 +45,8 @@ final class CatalogMetadataController {
     private String documentToken="";
     private int generation;
     private boolean closed;
+    private Supplier<WebView> playingPage=()->null;
+    private String playingDirectory="";
     private final Runnable ticker=this::tick;
 
     CatalogMetadataController(Activity activity,WebView catalogue,ViewGroup queryHost,String adapters,String bridge,String origin,
@@ -53,6 +56,7 @@ final class CatalogMetadataController {
         handler.post(ticker);
     }
     private boolean trusted() {return !closed && CatalogMetadataPolicy.catalogue(catalogue.getUrl(),origin);}
+    void preferPlayingPage(Supplier<WebView> supplier,String reader) {playingPage=supplier;playingDirectory=reader;}
     private String guard() {return "location.origin==="+JSONObject.quote(origin)+" && ['/', '/discover'].includes(location.pathname)";}
     void navigation() {generation++;documentToken="";cancelAll(false);}
     void flush() {try{disk.execute(()->CookieManager.getInstance().flush());}catch(java.util.concurrent.RejectedExecutionException ignored){}}
@@ -186,6 +190,8 @@ final class CatalogMetadataController {
         Runnable watchdog;
         boolean done,resumed,retried,readFailureLogged;
         Runnable reload;
+        Runnable playingFallback;
+        boolean pageStarted;
         long emptySince;
         long posterSince;
         JSONObject partial;
@@ -209,6 +215,34 @@ final class CatalogMetadataController {
         if(page==null){page=new Page(source);pages.put(source,page);}
         Job job=new Job(id,token,epoch,req,page,data.optBoolean("interactive"));
         jobs.put(id,job);page.job=job;
+        WebView playing=playingPage.get();
+        String at=playing==null?null:playing.getUrl();
+        if(!job.interactive && "detail".equals(req.optString("kind")) && !playingDirectory.isEmpty()
+            && CatalogMetadataPolicy.allowed(source,at)) {
+            // A lost callback must not block the ordinary metadata reader.
+            job.playingFallback=()->startPage(job);
+            handler.postDelayed(job.playingFallback,900);
+            playing.evaluateJavascript("(()=>{"+adapters+";return ("+playingDirectory.trim()+")("+req+","+JSONObject.quote(at)+");})()",raw->{
+                if(!current(job) || job.pageStarted)return;
+                handler.removeCallbacks(job.playingFallback);
+                if(at.equals(playing.getUrl()))try {
+                    if(raw!=null && raw.length()<=1024*1024) {
+                        JSONObject result=new JSONObject(raw);
+                        if(result.optString("status").equals("ok") && result.optString("source_id").equals(source)
+                            && result.optString("item_id").equals(req.optString("item")) && result.optString("page_url").equals(req.optString("url"))
+                            && result.optJSONArray("episodes")!=null && result.optJSONArray("episodes").length()>0) {
+                            finish(job,result,true);return;
+                        }
+                    }
+                }catch(Exception ignored){}
+                startPage(job);
+            });
+        } else startPage(job);
+    }
+    private void startPage(Job job) {
+        if(!current(job) || job.pageStarted)return;
+        job.pageStarted=true;
+        Page page=job.page;String source=page.source;
         mount(page,job.interactive);
         if(job.interactive) {
             // Only an explicit catalogue button can open this dialog. Search
@@ -223,7 +257,7 @@ final class CatalogMetadataController {
                 if(!job.done)job.page.view.loadUrl(job.req.optString("url"));
             });
         }
-        String url=req.optString("url");
+        String url=job.req.optString("url");
         if(!url.equals(page.requested) || !CatalogMetadataPolicy.allowed(source,page.view.getUrl())
             || (page.resultStatus.equals("ok") || page.resultStatus.equals("no_episodes")) && SystemClock.elapsedRealtime()-page.completedAt>60000) {
             page.requested=url;page.view.loadUrl(url);
@@ -304,6 +338,7 @@ final class CatalogMetadataController {
         job.page.completedAt=SystemClock.elapsedRealtime();job.page.resultStatus=result.optString("status");
         if(job.watchdog!=null)handler.removeCallbacks(job.watchdog);
         if(job.reload!=null)handler.removeCallbacks(job.reload);
+        if(job.playingFallback!=null)handler.removeCallbacks(job.playingFallback);
         if(job.dialog!=null) {
             job.dialog.setOnCancelListener(null);job.dialog.dismiss();
         }

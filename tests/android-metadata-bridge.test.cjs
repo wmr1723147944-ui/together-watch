@@ -49,11 +49,13 @@ test('Android Huarw uses local bounded metadata and expiry is not reported as us
 test('Android cancellation, busy limit and document tokens do not mix results',async()=>{
     const c=setup(),api=c.twSourceMetadata,q=c.__twMetadataQueue;
     const one=api.request('one','search',{source:'pkavi',q:'测试'}),two=api.request('two','search',{source:'kanju',q:'测试'},true);
+    assert.equal(q.interactivePending(),true);
     assert.equal((await api.request('three','search',{source:'233dm',q:'测试'})).status,'busy');
     q.drain();api.cancel('one');assert.equal((await one).status,'cancelled');assert.deepEqual(Array.from(q.drain().cancelled),['one']);
     const other=setup();assert.notEqual(q.token,other.__twMetadataQueue.token);
     q.complete(other.__twMetadataQueue.token,'two',{status:'ok',results:[]});
     api.cancel('two');assert.equal((await two).status,'cancelled');
+    assert.equal(q.interactivePending(),false);
     assert.equal(Object.isFrozen(api),true);assert.equal(Object.isFrozen(q),true);
 });
 

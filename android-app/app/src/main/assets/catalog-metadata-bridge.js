@@ -25,6 +25,7 @@
     }
     const queue=Object.freeze({
         token,
+        interactivePending() {return Array.from(pending.values()).some(job=>job.interactive);},
         drain() {
             const requests=[];
             for(const [id,job] of pending)if(!job.sent) {
