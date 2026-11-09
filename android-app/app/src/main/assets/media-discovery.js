@@ -4,6 +4,7 @@
     const visited = new Set();
     let protectedVideo = false;
     let longFormPlayers = 0;
+    const playerSources=[];
     let visiblePlayers=0, opaquePlayers=0, readyBlobPlayers=0, inaccessibleFrames=0;
     function add(raw, active = false, position = 0, duration = 0, visible = false, base = location.href, attached=false, mime='') {
         try {
@@ -18,7 +19,7 @@
             const confirmed=!!(attached && visible && duration>0 && leaf && (!leaf.includes('.') || /\.image$/i.test(leaf)));
             if (!confirmed && !/\.(mp4|m4v|webm|m3u8|mpd)$/i.test(url.pathname)) return;
             const prior = candidates.get(url.href);
-            if (!prior || active || visible) candidates.set(url.href, { url: url.href, active, position, duration, visible, confirmed, mime });
+            if (!prior || active || visible) candidates.set(url.href, { url: url.href, active, position, duration, visible, confirmed, mime, attached });
         } catch (_) { }
     }
     function scan(root, depth = 0) {
@@ -38,6 +39,7 @@
             const base=video.ownerDocument?.baseURI || location.href;
             const sources=Array.from(video.querySelectorAll('source[src]'));
             const attached=video.currentSrc || video.src || (sources.length===1 ? sources[0].src : '');
+            if(visible && video.readyState>=1 && Number.isFinite(video.duration) && video.duration>=120 && attached)playerSources.push(attached);
             const record=(raw,bound,mime='')=>add(raw,active,video.currentTime || 0,Number.isFinite(video.duration)?video.duration:0,visible && video.readyState>=1,base,bound,mime);
             record(attached,!!video.currentSrc && !video.srcObject);
             if (String(attached).startsWith('blob:')) {
@@ -71,5 +73,5 @@
     // Never mix recognized protected playback with a captured network URL.
     const all=Array.from(candidates.values());
     const playerUrls=all.filter(c=>c.visible);
-    return { protectedVideo, longFormPlayers, visiblePlayers, opaquePlayers, readyBlobPlayers, inaccessibleFrames, candidates: protectedVideo ? [] : playerUrls.concat(all.filter(c=>!c.visible).reverse()).slice(0,24) };
+    return { protectedVideo, longFormPlayers, visiblePlayers, opaquePlayers, readyBlobPlayers, inaccessibleFrames, playerSources:protectedVideo?[]:playerSources, candidates: protectedVideo ? [] : playerUrls.concat(all.filter(c=>!c.visible).reverse()).slice(0,24) };
 })()

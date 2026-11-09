@@ -22,6 +22,12 @@ test('看剧 AI：按集数而非倒序列表位置或不透明 ID 选择',()=>{
     const doc=catalogue([correct,link('ep-xyz','原站选集 · 第12集 · 正在看'),link('ep-zzz','原站选集 · 第11集')]);
     assert.equal(next(doc,origin,program,false),correct.href);
 });
+
+test('第四集下一集是第五集，即使目录第一项为最后一集',()=>{
+    const p={...program,episode:'ep-id4'};
+    const rows=Array.from({length:30},(_,n)=>link('ep-id'+(30-n),'原站选集 · 第'+(30-n)+'集',p));
+    assert.equal(next(catalogue(rows),origin,p,false),link('ep-id5','',p).href);
+});
 test('相同片名不同条目、外部地址或损坏的链接均不能冒充下一集',()=>{
     const current=link('ep-xyz','12'), good=link('ep-abc','13');
     const doc=catalogue([current,link('ep-wrong','13',{...program,item:'other'}),

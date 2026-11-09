@@ -8,6 +8,20 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_native_handoff_revalidates_live_episode_and_room_revision(self):
+        activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
+        confirm = activity.split('private String confirmEpisodeScript()', 1)[1].split('private void invalidateEpisodeMedia', 1)[0]
+        self.assertLess(confirm.index('mediaScanScript()'), confirm.index('__twAndroidPage.confirm'))
+        handoff = activity.split('private void openNative(String', 1)[1].split('private void openNativeConfirmed', 1)[0]
+        for marker in ('mediaScanScript()', 'episodeMatched', 'episodeSettled', 'longFormPlayers',
+                       'page!=videoPageGeneration', 'revision!=programRevision', 'nativeHandoffPage==page',
+                       'url.equals(candidate.optString("url"))', 'currentHistoryContext=scan.optJSONObject("episodeContext")'):
+            self.assertIn(marker, handoff)
+        self.assertIn('readAsset("episode-media-guard.js")', activity)
+        scan = activity.split('private void discoverMedia()', 1)[1].split('private static boolean confirmedMedia', 1)[0]
+        self.assertIn('invalidateEpisodeMedia()', scan)
+        self.assertLess(scan.index('episodeMatched'), scan.index('rememberCandidate('))
+
     def test_episode_picker_uses_current_program_and_preserves_owner_checks(self):
         java = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
         entry = java.split('private void showCurrentEpisodes()',1)[1].split('private void showFinder(boolean',1)[0]

@@ -227,8 +227,10 @@
     // URL (a page can ignore a query or still be loading the previous episode).
     function episodeReady(doc, episode) {
         if(typeof episode!=='string' || !episode.startsWith('ep-') || !publicId(episode.slice(3))) return false;
-        return Array.from(doc.querySelectorAll('button[data-directory-episode]')).some(el=>el.getAttribute('data-directory-episode')===episode.slice(3)
-            && (el.classList.contains('movie-button-primary') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-selected')==='true'));
+        const ids=new Set(Array.from(doc.querySelectorAll('button[data-directory-episode]'))
+            .filter(el=>el.classList.contains('movie-button-primary') || el.getAttribute('aria-current')==='true' || el.getAttribute('aria-selected')==='true')
+            .map(el=>el.getAttribute('data-directory-episode')));
+        return ids.size===1 && ids.has(episode.slice(3));
     }
     // Read only public page identity and the selected episode label. Called on
     // every native sample, not only at room entry. No media URL/credentials.

@@ -2,6 +2,7 @@
 (() => {
     if(window.__twAndroidPage) return;
     let selected=null, selectedSerial=null, session=0;
+    let episodeClick='',episodeClickAt=0;
     const frames=()=>{
         const result=[];let blocked=0;
         const visit=(w,depth)=>{
@@ -49,7 +50,17 @@
             return unique.length===1?unique[0]:'';
         },
         confirm(source,episode){
-            if(source==='kanju')return window.TogetherWatchCatalogAdapters?.episodeReady(document,episode)===true;
+            if(source==='kanju'){
+                if(window.TogetherWatchCatalogAdapters?.episodeReady(document,episode)===true)return true;
+                const matches=Array.from(document.querySelectorAll('button[data-directory-episode]'))
+                    .filter(el=>'ep-'+el.getAttribute('data-directory-episode')===episode);
+                // A page may restore its latest/history episode after handling
+                // the URL. Select only the requested public directory button.
+                if(matches.length && (episodeClick!==episode || Date.now()-episodeClickAt>=3000)){
+                    episodeClick=episode;episodeClickAt=Date.now();matches[0].click();
+                }
+                return false; // Wait for a later DOM observation, never the click itself.
+            }
             const sakura=source==='yhdmoe';
             if(!sakura && source!=='cupfox')return false;
             const attr=sakura?'play_ep':'ep_slug', active=sakura?'disabled':'on';

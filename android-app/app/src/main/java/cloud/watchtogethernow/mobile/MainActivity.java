@@ -108,6 +108,8 @@ public final class MainActivity extends ComponentActivity {
     private int readyWebSamples;
     private final LinkedHashMap<String, JSONObject> mediaCandidates = new LinkedHashMap<>();
     private String discoveryScript = "";
+    private String episodeMediaGuardScript = "";
+    private int nativeHandoffPage=-1;
     private String catalogueBackScript = "";
     private String sourcePageUrl = "";
     private boolean preferWebThisPage;
@@ -292,6 +294,7 @@ public final class MainActivity extends ComponentActivity {
             readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
             () -> foreground && finding && !originalFinderActive,
             view -> configureWebView(view,false),networkExecutor);
+        episodeMediaGuardScript=readAsset("episode-media-guard.js");
         episodePicker=new EpisodePickerController(this,SERVER_ORIGIN,catalogScript,readAsset("catalog-metadata-bridge.js"),readAsset("next-episode.js"),
             ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor);
         arrangePanels();
@@ -1010,6 +1013,26 @@ public final class MainActivity extends ComponentActivity {
     private boolean preparingBuiltin(){
         return !destroyed && foreground && sessionActive && !finding && !preferWebThisPage && !nativePlayer.isActive();
     }
+    private boolean guardEpisodeMedia(){
+        return programSelection!=null && programSelection.exact()
+            && programSelection.source.matches("kanju|cupfox|yhdmoe|pkavi|233dm|huarw");
+    }
+    private String mediaScanScript(){
+        if(!guardEpisodeMedia())return discoveryScript;
+        String p="{source:"+js(programSelection.source)+",item:"+js(programSelection.item)+",episode:"+js(programSelection.episode)+"}";
+        return catalogScript+";"+episodeMediaGuardScript+";window.__twEpisodeMediaGuard.read("+p+",function(){return "+discoveryScript+";})";
+    }
+    private String confirmEpisodeScript(){
+        // Observe any decoded default episode BEFORE clicking the target. Its
+        // media must not become eligible just because the UI changes first.
+        return mediaScanScript()+";"+webSyncScript+";window.__twAndroidPage.confirm("+js(programSelection.source)+","+js(programSelection.episode)+")";
+    }
+    private void invalidateEpisodeMedia(){
+        mediaCandidates.clear();lastActiveCandidate="";activeCandidateCount=0;readyWebSamples=0;
+        awaitingEpisode=programSelection!=null && programSelection.needsConfirmation();
+        scanDiagnostic="原站集数正在变化，等待所选集数的视频就绪。";
+        updatePlaybackGate();
+    }
     private void prepareBuiltin() {
         mainHandler.removeCallbacks(prepareTick);
         if(!preparingBuiltin())return;
@@ -1026,7 +1049,7 @@ public final class MainActivity extends ComponentActivity {
             final int page=videoPageGeneration;
             if(confirmingPage==page)return;
             confirmingPage=page;
-            videoWebView.evaluateJavascript(catalogScript+";"+webSyncScript+";window.__twAndroidPage.confirm("+js(programSelection.source)+","+js(programSelection.episode)+")",raw->{
+            videoWebView.evaluateJavascript(confirmEpisodeScript(),raw->{
                 if(confirmingPage==page)confirmingPage=-1;
                 if(page!=videoPageGeneration || !preparingBuiltin() || !preparation.active(android.os.SystemClock.elapsedRealtime()))return;
                 if("true".equals(raw)) {
@@ -1062,11 +1085,14 @@ public final class MainActivity extends ComponentActivity {
             || discoveryScript.isEmpty() || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
         int generation = videoPageGeneration;
         discoveryPage=generation;
-        videoWebView.evaluateJavascript(discoveryScript, result -> {
+        videoWebView.evaluateJavascript(mediaScanScript(), result -> {
             if(discoveryPage==generation)discoveryPage=-1;
             if (destroyed || !foreground || finding || awaitingEpisode || generation != videoPageGeneration || !sessionActive || nativePlayer.isActive()) return;
             try {
                 JSONObject discovery = new JSONObject(result);
+                if(guardEpisodeMedia() && !preferWebThisPage && !discovery.optBoolean("episodeMatched")){
+                    invalidateEpisodeMedia();return;
+                }
                 scanDiagnostic=discovery.optInt("opaquePlayers")>0?"原网页正在使用临时视频地址，未取得能交给内置播放器的线路。":
                     discovery.optInt("visiblePlayers")>0?"找到了原网页播放器，但它没有提供可确认的正片线路。":
                     discovery.optInt("inaccessibleFrames")>0?"视频可能在独立的嵌入页里，当前页没有可识别的播放器。":"当前页面还没有加载出可识别的播放器。";
@@ -1099,6 +1125,39 @@ public final class MainActivity extends ComponentActivity {
         return details!=null && details.optBoolean("confirmed") && details.optBoolean("visible") && details.optDouble("duration",0)>0;
     }
     private void openNative(String url, double position) {
+        if(finding || awaitingEpisode)return;
+        if(guardEpisodeMedia()){
+            final int page=videoPageGeneration;final long revision=programRevision;
+            final boolean webMode=preferWebThisPage;
+            if(nativeHandoffPage==page)return;
+            nativeHandoffPage=page;
+            // Re-read the current player and selected episode at the actual
+            // handoff, including manually selected candidates. Never trust an
+            // earlier list entry or a callback from a previous room revision.
+            videoWebView.evaluateJavascript(mediaScanScript(),raw->{
+                if(nativeHandoffPage==page)nativeHandoffPage=-1;
+                if(destroyed || !foreground || !sessionActive || finding || preferWebThisPage!=webMode
+                    || nativePlayer.isActive() || page!=videoPageGeneration || revision!=programRevision)return;
+                try{
+                    JSONObject scan=new JSONObject(raw);
+                    if(!scan.optBoolean("episodeMatched")){invalidateEpisodeMedia();return;}
+                    if(scan.optBoolean("protectedVideo") || !scan.optBoolean("episodeSettled") || scan.optInt("longFormPlayers")!=1)return;
+                    JSONArray rows=scan.optJSONArray("candidates");
+                    if(rows!=null)for(int i=0;i<rows.length();i++){
+                        JSONObject candidate=rows.getJSONObject(i);
+                        if(url.equals(candidate.optString("url")) && candidate.optBoolean("visible") && candidate.optDouble("duration")>=120){
+                            currentHistoryContext=scan.optJSONObject("episodeContext");historyContextPage=page;
+                            mediaCandidates.put(url,candidate);openNativeConfirmed(url,position);return;
+                        }
+                    }
+                    mediaCandidates.remove(url);lastActiveCandidate="";activeCandidateCount=0;
+                    setStatus("视频线路已变化，正在重新核对本集…");
+                }catch(Exception ignored){setStatus("尚未核对到本集的视频，请重试或换源。");}
+            });return;
+        }
+        openNativeConfirmed(url,position);
+    }
+    private void openNativeConfirmed(String url, double position) {
         if(finding || awaitingEpisode)return;
         JSONObject details=mediaCandidates.get(url);
         if (!MediaSourcePolicy.playable(url,confirmedMedia(details)) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;

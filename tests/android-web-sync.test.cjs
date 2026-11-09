@@ -81,6 +81,19 @@ test('Android host shares exactly one confirmed episode, not a bare player page'
     assert.equal(bridge.currentEpisode('unknown'),'');
 });
 
+test('Kanju restoring its last episode reselects only the requested public button',()=>{
+    const main=frame();let clicks=0,selected='ep-last';
+    main.w.TogetherWatchCatalogAdapters={episodeReady:(_d,e)=>e===selected};
+    main.w.document.querySelectorAll=()=>[
+        {getAttribute:()=> 'last',click:()=>assert.fail('never click last')},
+        {getAttribute:()=> 'five',click(){clicks++;selected='ep-five';}}
+    ];
+    const bridge=start(main.w);
+    assert.equal(bridge.confirm('kanju','ep-missing'),false);assert.equal(clicks,0);
+    assert.equal(bridge.confirm('kanju','ep-five'),false,'a click is not a completed media switch');
+    assert.equal(clicks,1);assert.equal(bridge.confirm('kanju','ep-five'),true);
+});
+
 test('Android hold targets the selected frame and maps touches without cross-origin access',()=>{
     const main=frame(100),child=frame(500),calls=[];
     main.w.frames=[child.w];main.w.innerWidth=800;main.w.innerHeight=600;
