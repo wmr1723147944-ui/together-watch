@@ -171,6 +171,7 @@ public final class MainActivity extends ComponentActivity {
     private String activeNickname = "";
     private boolean finding, requestBusy, awaitingEpisode, videoLoading;
     private EpisodePickerController episodePicker;
+    private final EpisodeDirectoryCache episodeDirectories=new EpisodeDirectoryCache();
     private ClientUpdateController clientUpdates;
     private int flowGeneration;
     private long programRevision, appliedProgramRevision, episodeStarted;
@@ -294,9 +295,10 @@ public final class MainActivity extends ComponentActivity {
             readAsset("catalog-metadata-bridge.js"),SERVER_ORIGIN,
             () -> foreground && finding && !originalFinderActive,
             view -> configureWebView(view,false),networkExecutor);
+        catalogMetadata.useDirectories(episodeDirectories,false);
         episodeMediaGuardScript=readAsset("episode-media-guard.js");
         episodePicker=new EpisodePickerController(this,SERVER_ORIGIN,catalogScript,readAsset("catalog-metadata-bridge.js"),readAsset("next-episode.js"),
-            ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor,()->videoWebView);
+            ()->foreground,view->configureWebView(view,false),this::chooseSelection,this::reportError,networkExecutor,()->videoWebView,episodeDirectories);
         arrangePanels();
     }
 
@@ -1020,7 +1022,7 @@ public final class MainActivity extends ComponentActivity {
     private String mediaScanScript(){
         if(!guardEpisodeMedia())return discoveryScript;
         String p="{source:"+js(programSelection.source)+",item:"+js(programSelection.item)+",episode:"+js(programSelection.episode)+"}";
-        return catalogScript+";"+episodeMediaGuardScript+";window.__twEpisodeMediaGuard.read("+p+",function(){return "+discoveryScript+";})";
+        return WebPlayerScripts.mediaScan(catalogScript,episodeMediaGuardScript,discoveryScript,p);
     }
     private String confirmEpisodeScript(){
         // Observe any decoded default episode BEFORE clicking the target. Its
@@ -1117,7 +1119,10 @@ public final class MainActivity extends ComponentActivity {
                     lastActiveCandidate = url;
                     if (activeCandidateCount >= 2 && mediaCandidates.containsKey(url)) openNative(url, candidate.optDouble("position", 0));
                 } else { activeCandidateCount = 0; lastActiveCandidate = ""; }
-            } catch (Exception ignored) { /* The page may navigate during evaluation. */ }
+            } catch (Exception ignored) {
+                scanDiagnostic="视频识别组件未返回有效结果，可重新识别；若持续出现，请反馈当前版本。";
+                updatePlaybackGate();
+            }
         });
     }
 

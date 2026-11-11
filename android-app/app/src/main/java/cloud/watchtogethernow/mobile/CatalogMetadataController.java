@@ -47,6 +47,8 @@ final class CatalogMetadataController {
     private boolean closed;
     private Supplier<WebView> playingPage=()->null;
     private String playingDirectory="";
+    private EpisodeDirectoryCache directoryCache;
+    private boolean preferDirectoryCache;
     private final Runnable ticker=this::tick;
 
     CatalogMetadataController(Activity activity,WebView catalogue,ViewGroup queryHost,String adapters,String bridge,String origin,
@@ -57,6 +59,7 @@ final class CatalogMetadataController {
     }
     private boolean trusted() {return !closed && CatalogMetadataPolicy.catalogue(catalogue.getUrl(),origin);}
     void preferPlayingPage(Supplier<WebView> supplier,String reader) {playingPage=supplier;playingDirectory=reader;}
+    void useDirectories(EpisodeDirectoryCache cache,boolean prefer) {directoryCache=cache;preferDirectoryCache=prefer;}
     private String guard() {return "location.origin==="+JSONObject.quote(origin)+" && ['/', '/discover'].includes(location.pathname)";}
     void navigation() {generation++;documentToken="";cancelAll(false);}
     void flush() {try{disk.execute(()->CookieManager.getInstance().flush());}catch(java.util.concurrent.RejectedExecutionException ignored){}}
@@ -211,6 +214,10 @@ final class CatalogMetadataController {
             Log.w(LOG_TAG,"request_rejected");reply(token,id,status("unavailable"));return;
         }
         String source=req.optString("source");Page page=pages.get(source);
+        if(preferDirectoryCache && !data.optBoolean("interactive") && directoryCache!=null) {
+            JSONObject cached=directoryCache.get(req,SystemClock.elapsedRealtime());
+            if(cached!=null){reply(token,id,cached);return;}
+        }
         if(jobs.size()>=2 || jobs.containsKey(id) || page!=null && page.job!=null){reply(token,id,status("busy"));return;}
         if(page==null){page=new Page(source);pages.put(source,page);}
         Job job=new Job(id,token,epoch,req,page,data.optBoolean("interactive"));
@@ -334,6 +341,7 @@ final class CatalogMetadataController {
         });
     }
     private void finish(Job job,JSONObject result,boolean send) {
+        if(!job.done && send && directoryCache!=null)directoryCache.remember(job.req,result,SystemClock.elapsedRealtime());
         if(job.done)return;job.done=true;handler.removeCallbacks(job.poll);jobs.remove(job.id);job.page.job=null;
         job.page.completedAt=SystemClock.elapsedRealtime();job.page.resultStatus=result.optString("status");
         if(job.watchdog!=null)handler.removeCallbacks(job.watchdog);

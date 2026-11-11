@@ -21,6 +21,8 @@ class AndroidProjectTests(unittest.TestCase):
         scan = activity.split('private void discoverMedia()', 1)[1].split('private static boolean confirmedMedia', 1)[0]
         self.assertIn('invalidateEpisodeMedia()', scan)
         self.assertLess(scan.index('episodeMatched'), scan.index('rememberCandidate('))
+        self.assertIn('WebPlayerScripts.mediaScan(catalogScript,episodeMediaGuardScript,discoveryScript,p)',activity)
+        self.assertIn('catalogMetadata.useDirectories(episodeDirectories,false)',activity)
 
     def test_episode_picker_uses_current_program_and_preserves_owner_checks(self):
         java = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')

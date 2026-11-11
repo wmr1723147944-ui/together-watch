@@ -4,6 +4,13 @@ package cloud.watchtogethernow.mobile;
 final class WebPlayerScripts {
     private WebPlayerScripts() { }
 
+    static String mediaScan(String adapters,String guard,String discovery,String program) {
+        // The asset starts with a comment and newline. A bare `return ` before
+        // it triggers JavaScript ASI and returns undefined instead of the scan.
+        return adapters+";"+guard+";window.__twEpisodeMediaGuard.read("+program
+            +",function(){return (\n"+discovery+"\n);})";
+    }
+
     static String sample(String wrapper, String agent) {
         // Bind the shared agent's globals to each accessible frame. Calling this
         // function does not require unsafe-eval and does not relax same-origin.

@@ -55,12 +55,15 @@ final class EpisodePickerController {
     private String probe="";
     private String playingDirectory="";
     private final Supplier<WebView> playingPage;
+    private final EpisodeDirectoryCache directoryCache;
+    private boolean freshDirectory;
 
     EpisodePickerController(Activity activity,String origin,String adapters,String bridge,String nextScript,BooleanSupplier foreground,
-                            Consumer<WebView> configure,Consumer<ProgramPolicy.Selection> choose,Consumer<String> error,Executor disk,Supplier<WebView> playingPage) {
+                            Consumer<WebView> configure,Consumer<ProgramPolicy.Selection> choose,Consumer<String> error,Executor disk,Supplier<WebView> playingPage,EpisodeDirectoryCache directoryCache) {
         this.activity=activity;this.origin=origin;this.adapters=adapters;this.bridge=bridge;this.foreground=foreground;
         this.configure=configure;this.choose=choose;this.error=error;this.disk=disk;this.nextScript=nextScript;
         this.playingPage=playingPage;
+        this.directoryCache=directoryCache;
         try(java.io.InputStream input=activity.getAssets().open("episode-picker-probe.js")) {
             java.io.ByteArrayOutputStream bytes=new java.io.ByteArrayOutputStream();
             byte[] buffer=new byte[4096];int count;
@@ -90,7 +93,8 @@ final class EpisodePickerController {
         LinearLayout toolbar=new LinearLayout(activity);toolbar.setGravity(Gravity.CENTER_VERTICAL);
         TextView heading=new TextView(activity);heading.setText("选集 / 换源");heading.setTextColor(0xffedf3ff);heading.setTextSize(16);
         heading.setPadding(dp(16),0,0,0);toolbar.addView(heading,new LinearLayout.LayoutParams(0,dp(52),1));heading.setGravity(Gravity.CENTER_VERTICAL);
-        Button retry=toolbarButton("重试");retry.setOnClickListener(v->{close();show(program,false);});toolbar.addView(retry);
+        Button retry=toolbarButton("重试");retry.setContentDescription("重新从原站读取最新集数");
+        retry.setOnClickListener(v->{close();freshDirectory=true;show(program,false);});toolbar.addView(retry);
         Button dismiss=toolbarButton("关闭");dismiss.setOnClickListener(v->close());toolbar.addView(dismiss);
         shell.addView(toolbar,new LinearLayout.LayoutParams(-1,dp(52)));
         FrameLayout host=new FrameLayout(activity);host.setBackgroundColor(0xff171b25);
@@ -105,7 +109,9 @@ final class EpisodePickerController {
         loading.setClickable(true);loading.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         host.addView(loading,new FrameLayout.LayoutParams(-1,-1));
         metadata=new CatalogMetadataController(activity,page,host,adapters,bridge,origin,()->live(epoch) && foreground.getAsBoolean(),configure,disk);
-        metadata.preferPlayingPage(playingPage,playingDirectory);
+        if(!freshDirectory && !advance)metadata.preferPlayingPage(playingPage,playingDirectory);
+        metadata.useDirectories(directoryCache,!freshDirectory && !advance);
+        freshDirectory=false;
         page.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
                 if(!request.isForMainFrame())return !"https".equals(request.getUrl().getScheme());
