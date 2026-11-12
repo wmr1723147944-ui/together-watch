@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src https:; base-uri 'none'; form-action 'none'">
+    <title>选集 / 换源</title>
+    <link rel="stylesheet" href="/static/android-picker/episode-picker.css">
+    <script defer src="/static/android-picker/episode-picker-boot.js"></script>
+    <script defer src="/static/android-picker/catalog-adapters.js"></script>
+    <script defer src="/static/android-picker/watch-history.js"></script>
+    <script defer src="/static/android-picker/catalog-metadata-bridge.js"></script>
+    <script defer src="/static/android-picker/source-discovery.js"></script>
+    <script defer src="/static/android-picker/catalog-browser.js"></script>
+</head>
+<body class="episode-picker">
+    <aside id="episodePickerLoading" role="status">正在准备本机选集… <button id="episodePickerCancel" type="button">关闭</button></aside>
+    <section id="sourceDiscovery" data-catalog-mode="films">
+        <!-- Shared catalogue controller hooks, without a homepage/feed request. -->
+        <div hidden>
+            <form id="discoveryForm"><input id="discoveryQuery"><button id="discoveryClear" type="button">清空</button></form>
+            <button id="catalogBack" type="button">返回</button>
+            <section id="discoveryWelcome"></section>
+            <section id="discoveryLive"><div id="discoveryLiveResults"></div><p id="discoveryLiveStatus"></p></section>
+            <input type="checkbox" data-live-source="kanju" data-source-name="看剧 AI" checked>
+            <input type="checkbox" data-live-source="pkavi" data-source-name="七味网" checked>
+            <input type="checkbox" data-live-source="233dm" data-source-name="233 动漫" checked>
+            <input type="checkbox" data-live-source="cupfox" data-source-name="茶杯狐" checked>
+            <input type="checkbox" data-live-source="yhdmoe" data-source-name="樱花动漫" checked>
+        </div>
+        <dialog id="discoveryDetail" aria-labelledby="discoveryDetailTitle">
+            <header><span class="eyebrow">当前影片</span><button id="discoveryDetailClose" type="button">关闭</button></header>
+            <div id="catalogDetailPoster" hidden></div>
+            <h2 id="discoveryDetailTitle"></h2><p id="catalogDetailFacts"></p>
+            <div id="catalogSourceChoices" role="group" aria-label="影片来源"></div>
+            <details class="source-search"><summary>查找其他来源 / 换源</summary>
+                <div class="source-query"><input id="catalogSourceQuery" type="search" maxlength="80" placeholder="完整片名，保留季度" aria-label="影片名称"><button id="catalogFindOtherSources" type="button">查找来源</button></div>
+                <p id="catalogSourceStatus" role="status"></p>
+            </details>
+            <p id="discoveryDetailDescription" hidden></p>
+            <p id="discoveryDetailStatus" role="status" aria-live="polite"></p>
+            <input id="discoveryEpisodeFilter" type="search" placeholder="筛选集数或线路" aria-label="筛选集数或线路" hidden>
+            <div id="discoveryEpisodes" class="discovery-episodes"></div>
+            <button id="discoveryEpisodeMore" type="button" hidden>显示更多集数</button>
+            <a id="discoveryDetailOriginal" hidden></a>
+        </dialog>
+    </section>
+</body>
+</html>

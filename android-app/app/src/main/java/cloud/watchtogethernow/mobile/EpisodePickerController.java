@@ -106,15 +106,30 @@ final class EpisodePickerController {
         page.setWebChromeClient(new WebChromeClient(){@Override public void onPermissionRequest(PermissionRequest request){request.deny();}});
         host.addView(page,new FrameLayout.LayoutParams(-1,-1));
         loading=new TextView(activity);loading.setText("正在打开选集面板…\n当前影片不会切换");
-        loading.setTextColor(0xffdce2ed);loading.setTextSize(16);loading.setGravity(Gravity.CENTER);
-        loading.setPadding(dp(24),dp(24),dp(24),dp(24));loading.setBackgroundColor(0xff171b25);
-        loading.setClickable(true);loading.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
-        host.addView(loading,new FrameLayout.LayoutParams(-1,-1));
+        loading.setTextColor(0xffdce2ed);loading.setTextSize(13);loading.setGravity(Gravity.CENTER);
+        loading.setPadding(dp(16),dp(10),dp(16),dp(10));loading.setBackgroundColor(0xff171b25);
+        loading.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
+        // Keep the WebView drawable/touchable. A full opaque loading sibling
+        // can occlude the very content/compositor we are waiting to observe.
+        shell.addView(loading,1,new LinearLayout.LayoutParams(-1,-2));
         metadata=new CatalogMetadataController(activity,page,host,adapters,bridge,origin,()->live(epoch) && foreground.getAsBoolean(),configure,disk);
         if(!freshDirectory && !advance)metadata.preferPlayingPage(playingPage,playingDirectory);
         metadata.useDirectories(directoryCache,!freshDirectory && !advance);
         freshDirectory=false;
         page.setWebViewClient(new WebViewClient(){
+            @Override public WebResourceResponse shouldInterceptRequest(WebView view,WebResourceRequest request) {
+                String asset=PickerAssets.asset(request.getUrl().toString(),origin);
+                if(asset==null || !"GET".equals(request.getMethod()))return null;
+                try {
+                    return new WebResourceResponse(PickerAssets.mime(asset),"UTF-8",200,"OK",
+                        java.util.Collections.singletonMap("Cache-Control","no-store"),activity.getAssets().open(asset));
+                }catch(java.io.IOException missing) {
+                    // Missing packaged UI must not silently fall back to an
+                    // incompatible server homepage or stale HTTP cache.
+                    return new WebResourceResponse("text/plain","UTF-8",404,"Not Found",java.util.Collections.emptyMap(),
+                        new java.io.ByteArrayInputStream(new byte[0]));
+                }
+            }
             @Override public boolean shouldOverrideUrlLoading(WebView view,WebResourceRequest request) {
                 if(!request.isForMainFrame())return !"https".equals(request.getUrl().getScheme());
                 if(!live(epoch) || !request.hasGesture() || !CatalogMetadataPolicy.catalogue(view.getUrl(),origin))return true;
@@ -152,7 +167,7 @@ final class EpisodePickerController {
             }
         });
         dialog.setContentView(shell);dialog.setCanceledOnTouchOutside(true);dialog.setOnDismissListener(ignored->close());
-        dialog.show();resize();page.loadUrl(origin+"/discover?picker=1");
+        dialog.show();resize();page.loadUrl(origin+PickerAssets.ENTRY);
         handler.post(()->watchLoad(epoch));
         handler.post(()->open(epoch,0));
     }
@@ -187,7 +202,7 @@ final class EpisodePickerController {
     }
     private void open(int epoch,int attempt) {
         if(!live(epoch))return;
-        if(attempt>=60){fail("选集入口尚未加载，请重试或确认服务器已更新。");return;}
+        if(attempt>=60){fail("本机选集组件未能就绪（P04）。可重试；不需要更新服务器。\n安卓 "+BuildConfig.VERSION_NAME);return;}
         if(!documentState.canProbe() || !CatalogMetadataPolicy.catalogue(page.getUrl(),origin)){handler.postDelayed(()->open(epoch,attempt+1),250);return;}
         if(probe.isEmpty()){fail("选集组件缺失，请重新安装完整 APK。");return;}
         String program="{source:"+JSONObject.quote(selection.source)+",item:"+JSONObject.quote(selection.item)+",episode:"+JSONObject.quote(selection.episode)+"}";

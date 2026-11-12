@@ -1,0 +1,14 @@
+:root{color-scheme:dark;font-family:system-ui,sans-serif;color:#edf0f6;background:#171b25}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{overflow:hidden}[hidden]{display:none!important}
+button,input,a,summary{-webkit-tap-highlight-color:transparent}button,input{font:inherit;border-radius:10px;border:1px solid #394151;color:inherit;background:#252c3a;padding:11px 14px}
+button,summary,a{cursor:pointer}button:disabled{opacity:.5}button:focus-visible,a:focus-visible,input:focus{outline:2px solid #ffac91;outline-offset:2px}
+#episodePickerLoading{padding:24px;color:#bdc5d5;font-size:14px}#episodePickerCancel{float:right}
+#discoveryDetail{position:fixed;inset:0;width:100%;max-width:none;height:100%;max-height:none;margin:0;padding:16px 20px 28px;border:0;background:#171b25;color:inherit;overflow:auto}
+#discoveryDetail:not([open]){display:none}#discoveryDetail[open]{display:block}header{display:flex;align-items:center;justify-content:space-between;gap:12px}.eyebrow{font-size:12px;color:#a6afbf;letter-spacing:2px}
+header button{padding:7px 12px;font-size:12px;background:transparent}h2{font-size:20px;line-height:1.5;margin:12px 0 6px;overflow-wrap:anywhere}p{font-size:13px;line-height:1.7;color:#aeb8ca;margin:8px 0 14px}
+#catalogSourceChoices{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}#catalogSourceChoices button{font-size:13px;padding:9px 12px}button[aria-pressed=true]{border-color:#ffac91;background:#513c39;color:#ffd4c5}
+.source-search{border-block:1px solid #303745;padding:14px 0;margin:12px 0}summary{font-size:14px;color:#d1d8e5}.source-query{display:flex;gap:8px;margin-top:12px}.source-query input{min-width:0;flex:1;font-size:13px}.source-query button{flex-shrink:0;font-size:13px}
+#catalogSourceStatus span{display:block}#catalogSourceStatus button{margin:6px 6px 0 0}#discoveryEpisodeFilter{width:100%;margin-bottom:12px;font-size:14px}
+.discovery-episodes{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:10px}.discovery-episodes a{display:flex;align-items:center;justify-content:center;min-height:48px;text-decoration:none;border:1px solid #354054;border-radius:10px;background:#242c3a;color:#e3e9f5;padding:10px;font-size:13px;text-align:center;line-height:1.5;overflow-wrap:anywhere}
+.discovery-episodes a[aria-current=true]{color:#ffd4c5;background:#513c39;border-color:#ffac91}.discovery-episodes a[data-suggested=true]{border-color:#8095b6}.discovery-episodes button{grid-column:1/-1}#discoveryEpisodeMore{width:100%;margin-top:14px}
+@media(max-width:340px){#discoveryDetail{padding:12px}.source-query{flex-wrap:wrap}.source-query input{flex-basis:100%}}

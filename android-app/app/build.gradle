@@ -11,8 +11,8 @@ android {
         applicationId "cloud.watchtogethernow.mobile"
         minSdk 26
         targetSdk 36
-        versionCode 43
-        versionName "0.3.38"
+        versionCode 44
+        versionName "0.3.39"
 
         buildConfigField "String", "SERVER_ORIGIN", '"https://watchtogethernow.cloud"'
         buildConfigField "String", "LEGAL_NOTICE_VERSION", '"2026-07-28"'
@@ -40,6 +40,10 @@ def sharedPlayerAssets = tasks.register('prepareSharedPlayerAssets', Sync) {
     into layout.buildDirectory.dir('generated/sharedPlayerAssets')
     from(rootProject.file('../desktop-app/src')) { include 'player-agent.js', 'danmaku-overlay.js' }
     from(rootProject.file('../static/js')) { include 'catalog-adapters.js' }
+    from(rootProject.file('../static/js')) {
+        into 'picker'
+        include 'catalog-adapters.js', 'watch-history.js', 'source-discovery.js', 'catalog-browser.js'
+    }
 }
 android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/sharedPlayerAssets'))
 tasks.named('preBuild').configure { dependsOn sharedPlayerAssets }
