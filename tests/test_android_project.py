@@ -40,6 +40,10 @@ class AndroidProjectTests(unittest.TestCase):
                        'toolbarButton("重试")', 'onReceivedHttpError', 'onReceivedError', 'onRenderProcessGone'):
             self.assertIn(marker,picker)
         self.assertIn('getBoundingClientRect()',probe)
+        self.assertIn('onPageCommitVisible',picker)
+        self.assertIn('!documentState.canProbe()',picker)
+        self.assertIn('!documentState.accepts(document)',picker)
+        self.assertIn('PickerDocumentState.state(raw)',picker)
         self.assertIn('handler.removeCallbacksAndMessages(null)',picker)
         self.assertIn('ProgramPolicy.pickerSelection(request.getUrl().toString(),origin,program)',picker)
         self.assertIn('request.hasGesture()',picker)

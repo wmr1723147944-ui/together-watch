@@ -52,6 +52,7 @@ final class EpisodePickerController {
     private boolean failed;
     private TextView loading;
     private final PickerLoadState loadState=new PickerLoadState();
+    private final PickerDocumentState documentState=new PickerDocumentState();
     private String probe="";
     private String playingDirectory="";
     private final Supplier<WebView> playingPage;
@@ -88,6 +89,7 @@ final class EpisodePickerController {
         }
         quick=advance;checking=false;failed=false;selection=program;final int epoch=++generation;
         loadState.start(SystemClock.elapsedRealtime());
+        documentState.start();
         dialog=new Dialog(activity);dialog.requestWindowFeature(Window.FEATURE_NO_TITLE);
         LinearLayout shell=new LinearLayout(activity);shell.setOrientation(LinearLayout.VERTICAL);shell.setBackgroundColor(0xff171b25);
         LinearLayout toolbar=new LinearLayout(activity);toolbar.setGravity(Gravity.CENTER_VERTICAL);
@@ -123,7 +125,16 @@ final class EpisodePickerController {
             @Override public void onPageStarted(WebView view,String url,android.graphics.Bitmap icon) {
                 if(!live(epoch))return;
                 if(!CatalogMetadataPolicy.catalogue(url,origin)){fail("选集页面跳转异常，已停止加载。可重试或关闭面板。");return;}
+                documentState.start();
                 metadata.navigation();
+            }
+            @Override public void onPageCommitVisible(WebView view,String url) {
+                if(live(epoch) && CatalogMetadataPolicy.catalogue(url,origin))documentState.commit();
+            }
+            @Override public void onPageFinished(WebView view,String url) {
+                // Some WebView builds defer visual callbacks until drawing.
+                // The JS probe still validates origin, readiness and geometry.
+                if(live(epoch) && CatalogMetadataPolicy.catalogue(url,origin))documentState.commit();
             }
             @Override public void onReceivedError(WebView view,WebResourceRequest request,WebResourceError e) {
                 if(live(epoch) && request.isForMainFrame())fail("选集页面网络连接失败。请重试；当前影片未切换。");
@@ -177,24 +188,25 @@ final class EpisodePickerController {
     private void open(int epoch,int attempt) {
         if(!live(epoch))return;
         if(attempt>=60){fail("选集入口尚未加载，请重试或确认服务器已更新。");return;}
-        if(!CatalogMetadataPolicy.catalogue(page.getUrl(),origin)){handler.postDelayed(()->open(epoch,attempt+1),250);return;}
+        if(!documentState.canProbe() || !CatalogMetadataPolicy.catalogue(page.getUrl(),origin)){handler.postDelayed(()->open(epoch,attempt+1),250);return;}
         if(probe.isEmpty()){fail("选集组件缺失，请重新安装完整 APK。");return;}
         String program="{source:"+JSONObject.quote(selection.source)+",item:"+JSONObject.quote(selection.item)+",episode:"+JSONObject.quote(selection.episode)+"}";
         // Wait for the Android metadata bridge too; otherwise dynamic sites
         // accidentally fall back to the server before the local reader is ready.
         loadState.request(SystemClock.elapsedRealtime());
+        final int document=documentState.token();
         page.evaluateJavascript(probe.trim()+"("+program+","+JSONObject.quote(origin)+")",raw->{
             if(!live(epoch))return;
-            String state=probeState(raw);loadState.reply(state,SystemClock.elapsedRealtime());
-            if("\"closed\"".equals(raw))close();
-            else if("\"waiting\"".equals(raw) || "null".equals(raw))handler.postDelayed(()->open(epoch,attempt+1),250);
+            if(!documentState.accepts(document)){
+                loadState.reply("waiting",SystemClock.elapsedRealtime());
+                handler.postDelayed(()->open(epoch,attempt+1),250);return;
+            }
+            String state=PickerDocumentState.state(raw);loadState.reply(state,SystemClock.elapsedRealtime());
+            if("closed".equals(state))close();
+            else if("waiting".equals(state))handler.postDelayed(()->open(epoch,attempt+1),250);
             else if(showProbe(state)){watchClose(epoch);}
-            else fail("选集界面未能打开。可点「重试」重新读取，或关闭面板继续观看。");
+            else fail(PickerDocumentState.failure(state)+"\n安卓 "+BuildConfig.VERSION_NAME+" · "+selection.source);
         });
-    }
-    private static String probeState(String raw) {
-        try {Object value=new org.json.JSONTokener(raw).nextValue();return value instanceof String?(String)value:"waiting";}
-        catch(Exception ignored){return "waiting";}
     }
     private boolean showProbe(String state) {
         if(!state.matches("ready|notice|loading|verifying"))return false;
@@ -244,14 +256,21 @@ final class EpisodePickerController {
     }
     private void watchClose(int epoch) {
         if(!live(epoch))return;
+        if(!documentState.canProbe()){handler.postDelayed(()->open(epoch,0),250);return;}
         loadState.request(SystemClock.elapsedRealtime());
+        final int document=documentState.token();
         String program="{source:"+JSONObject.quote(selection.source)+",item:"+JSONObject.quote(selection.item)+",episode:"+JSONObject.quote(selection.episode)+"}";
         page.evaluateJavascript(probe.trim()+"("+program+","+JSONObject.quote(origin)+")",raw->{
             if(!live(epoch))return;
-            String state=probeState(raw);loadState.reply(state,SystemClock.elapsedRealtime());
-            if("\"closed\"".equals(raw))close();
+            if(!documentState.accepts(document)){
+                loadState.reply("waiting",SystemClock.elapsedRealtime());
+                handler.postDelayed(()->open(epoch,0),250);return;
+            }
+            String state=PickerDocumentState.state(raw);loadState.reply(state,SystemClock.elapsedRealtime());
+            if("closed".equals(state))close();
             else if(showProbe(state))handler.postDelayed(()->watchClose(epoch),300);
-            else fail("选集页面显示异常。可重试重新打开；当前影片不会切换。");
+            else if("waiting".equals(state))handler.postDelayed(()->watchClose(epoch),300);
+            else fail(PickerDocumentState.failure(state)+"\n安卓 "+BuildConfig.VERSION_NAME+" · "+selection.source);
         });
     }
     void close() {

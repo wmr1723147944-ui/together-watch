@@ -10,6 +10,8 @@ async function run(){
     session.fromPartition('picker-smoke').protocol.handle('https',request=>{
         const u=new URL(request.url);
         if(u.host==='watchtogethernow.cloud')return new Response(`<!doctype html><style>dialog{width:300px;height:450px}</style>
+            <script>window.__twMetadataQueue={};window.earlyCalls=0;window.TogetherWatchCatalogNavigation={episodes(){window.earlyCalls++;throw Error('DOM not yet parsed');}};
+            window.earlyProbe=(${read('android-app/app/src/main/assets/episode-picker-probe.js')})({source:'kanju',item:'drama',episode:'ep-two'},'https://watchtogethernow.cloud');</script>
             <dialog id="discoveryDetail"><p id="discoveryDetailStatus">正在读取集数…</p><div id="discoveryEpisodes"></div></dialog>
             <script>window.__twMetadataQueue={};window.TogetherWatchCatalogNavigation={episodes(){document.querySelector('dialog').showModal();return true;}};</script>`,{headers:{'Content-Type':'text/html; charset=utf-8'}});
         if(u.host==='www.kanju.ai')return new Response(`<!doctype html><h1>回归测试影片</h1><button data-directory-episode="two" title="第2集">2</button>
@@ -17,8 +19,12 @@ async function run(){
         throw Error('Unexpected network request');
     });
     const js=code=>win.webContents.executeJavaScript(code);
-    await win.loadURL('https://watchtogethernow.cloud/discover?picker=1');
     const probe=()=>js('('+read('android-app/app/src/main/assets/episode-picker-probe.js')+')({source:"kanju",item:"drama",episode:"ep-two"},"https://watchtogethernow.cloud")');
+    await win.loadURL('about:blank');
+    assert.equal(await probe(),'waiting','initial WebView document must not cause terminal open failure');
+    await win.loadURL('https://watchtogethernow.cloud/discover?picker=1');
+    assert.equal(await js('window.earlyProbe'),'waiting','partially parsed document must not invoke the picker');
+    assert.equal(await js('window.earlyCalls'),0);
     assert.equal(await probe(),'loading','painted empty dialog must not be ready');
     await js(`document.getElementById('discoveryEpisodes').innerHTML='<a class="discovery-episode" href="/discover/play/kanju/drama/ep-three">第3集</a>'`);
     assert.equal(await probe(),'ready');
@@ -31,6 +37,6 @@ async function run(){
     const data=await directory();assert.equal(data.episodes.length,2);assert.equal(data.episodes[1].id,'ep-three');
     assert.equal(await js('window.clicked'),0,'reading must not click or select an episode');
     await js('history.replaceState(null,"","/player/other?episode=two")');assert.equal(await directory(),null);
-    console.log('PASS real DOM: loading/ready/error/hidden picker; live public directory; no clicks; rejects wrong film.');
+    console.log('PASS real DOM: initial blank/partial document waits; loading/ready/error/hidden picker; live public directory; no clicks; rejects wrong film.');
 }
 app.whenReady().then(run).then(()=>{win?.destroy();app.exit(0);}).catch(e=>{console.error(e);win?.destroy();app.exit(1);});

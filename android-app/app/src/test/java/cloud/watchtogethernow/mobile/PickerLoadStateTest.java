@@ -42,4 +42,10 @@ public class PickerLoadStateTest {
         s.start(30000);assertFalse(s.isPending());assertFalse(s.isReady());
         assertEquals("",s.failure(30001));assertFalse(s.failure(50000).isEmpty());
     }
+    @Test public void vanishedPanelCanRecoverButCannotWaitForever() {
+        PickerLoadState s=new PickerLoadState();s.start(0);s.reply("ready",1000);
+        s.reply("waiting",2000);s.reply("waiting",3000);
+        assertEquals("",s.failure(46999));assertFalse(s.failure(47000).isEmpty());
+        s.reply("ready",47001);assertEquals("",s.failure(90000));
+    }
 }

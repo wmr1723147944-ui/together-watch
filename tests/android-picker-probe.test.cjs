@@ -42,3 +42,16 @@ test('renderer exceptions and untrusted navigation fail without exposing details
     assert.equal(f.probe('kanju'),'error');
     f.context.location.origin='https://untrusted.example';assert.equal(f.probe('kanju'),'untrusted');
 });
+
+test('initial blank document and partially parsed catalogue wait without opening or failing',()=>{
+    const f=fixture();f.context.location={href:'about:blank',origin:'null',pathname:'blank'};
+    assert.equal(f.probe('kanju'),'waiting');assert.equal(f.calls.length,0);
+    f.context.location={href:'https://watchtogethernow.cloud/discover?picker=1',origin:'https://watchtogethernow.cloud',pathname:'/discover'};
+    f.context.document.readyState='loading';assert.equal(f.probe('kanju'),'waiting');assert.equal(f.calls.length,0);
+    f.context.document.readyState='interactive';assert.equal(f.probe('kanju'),'ready');assert.equal(f.calls.length,1);
+});
+
+test('script diagnostic uses only a known exception type, not message or stack',()=>{
+    const f=fixture();f.window.TogetherWatchCatalogNavigation.episodes=()=>{throw TypeError('secret-media-url');};
+    assert.equal(f.probe('kanju'),'error-TypeError');
+});

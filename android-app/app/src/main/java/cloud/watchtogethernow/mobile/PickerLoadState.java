@@ -13,6 +13,11 @@ final class PickerLoadState {
             if(ready || contentStarted<0)contentStarted=now;
             panelSeen=true;interactive=state.equals("verifying");
         } else if(resolved)panelSeen=true;
+        else if(state.equals("waiting") && panelSeen && (ready || contentStarted<0)) {
+            // Rotation/navigation may temporarily remove a rendered drawer.
+            // Allow recovery, but do not leave a permanently blank panel alive.
+            contentStarted=now;interactive=false;
+        }
         ready=resolved;
     }
     boolean isReady(){return ready;}

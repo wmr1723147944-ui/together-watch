@@ -1,6 +1,11 @@
 /* First-party document only. A successful API call does not prove the drawer painted. */
 (function(program, origin) {
+    // getUrl() may already report the requested URL while WebView still runs
+    // the initial about:blank document. Do not turn this load phase into an
+    // untrusted-page failure, and never call the bridge in that document.
+    if(location.href==='about:blank')return 'waiting';
     if(location.origin!==origin || !['/','/discover'].includes(location.pathname))return 'untrusted';
+    if(document.readyState==='loading')return 'waiting';
     try {
         const nav=window.TogetherWatchCatalogNavigation;
         if(nav?.pickerClosed?.())return 'closed';
@@ -21,5 +26,8 @@
         const message=document.getElementById('discoveryDetailStatus')?.textContent?.trim()||'';
         if(message && !/正在|等待/.test(message))return 'notice';
         return 'loading';
-    } catch (_) { return 'error'; }
+    } catch (error) {
+        // Fixed diagnostic codes only, never page text, URLs or exception data.
+        return ['TypeError','ReferenceError','SyntaxError'].includes(error?.name)?'error-'+error.name:'error';
+    }
 })
