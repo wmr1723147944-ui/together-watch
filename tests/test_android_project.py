@@ -8,6 +8,22 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_room_surface_does_not_bootstrap_through_the_catalogue(self):
+        root = ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile'
+        activity = (root / 'MainActivity.java').read_text(encoding='utf-8')
+        controller = (root / 'RoomPageController.java').read_text(encoding='utf-8')
+        self.assertNotIn('roomBootstrapPending', activity)
+        self.assertNotIn('roomWebView.loadUrl(SERVER_ORIGIN + "/")', activity)
+        for marker in ('roomPage.open(activeRoom,activeNickname,activeLegalVersion())', 'roomPage.isReady()',
+                       'roomPage.close()', 'roomPage.pause()', 'roomPage.resume()'):
+            self.assertIn(marker, activity)
+        for marker in ('loadDataWithBaseURL', 'RoomPageScripts.initialize', 'RoomPageScripts.probe',
+                       'state.accepts(epoch,document)', 'state.timedOut', 'View.INVISIBLE',
+                       'onReceivedHttpError', 'handler.cancel()', 'request.hasGesture()'):
+            self.assertIn(marker, controller)
+        self.assertNotIn('onPageFinished', controller)
+        self.assertNotIn('addJavascriptInterface', controller)
+
     def test_native_handoff_revalidates_live_episode_and_room_revision(self):
         activity = (ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile/MainActivity.java').read_text(encoding='utf-8')
         confirm = activity.split('private String confirmEpisodeScript()', 1)[1].split('private void invalidateEpisodeMedia', 1)[0]

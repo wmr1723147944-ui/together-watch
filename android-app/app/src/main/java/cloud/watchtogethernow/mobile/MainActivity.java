@@ -159,6 +159,7 @@ public final class MainActivity extends ComponentActivity {
     private CatalogMetadataController catalogMetadata;
     private boolean originalFinderActive, backPending;
     private WebView roomWebView;
+    private RoomPageController roomPage;
     private WebView companionWebView;
     private WebView routingPopup;
     private PermissionRequest pendingAudioPermission;
@@ -186,7 +187,6 @@ public final class MainActivity extends ComponentActivity {
     private JSONObject currentHistoryContext, nativeHistoryContext;
     private int historyContextPage = -1;
     private String playerBridgeNotice = "";
-    private boolean roomBootstrapPending = false;
     private volatile int videoPageGeneration = 0;
     private ProgramPolicy.Selection pendingSetupSelection = null;
 
@@ -243,7 +243,6 @@ public final class MainActivity extends ComponentActivity {
 
         roomWebView = new WebView(this);
         configureWebView(roomWebView, false);
-        roomWebView.setWebViewClient(new RoomPageClient());
         roomWebView.setWebChromeClient(new RoomChromeClient());
 
         FrameLayout.LayoutParams match = new FrameLayout.LayoutParams(
@@ -289,6 +288,9 @@ public final class MainActivity extends ComponentActivity {
             }
         });
         roomContainer.addView(roomWebView, new FrameLayout.LayoutParams(-1, -1));
+        roomPage=new RoomPageController(this,roomWebView,roomContainer,SERVER_ORIGIN,()->{
+            if(sessionActive && foreground && !destroyed){final int epoch=++bridgeGeneration;mainHandler.post(()->tickBridge(epoch));}
+        },()->{cancelPendingMicrophone();appliedProgramRevision=0;++bridgeGeneration;},this::openExternal);
         try (InputStream input = getAssets().open("media-discovery.js")) {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             byte[] bytes = new byte[4096]; int count;
@@ -788,8 +790,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void bootstrapRoomPage() {
-        roomBootstrapPending = true;
-        roomWebView.loadUrl(SERVER_ORIGIN + "/");
+        roomPage.open(activeRoom,activeNickname,activeLegalVersion());
     }
 
     private void showVideoTab() {
@@ -834,7 +835,7 @@ public final class MainActivity extends ComponentActivity {
         destroyCompanion();
         videoPageGeneration += 1;
         videoWebView.loadUrl("about:blank");
-        roomWebView.loadUrl("about:blank");
+        roomPage.close();
         browserToolbar.setVisibility(View.GONE);
         statusText.setVisibility(View.GONE);
         setupPanel.setVisibility(View.VISIBLE);
@@ -900,7 +901,7 @@ public final class MainActivity extends ComponentActivity {
 
     private boolean trustedRoomPage() {
         String url=roomWebView.getUrl();
-        return UrlPolicy.isTrustedServerUrl(url,SERVER_HOST) && ("/mobile-room/"+activeRoom).equals(Uri.parse(url).getPath());
+        return roomPage.isReady() && UrlPolicy.isTrustedServerUrl(url,SERVER_HOST) && ("/mobile-room/"+activeRoom).equals(Uri.parse(url).getPath());
     }
     private boolean bridgeCurrent(int generation) {return !destroyed && foreground && sessionActive && generation==bridgeGeneration && trustedRoomPage();}
     private void scheduleBridge(int generation) {mainHandler.postDelayed(()->tickBridge(generation),300);}
@@ -1474,51 +1475,6 @@ public final class MainActivity extends ComponentActivity {
             if(finding)return;
             statusText.setVisibility(View.VISIBLE);
             setStatus("网页证书异常，已停止访问");
-        }
-    }
-
-    private final class RoomPageClient extends WebViewClient {
-        @Override public void onPageStarted(WebView view,String url,Bitmap favicon) {
-            cancelPendingMicrophone();appliedProgramRevision=0;
-            super.onPageStarted(view,url,favicon);
-        }
-        @Override
-        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-            String url = request.getUrl().toString();
-            String path=request.getUrl().getPath();
-            if (UrlPolicy.isTrustedServerUrl(url, SERVER_HOST)
-                && (("/mobile-room/"+activeRoom).equals(path) || (roomBootstrapPending && "/".equals(path)))) return false;
-            if(!UrlPolicy.normalizeHttpsUrl(url).isEmpty() && request.hasGesture())openExternal(url);
-            return true;
-        }
-
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            super.onPageFinished(view, url);
-            if(sessionActive && foreground && trustedRoomPage() && url.equals(view.getUrl())) {
-                final int generation=++bridgeGeneration;
-                mainHandler.post(()->tickBridge(generation));
-            }
-            if (!sessionActive || !roomBootstrapPending || !UrlPolicy.isTrustedServerUrl(url, SERVER_HOST)) return;
-            roomBootstrapPending = false;
-            String script = "(function(){"
-                + "localStorage.setItem('tw_legal_notice_version'," + js(activeLegalVersion()) + ");"
-                + "localStorage.setItem('tw_username'," + js(activeNickname) + ");"
-                + "localStorage.setItem('tw_last_room'," + js(activeRoom) + ");"
-                + "return true;})()";
-            view.evaluateJavascript(script, ignored -> {
-                if (sessionActive && !destroyed) view.loadUrl(SERVER_ORIGIN + "/mobile-room/" + Uri.encode(activeRoom));
-            });
-        }
-
-        @Override public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
-            if (request.isForMainFrame() && response.getStatusCode() == 404)
-                setStatus("服务器尚未更新安卓房间页，请先部署新版网站后重新进入");
-        }
-
-        @Override
-        public void onReceivedSslError(WebView view, SslErrorHandler handler, android.net.http.SslError error) {
-            handler.cancel();
         }
     }
 
@@ -2199,6 +2155,7 @@ public final class MainActivity extends ComponentActivity {
         mainHandler.removeCallbacks(hideFullscreenUi);
         hideFullscreenUi.run();
         foreground = false;
+        if(roomPage!=null)roomPage.pause();
         updateFullscreenBack();
         if(catalogMetadata!=null)catalogMetadata.flush();
         cancelPendingMicrophone();
@@ -2217,6 +2174,7 @@ public final class MainActivity extends ComponentActivity {
     protected void onResume() {
         super.onResume();
         foreground = true;
+        if(roomPage!=null)roomPage.resume();
         updateFullscreenBack();
         if(nativePlayer!=null && sessionActive && !finding)nativePlayer.resumeLoading();
         if(clientUpdates!=null)clientUpdates.check(false);
@@ -2236,6 +2194,7 @@ public final class MainActivity extends ComponentActivity {
         destroyed = true;
         if(catalogMetadata!=null)catalogMetadata.close();
         sessionActive = false;
+        if(roomPage!=null)roomPage.close();
         ++bridgeGeneration;
         mainHandler.removeCallbacksAndMessages(null);
         nativePlayer.release();
