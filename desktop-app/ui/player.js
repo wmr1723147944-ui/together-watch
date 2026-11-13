@@ -4,6 +4,8 @@
     const levels = document.getElementById('levels');
     const episodes=document.getElementById('episodes');
     let hls = null, loadId = 0, watchdog = null, failed = '', position = 0, cropped = false, reusable = false;
+    const hasFrame = () => video.readyState >= 2 && video.videoWidth > 0
+        && (video.getVideoPlaybackQuality?.().totalVideoFrames || 0) > 0;
     function fail(message, canReuse = false) {
         reusable = canReuse;
         failed = message; clearTimeout(watchdog); video.pause(); hls?.stopLoad();
@@ -20,7 +22,7 @@
         const id = loadId;
         notice.textContent = '正在加载公开媒体…'; notice.hidden = false;
         levels.replaceChildren(new Option('自动', '-1')); levels.disabled = true;
-        watchdog = setTimeout(() => { if (id === loadId && video.readyState < 3) fail('20 秒内没有加载到可播放画面：可能是源站、网络或跨域限制。', true); }, 20000);
+        watchdog = setTimeout(() => { if (id === loadId && !hasFrame()) fail('20 秒内没有解码出视频画面：可能是源站、网络或编码不兼容。', true); }, 20000);
         if (item.kind === 'hls' && window.Hls?.isSupported()) {
             // Start conservatively; adapt upwards after measured throughput.
             hls = new Hls({ enableWorker: true, emeEnabled: false, maxBufferLength: 30, startLevel: 0,
@@ -50,7 +52,8 @@
     });
     video.addEventListener('canplay', () => {
         if (failed) return;
-        clearTimeout(watchdog); notice.textContent = '已就绪，点击视频播放；也可由房间成员同步开始。';
+        if(hasFrame())clearTimeout(watchdog);
+        notice.textContent = hasFrame() ? '已就绪，点击视频播放；也可由房间成员同步开始。' : '线路已加载，正在确认视频画面…';
     });
     video.addEventListener('playing', () => { if (!failed) notice.hidden = true; });
     video.addEventListener('encrypted', () => fail('检测到 DRM 保护，请使用原网页及自己的观看权限。'));
@@ -77,6 +80,6 @@
     });
     document.addEventListener('focusin',showControls);
     window.addEventListener('blur',()=>{clearTimeout(controlsTimer);document.body.classList.remove('show-controls','keyboard-controls');});
-    window.__twBuiltin = { load, destroy, state: () => ({ error: failed, ready: video.readyState >= 3, reusable }),
+    window.__twBuiltin = { load, destroy, state: () => ({ error: failed, ready: hasFrame() && !failed, reusable }),
         fullscreen(enabled, crop) { if(enabled && !fullscreen)showControls();fullscreen=!!enabled;document.body.classList.toggle('full', enabled); video.style.objectFit = crop ? 'cover' : 'contain'; } };
 })();

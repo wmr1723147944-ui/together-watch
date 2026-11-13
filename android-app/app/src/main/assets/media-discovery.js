@@ -16,7 +16,7 @@
             // a similarly named request, inactive <source> or poster is not.
             // Kanju CDN examples include both opaque IDs and a ".image" alias
             // on a stream the browser has actually decoded as a long video.
-            const confirmed=!!(attached && visible && duration>0 && leaf && (!leaf.includes('.') || /\.image$/i.test(leaf)));
+            const confirmed=!!(attached && visible && duration>0 && leaf && (mime==='application/x-mpegURL' || !leaf.includes('.') || /\.image$/i.test(leaf)));
             if (!confirmed && !/\.(mp4|m4v|webm|m3u8|mpd)$/i.test(url.pathname)) return;
             const prior = candidates.get(url.href);
             if (!prior || active || visible) candidates.set(url.href, { url: url.href, active, position, duration, visible, confirmed, mime, attached });
@@ -40,7 +40,10 @@
             const sources=Array.from(video.querySelectorAll('source[src]'));
             const attached=video.currentSrc || video.src || (sources.length===1 ? sources[0].src : '');
             if(visible && video.readyState>=1 && Number.isFinite(video.duration) && video.duration>=120 && attached)playerSources.push(attached);
-            const record=(raw,bound,mime='')=>add(raw,active,video.currentTime || 0,Number.isFinite(video.duration)?video.duration:0,visible && video.readyState>=1,base,bound,mime);
+            const record=(raw,bound,mime='')=>{
+                add(raw,active,video.currentTime || 0,Number.isFinite(video.duration)?video.duration:0,visible && video.readyState>=1,base,bound,mime);
+                try { const c=candidates.get(new URL(raw,base).href); if(c)c.referrerPolicy=video.getAttribute?.('referrerpolicy') || ''; } catch (_) { }
+            };
             record(attached,!!video.currentSrc && !video.srcObject);
             if (String(attached).startsWith('blob:')) {
                 if(visible)opaquePlayers++;
@@ -52,6 +55,7 @@
                     for (const hls of [video.hls,win?.hls,win?.dp?.plugins?.hls]) {
                         if (hls?.media===video && typeof hls.url==='string') record(hls.url,true,'application/x-mpegURL');
                     }
+                    for (const binding of (win?.__twMediaBindings?.read(video) || [])) record(binding.url,true,binding.mime);
                 } catch (_) { }
             }
             if (visible && video.readyState===0 && video.preload==='none' && attached && !video.__twMetadataRequested) {

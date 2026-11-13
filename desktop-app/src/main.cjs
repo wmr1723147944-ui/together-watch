@@ -12,8 +12,10 @@ const {createMetadataBrowser}=require('./metadata-browser.cjs');
 const {readPlayingMetadata}=require('./playing-metadata.cjs');
 const {script:CATALOG_SCRIPT,api:catalogAdapters}=require('./catalog-adapters.cjs');
 const { MediaCatalog, preferWeb, mediaKind } = require('./media-catalog.cjs');
+const {MediaTransport,anonymousHeaders}=require('./media-transport.cjs');
 const AGENT = fs.readFileSync(path.join(__dirname, 'danmaku-overlay.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, 'player-agent.js'), 'utf8');
 const MEDIA_SCAN = fs.readFileSync(path.join(__dirname, 'media-scan.js'), 'utf8');
+const EPISODE_GUARD = fs.readFileSync(path.join(__dirname, '../ui/episode-media-guard.js'), 'utf8');
 const INLINE = fs.readFileSync(path.join(__dirname,'inline-video.js'),'utf8');
 const PLAYER_URL = policy.APP_ORIGIN + '/player.html';
 const SMOKE = !app.isPackaged && process.argv.includes('--smoke-test');
@@ -21,7 +23,7 @@ const PACKAGE_CHECK = process.argv.includes('--verify-package');
 const shells = new Map();
 const metadataControls = new Map();
 const playerEpisodeControls = new Map();
-protocol.registerSchemesAsPrivileged([{ scheme: 'tw-app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
+protocol.registerSchemesAsPrivileged([{ scheme: 'tw-app', privileges: { standard: true, secure: true, supportFetchAPI: true, stream:true } }]);
 app.enableSandbox();
 if (SMOKE || PACKAGE_CHECK) app.setPath('userData', path.join(app.getPath('temp'), `tw-desktop-check-${process.pid}`));
 else if (!app.requestSingleInstanceLock()) app.exit(0);
@@ -36,19 +38,20 @@ const timeout = (promise, ms = 2500) => {
     let timer;
     return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), ms); })]).finally(() => clearTimeout(timer));
 };
-function installAssets(ses) {
+function installAssets(ses, mediaTransport=null) {
     const assets = new Map(['index.html','shell.css','shell.js','player.html','player.css','player.js','app-icon.svg']
         .map(name => ['/' + name, path.join(__dirname, '..', 'ui', name)]));
     const bundledHls = path.join(__dirname, '..', 'ui', 'hls.min.js');
     assets.set('/hls.min.js', fs.existsSync(bundledHls) ? bundledHls : path.join(__dirname, '../../static/vendor/hls-1.5.18.min.js'));
     ses.protocol.handle('tw-app', request => {
         const url = new URL(request.url);
+        if(mediaTransport && url.host==='desktop' && url.pathname.startsWith('/media/'))return mediaTransport.handle(request);
         if (url.host !== 'desktop' || !assets.has(url.pathname)) return new Response('Not found', { status: 404 });
         return net.fetch(pathToFileURL(assets.get(url.pathname)).href);
     });
 }
 
-async function createDesktop({ server = policy.SERVER, testSource = '', visible = true, testUpdates = false } = {}) {
+async function createDesktop({ server = policy.SERVER, testSource = '', visible = true, testUpdates = false, testMediaFetch = null } = {}) {
     if (!SMOKE && server !== policy.SERVER) throw new Error('Untrusted server');
     const win = new BrowserWindow({ title: '一起看 · Windows', width: 1360, height: 850, minWidth: 980, minHeight: 680,
         backgroundColor: '#111020', show: visible, autoHideMenuBar: true, icon: path.join(__dirname, '../assets/app.ico'),
@@ -137,7 +140,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     // No source-site cookies, login state or general shell bridge in the
     // independent player. Its preload exposes only a guarded episode-picker action.
     const playerPartition = session.fromPartition(`player-${win.id}-${crypto.randomBytes(6).toString('hex')}`);
-    installAssets(playerPartition);
+    const mediaTransport=new MediaTransport(SMOKE ? testMediaFetch || undefined : undefined,info=>{if(SMOKE)console.log('media-transport',JSON.stringify(info));}), mediaHeaders=new Map();
+    installAssets(playerPartition,mediaTransport);
     const playerFullscreen = (wc, permission) => permission === 'fullscreen' && !!wc && wc === liveContents(builtin) && wc.getURL() === PLAYER_URL;
     playerPartition.setPermissionCheckHandler(playerFullscreen);
     playerPartition.setPermissionRequestHandler((wc, permission, callback) => callback(playerFullscreen(wc, permission)));
@@ -193,6 +197,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     function closeBuiltin() {
         if (!builtin) return;
+        mediaTransport.reset();
         const old = builtin; builtin = null; selected = null; videoGeneration++;
         if(!win.isDestroyed())win.contentView.removeChildView(old);
         liveContents(old)?.close();
@@ -202,14 +207,22 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     function resetMedia() {
         blobScans=0;lastBlob='';
         catalog.reset(); requests.clear(); lastScan = 0;
+        mediaHeaders.clear();
         // A user-supplied media URL need not render as an HTML document first.
         if (mediaKind(sourcePage)) catalog.add(sourcePage, sourcePage);
         reportMedia();
     }
-    // Observe only requests already made by this source view. No crawler, header
+    // Observe only requests already made by this source view. No crawler, credential
     // copying, token forwarding or main-process proxy is involved.
     videoPartition.webRequest.onBeforeRequest((details, callback) => {
         if (requestBelongsToView(details,video) && requests.size < 512) requests.set(details.id, videoGeneration);
+        callback({});
+    });
+    videoPartition.webRequest.onBeforeSendHeaders((details,callback)=>{
+        if(requestBelongsToView(details,video) && requests.get(details.id)===videoGeneration && policy.publicHttps(details.url)){
+            mediaHeaders.delete(details.url);mediaHeaders.set(details.url,anonymousHeaders(details.requestHeaders));
+            if(mediaHeaders.size>256)mediaHeaders.delete(mediaHeaders.keys().next().value);
+        }
         callback({});
     });
     videoPartition.webRequest.onResponseStarted(details => {
@@ -236,7 +249,9 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 const results = await Promise.all(wc.mainFrame.framesInSubtree.slice(0, 32).map(async frame => {
                     try {
                         if (!sourceAllowed(frame.url) && frame.url !== 'about:blank') return null;
-                        const data = await timeout(frame.executeJavaScript(MEDIA_SCAN));
+                        const program = currentProgram?.source==='kanju' && frame===wc.mainFrame ? currentProgram : null;
+                        const code=program ? CATALOG_SCRIPT+';'+EPISODE_GUARD+';window.__twEpisodeMediaGuard.read('+JSON.stringify(program)+',()=>{const d='+MEDIA_SCAN+';return {...d,protectedVideo:d.protected,longFormPlayers:d.candidates.filter(c=>c.main).length,playerSources:d.candidates.filter(c=>c.main).map(c=>c.url),candidates:d.candidates.map(c=>({...c,visible:c.main,attached:c.current}))};})' : MEDIA_SCAN;
+                        const data = await timeout(frame.executeJavaScript(code));
                         return { data, page: frame.url === 'about:blank' ? wc.getURL() : frame.url };
                     } catch { return null; }
                 }));
@@ -262,6 +277,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         if (!automatic && !await scanMedia()) return { ok: false, error: '页面仍在识别或选集，请稍后重试。' };
         const item = catalog.get(id);
         if (!item) return { ok: false, error: catalog.reason || '候选已过期，请重新识别。' };
+        if(currentProgram?.source==='kanju' && id!==catalog.automaticId)return {ok:false,error:'尚未确认这条线路属于当前集，请等待识别完成。'};
         leaveInline();closeBuiltin();
         const sourceEpoch = videoGeneration;
         const history = await readHistoryContext();
@@ -289,7 +305,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         try {
             await wc.loadURL(PLAYER_URL);
             if (epoch !== videoGeneration || builtin !== view) return { ok: false, error: '播放页已切换。' };
-            await wc.executeJavaScript(`window.__twBuiltin.load(${JSON.stringify({ url: item.url, kind: item.kind, position: item.position, episodes:!!currentProgram && (!managed || !!managed.owner) })})`);
+            const localUrl=mediaTransport.start(item,{'User-Agent':video.webContents.getUserAgent(),...mediaHeaders.get(item.url)});
+            await wc.executeJavaScript(`window.__twBuiltin.load(${JSON.stringify({ url: localUrl, kind: item.kind, position: item.position, episodes:!!currentProgram && (!managed || !!managed.owner) })})`);
             reportMedia('内置播放已打开，加载后点击播放。原网页已暂停，房间保持连接。');
             return { ok: true };
         } catch {
@@ -731,7 +748,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
         currentProgram=roomProgram ? {source:roomProgram.program.source,item:roomProgram.program.item,episode:roomProgram.program.episode} : descriptor;
         preparePlayback(initialSource); sourcePage = initialSource; resetMedia();
         const epoch = generation;
-        video = new WebContentsView({ webPreferences: securePreferences({ session: videoPartition, backgroundThrottling: false }) });
+        video = new WebContentsView({ webPreferences: securePreferences({ session: videoPartition, backgroundThrottling: false, preload:path.join(__dirname,'media-preload.cjs') }) });
         roomView = new WebContentsView({ webPreferences: securePreferences({ session: roomPartition, backgroundThrottling: false }) });
         video.webContents.setAudioMuted(true);
         video.setBackgroundColor('#000000'); roomView.setBackgroundColor('#171427');
@@ -861,6 +878,7 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
                 if(!stillCurrent())return;
                 if (builtin) {
                     const playback = await timeout(wc.executeJavaScript('window.__twBuiltin?.state()'));
+                    if(!playback?.ready){sample.ready=false;sample.events=[];}
                     if (playback?.error) {
                         if(playback.reusable && !browsing){
                             if(!fallbackUntil)fallbackUntil=Date.now()+8000;
@@ -1058,8 +1076,8 @@ async function createDesktop({ server = policy.SERVER, testSource = '', visible 
     }
     const senderIsShell = event => event.sender === win.webContents && event.senderFrame === win.webContents.mainFrame
         && event.senderFrame.url === policy.APP_ORIGIN + '/index.html';
-    // Source views have no preload. The first-party catalogue has a separate,
-    // metadata-only bridge; it cannot invoke shell/player actions.
+    // Source playback preload only observes media instances in the page world;
+    // it exposes no IPC/native APIs. Catalogue uses its metadata-only bridge.
     shells.set(win.webContents.id, { senderIsShell, start, action });
     const shellId = win.webContents.id;
     win.webContents.on('will-navigate', event => event.preventDefault());

@@ -6,12 +6,13 @@ const {setTimeout:delay}=require('node:timers/promises');
 exports.run=async({createDesktop,server,until})=>{
     const finder=new BrowserWindow({show:false,webPreferences:{session:session.fromPartition('public-lookup-'+process.pid),sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
     const wc=finder.webContents;wc.setAudioMuted(true);wc.setWindowOpenHandler(()=>({action:'deny'}));
+    const loadPublic=async url=>{try{await wc.loadURL(url);}catch{await delay(1000);await wc.loadURL(url);}};
     let client;
     try {
-        await wc.loadURL('https://www.kanju.ai/collections/browse?path=%2Fv1%2Fbrowse%2Fcatalog&q='+encodeURIComponent(process.env.TW_SMOKE_PUBLIC_TITLE || '嫁金钗')+'&page=1&limit=12');
+        await loadPublic('https://www.kanju.ai/collections/browse?path=%2Fv1%2Fbrowse%2Fcatalog&q='+encodeURIComponent(process.env.TW_SMOKE_PUBLIC_TITLE || '嫁金钗')+'&page=1&limit=12');
         let page,program;
         await until('public search',async()=>{page=await wc.executeJavaScript("document.querySelector('a[href^=\"/player/\"]')?.href");return page && new URL(page).origin==='https://www.kanju.ai';},30000);
-        await wc.loadURL(page);
+        await loadPublic(page);
         await until('public episode',async()=>{program=await wc.executeJavaScript(`(()=>{const b=document.querySelector('button[data-directory-episode].movie-button-primary,button[data-directory-episode][aria-selected=true],button[data-directory-episode]');return b&&[decodeURIComponent(location.pathname.split('/').pop()),b.getAttribute('data-directory-episode')];})()`);return program?.every(s=>/^[a-zA-Z0-9_:-]+$/.test(s));},30000);
         finder.destroy();
         client=await createDesktop({server,visible:false});

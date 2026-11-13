@@ -24,7 +24,12 @@ exports.run = async ({createDesktop, server, output, until}) => {
     }
     try {
         for (const name of ['builtin-alice','builtin-bob']) {
-            const client = await createDesktop({server, testSource:'http://127.0.0.1:', visible:false}); clients.push(client);
+            const testMediaFetch=async (url,headers,signal)=>{
+                assert.equal(new URL(url).hostname,'media.example.com','no remote fixture traffic');
+                const response=await net.fetch(server+'/test-media.mp4',{signal,headers:headers.Range?{Range:headers.Range}:{}});
+                return {url,status:response.status,headers:Object.fromEntries(response.headers),body:response.body};
+            };
+            const client = await createDesktop({server, testSource:'http://127.0.0.1:', visible:false,testMediaFetch}); clients.push(client);
             await client.start({nickname:name,room:'builtin-smoke',source:server+'/discover',consent:true});
             const ses = client.state().video.webContents.session;
             await ses.protocol.handle('https', async request => {
@@ -74,7 +79,11 @@ exports.run = async ({createDesktop, server, output, until}) => {
         }
         const [a,b] = clients, aw = a.state().builtin.webContents, bw = b.state().builtin.webContents;
         await control(aw, 'const v=document.querySelector("video");v.pause();v.currentTime=12');
-        await until('built-in peer receives pause and seek', () => bw.executeJavaScript('document.querySelector("video").paused && Math.abs(document.querySelector("video").currentTime-12)<1'));
+        try { await until('built-in peer receives pause and seek', () => bw.executeJavaScript('document.querySelector("video").paused && Math.abs(document.querySelector("video").currentTime-12)<1')); }
+        catch(error){
+            for(const c of [a,b])console.log('SYNC DIAGNOSTIC',await c.state().builtin.webContents.executeJavaScript('({state:window.__twBuiltin.state(),sample:window.__twDesktopPlayer?.sample()})'),await c.state().roomView.webContents.executeJavaScript('document.getElementById("mobilePlayerStatus").textContent'));
+            throw error;
+        }
         await control(bw, 'const v=document.querySelector("video");v.playbackRate=1.5;v.play()');
         await until('built-in reverse play and speed', () => aw.executeJavaScript('!document.querySelector("video").paused && document.querySelector("video").playbackRate===1.5'));
         const room = a.state().roomView.webContents;

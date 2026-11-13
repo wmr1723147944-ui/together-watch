@@ -7,7 +7,8 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname,'../ui/player.js'),'utf8');
 function setup() {
     const listeners = {}, timers = new Set(), streams = [],documentListeners={},windowListeners={},classes=new Set();
-    const video = { currentTime:0,duration:120,readyState:0,style:{},paused:true,
+    const video = { currentTime:0,duration:120,readyState:0,videoWidth:0,frames:0,style:{},paused:true,
+        getVideoPlaybackQuality() {return {totalVideoFrames:this.frames};},
         addEventListener(name, fn) { listeners[name] = fn; },
         pause() { this.paused = true; }, load() {}, removeAttribute() { this.src = ''; },
         getAttribute() { return this.src; }, canPlayType() { return ''; } };
@@ -45,9 +46,17 @@ test('builtin episode control is available only for a selectable programme',asyn
 test('loading a candidate preserves time without autoplay and releases previous media', () => {
     const t=setup(); t.api.load({url:'https://example.com/a.mp4',kind:'mp4',position:42});
     t.listeners.loadedmetadata(); assert.equal(t.video.currentTime,42); assert.equal(t.video.paused,true);
-    t.video.readyState=4;t.listeners.canplay();assert.equal(t.timers.size,0);
+    t.video.readyState=4;t.video.videoWidth=640;t.video.frames=1;t.listeners.canplay();assert.equal(t.timers.size,0);
     t.api.load({url:'https://example.com/a.m3u8',kind:'hls'});
     const stream=t.streams[0];t.api.load({url:'https://example.com/b.mp4',kind:'mp4'});assert.equal(stream.destroyed,true);
+});
+
+test('metadata or canplay alone cannot claim a decoded video frame',()=>{
+    const t=setup();t.api.load({url:'https://example.com/a.mp4',kind:'mp4'});
+    t.video.readyState=4;t.video.videoWidth=640;t.listeners.canplay();
+    assert.equal(t.api.state().ready,false);assert.equal(t.timers.size,1);
+    t.video.frames=1;assert.equal(t.api.state().ready,true);
+    t.listeners.encrypted();assert.equal(t.api.state().ready,false);
 });
 test('HLS uses anonymous requests and only lists actual available levels', () => {
     const t=setup();t.api.load({url:'https://example.com/a.m3u8',kind:'hls'});

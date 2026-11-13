@@ -21,9 +21,9 @@ test('requests must belong to the current live source, not a previous view or me
 test('production network callbacks complete safely after source teardown and reject stale responses',()=>{
     const code=fs.readFileSync(path.join(__dirname,'../src/main.cjs'),'utf8');
     const callbacks={},requests=new Map(),added=[];
-    const context={requestBelongsToView,requests,videoGeneration:4,sourcePage:'https://example.com/watch',video:{webContents:{id:17,isDestroyed:()=>false}},
+    const context={requestBelongsToView,requests,mediaHeaders:new Map(),policy:require('../src/policy.cjs'),anonymousHeaders:require('../src/media-transport.cjs').anonymousHeaders,videoGeneration:4,sourcePage:'https://example.com/watch',video:{webContents:{id:17,isDestroyed:()=>false}},
         catalog:{add:(...args)=>{added.push(args);return true;}},reportMedia(){},videoPartition:{webRequest:Object.fromEntries(
-            ['onBeforeRequest','onResponseStarted','onCompleted','onErrorOccurred'].map(name=>[name,fn=>callbacks[name]=fn]))}};
+            ['onBeforeRequest','onBeforeSendHeaders','onResponseStarted','onCompleted','onErrorOccurred'].map(name=>[name,fn=>callbacks[name]=fn]))}};
     vm.runInNewContext(code.slice(code.indexOf('videoPartition.webRequest.onBeforeRequest'),code.indexOf('    function scanMedia()')),context);
     let completed=0;
     callbacks.onBeforeRequest({id:1,webContentsId:17},()=>completed++);
@@ -36,6 +36,10 @@ test('production network callbacks complete safely after source teardown and rej
     callbacks.onResponseStarted({id:1,webContentsId:17,statusCode:200});
     assert.equal(completed,3);assert.equal(requests.has(2),false);assert.equal(requests.has(3),false);assert.equal(added.length,0);
     callbacks.onBeforeRequest({id:4,webContentsId:18},()=>completed++);
+    callbacks.onBeforeSendHeaders({id:4,webContentsId:18,url:'https://example.com/movie.mp4',requestHeaders:{Cookie:'secret','User-Agent':'UA'}},()=>{});
+    assert.deepEqual(context.mediaHeaders.get('https://example.com/movie.mp4'),{'User-Agent':'UA'});
+    callbacks.onBeforeSendHeaders({id:1,webContentsId:18,url:'https://example.com/stale.mp4',requestHeaders:{}},()=>{});
+    assert.equal(context.mediaHeaders.has('https://example.com/stale.mp4'),false);
     callbacks.onResponseStarted({id:4,webContentsId:18,statusCode:206,url:'https://example.com/movie.mp4',responseHeaders:{'content-type':['video/mp4']}});
     assert.equal(added.length,1);callbacks.onCompleted({id:4});callbacks.onErrorOccurred({id:1});assert.equal(requests.size,0);
 });

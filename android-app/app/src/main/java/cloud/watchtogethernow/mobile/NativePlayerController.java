@@ -9,6 +9,7 @@ import androidx.media3.common.PlaybackParameters;
 import androidx.media3.common.Player;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.datasource.HttpDataSource;
+import androidx.media3.datasource.ResolvingDataSource;
 import androidx.media3.exoplayer.DefaultRenderersFactory;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
@@ -41,6 +42,10 @@ final class NativePlayerController {
     private Runnable loadTimeout, retryTask;
     private PlaybackRecovery.Failure deferredFailure;
     private boolean suspended;
+    private boolean firstFrame;
+    private Runnable firstFrameListener = () -> {};
+
+    void setFirstFrameListener(Runnable listener) { firstFrameListener = listener; }
 
     NativePlayerController(Context context, PlayerView view, StatusListener listener, Runnable nextEpisode,
                            FailureListener playbackFailure) {
@@ -66,20 +71,30 @@ final class NativePlayerController {
         if(view.getOverlayFrameLayout()!=null)view.getOverlayFrameLayout().addView(danmaku,new android.widget.FrameLayout.LayoutParams(-1,-1));
     }
 
-    void open(String url, String referer, String userAgent, double initialPosition, boolean hls) {
+    void open(String url, PlaybackRequestHeaders.Snapshot headers, double initialPosition, boolean hls) {
         release();
         session++;
         error = "";
         appliedCommand = 0;
         suspended = false;
         DefaultHttpDataSource.Factory http = new DefaultHttpDataSource.Factory()
-            .setUserAgent(userAgent).setConnectTimeoutMs(15000).setReadTimeoutMs(15000);
-        if (!referer.isEmpty()) http.setDefaultRequestProperties(Collections.singletonMap("Referer", referer));
+            .setUserAgent(headers.userAgent).setConnectTimeoutMs(15000).setReadTimeoutMs(15000);
+        ResolvingDataSource.Factory data = new ResolvingDataSource.Factory(http,spec -> {
+            if (!UrlPolicy.isHttpsWebUrl(spec.uri.toString())) throw new java.io.IOException("Unsupported media destination");
+            return spec.withRequestHeaders(headers.forUrl(spec.uri.toString()));
+        });
         player = new ExoPlayer.Builder(context, new DefaultRenderersFactory(context).setEnableDecoderFallback(true))
-            .setMediaSourceFactory(new DefaultMediaSourceFactory(http)).build();
+            .setMediaSourceFactory(new DefaultMediaSourceFactory(data)).build();
         ExoPlayer current = player;
         watchLoading(current);
         player.addListener(new Player.Listener() {
+            @Override public void onRenderedFirstFrame() {
+                if (current != player || firstFrame) return;
+                firstFrame = true;
+                cancelRecoveryTasks(); recovery.ready();
+                firstFrameListener.run();
+                listener.onStatus("内置播放已就绪 · 下方可聊天和通话");
+            }
             @Override public void onPlaybackStateChanged(int state) {
                 if (current != player) return;
                 if (state == Player.STATE_READY) {
@@ -87,7 +102,8 @@ final class NativePlayerController {
                     recovery.ready();
                     error = ""; deferredFailure = null;
                     if (pendingState != null) apply(pendingState);
-                    listener.onStatus("内置播放已就绪 · 下方可聊天和通话");
+                    if (!firstFrame) watchLoading(current);
+                    listener.onStatus(firstFrame ? "内置播放已就绪 · 下方可聊天和通话" : "线路已加载，正在确认视频画面…");
                 } else if (state == Player.STATE_BUFFERING) {
                     watchLoading(current);
                     listener.onStatus("视频缓冲中…");
@@ -206,7 +222,7 @@ final class NativePlayerController {
         put(result, "duration", duration == C.TIME_UNSET ? 0 : Math.max(0, duration) / 1000.0);
         put(result, "speed", hold.active ? hold.speed : player.getPlaybackParameters().speed);
         put(result, "playing", player.getPlayWhenReady() && player.getPlaybackState() != Player.STATE_ENDED);
-        put(result, "ready", player.getPlaybackState() == Player.STATE_READY || player.getPlaybackState() == Player.STATE_ENDED);
+        put(result, "ready", firstFrame && (player.getPlaybackState() == Player.STATE_READY || player.getPlaybackState() == Player.STATE_ENDED));
         put(result, "seeking", pendingState != null);
         put(result, "appliedCommand", appliedCommand);
         put(result, "error", error);
@@ -302,6 +318,7 @@ final class NativePlayerController {
         }
     }
     void release() {
+        firstFrame = false;
         cancelRecoveryTasks(); recovery.reset(); deferredFailure=null;
         hold.reset();
         danmaku.update(null);

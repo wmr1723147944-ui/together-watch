@@ -31,3 +31,5 @@ desktop-app/dist/
 desktop-app/ui/hls.min.js
 desktop-app/ui/site-directory.json
 desktop-app/ui/catalog-adapters.js
+desktop-app/ui/episode-media-guard.js
+desktop-app/src/media-preload.cjs

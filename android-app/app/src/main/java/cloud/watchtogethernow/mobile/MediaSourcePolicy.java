@@ -33,13 +33,16 @@ final class MediaSourcePolicy {
     // Only DOM discovery of a loaded video can opt in to an opaque CDN
     // path or ".image" alias. Ordinary image traffic is never a candidate.
     static boolean playable(String value, boolean confirmed) {
+        return playable(value,confirmed,false);
+    }
+    static boolean playable(String value, boolean confirmed, boolean boundManifest) {
         if(isMedia(value))return true;
         if(!confirmed)return false;
         try {
             URI u=URI.create(value);
             if(!"https".equalsIgnoreCase(u.getScheme()) || u.getHost()==null || u.getUserInfo()!=null)return false;
             String path=u.getPath(), leaf=path.substring(path.lastIndexOf('/')+1);
-            return !leaf.isEmpty() && (!leaf.contains(".") || leaf.toLowerCase(Locale.ROOT).endsWith(".image"));
+            return !leaf.isEmpty() && (boundManifest || !leaf.contains(".") || leaf.toLowerCase(Locale.ROOT).endsWith(".image"));
         }catch(RuntimeException ignored){return false;}
     }
     static String origin(String value) {

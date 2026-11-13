@@ -54,6 +54,8 @@ import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
 import androidx.activity.ComponentActivity;
 import androidx.activity.OnBackPressedCallback;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -99,6 +101,9 @@ public final class MainActivity extends ComponentActivity {
     private String requestedPageUrl="";
     private final PlaybackPreparation preparation=new PlaybackPreparation();
     private final PlaybackRecovery.PageRefresh playbackRefresh=new PlaybackRecovery.PageRefresh();
+    private final NativeHandoff webHandoff = new NativeHandoff();
+    private final PlaybackRequestHeaders playbackHeaders = new PlaybackRequestHeaders();
+    private String handoffScript = "";
     private double recoveryPosition=-1;
     private final Runnable prepareTick=this::prepareBuiltin;
     private boolean resolverPageReady;
@@ -226,6 +231,9 @@ public final class MainActivity extends ComponentActivity {
         configureWebView(videoWebView, true);
         videoWebView.setWebViewClient(new VideoPageClient());
         videoWebView.setWebChromeClient(new VideoChromeClient());
+        String bindings = readAsset("media-bindings.js");
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT))
+            WebViewCompat.addDocumentStartJavaScript(videoWebView,bindings,java.util.Set.of("https://www.kanju.ai","https://kanju.ai"));
 
         catalogWebView = new WebView(this);
         configureWebView(catalogWebView, true);
@@ -261,7 +269,7 @@ public final class MainActivity extends ComponentActivity {
             recoveryPosition=position;
             boolean exact=!finding && !awaitingEpisode && !protectedPage && programSelection!=null
                 && programSelection.exact() && programSelection.page.equals(requestedPageUrl);
-            if(foreground && playbackRefresh.claim(failure,exact,exact?programSelection.source:"")) {
+            if(!webHandoff.matches(videoPageGeneration,programRevision) && foreground && playbackRefresh.claim(failure,exact,exact?programSelection.source:"")) {
                 openProgramPage(requestedPageUrl,true);
                 setStatus("视频地址已失效或被拒绝，正在重新读取本集线路（仅重试一次）…");
                 return;
@@ -270,6 +278,7 @@ public final class MainActivity extends ComponentActivity {
             preparationFailure=message;preparation.stop();exitNativeFullscreen();
             nativePlayerView.setVisibility(View.GONE);updatePlaybackGate();setStatus(message);
         });
+        nativePlayer.setFirstFrameListener(this::completeNativeHandoff);
         nativePlayerView.setFullscreenButtonClickListener(fullscreen -> {
             FullscreenRequest.apply(fullscreen,nativeFullscreen,this::enterNativeFullscreen,this::exitNativeFullscreen);
         });
@@ -284,9 +293,10 @@ public final class MainActivity extends ComponentActivity {
             ByteArrayOutputStream output = new ByteArrayOutputStream();
             byte[] bytes = new byte[4096]; int count;
             while ((count = input.read(bytes)) != -1) output.write(bytes, 0, count);
-            discoveryScript = output.toString("UTF-8");
+            discoveryScript = "(()=>{"+bindings+";return (\n"+output.toString("UTF-8")+"\n);})()";
         } catch (IOException error) { setStatus("资源识别组件不可用，仍可使用网页播放"); }
         playerAgent = readAsset("danmaku-overlay.js") + "\n" + readAsset("player-agent.js");
+        handoffScript = readAsset("media-handoff.js");
         webSyncScript = readAsset("android-web-sync.js");
         catalogScript = readAsset("catalog-adapters.js");
         catalogueBackScript = readAsset("catalog-back.js");
@@ -744,6 +754,7 @@ public final class MainActivity extends ComponentActivity {
         openProgramPage(requestedPageUrl,true);
     }
     private void openProgramPage(String page,boolean recovering) {
+        webHandoff.clear();
         if(!recovering){playbackRefresh.reset();recoveryPosition=-1;}
         finishPlayerHold(false);
         if(episodePicker!=null)episodePicker.close();
@@ -1068,7 +1079,7 @@ public final class MainActivity extends ComponentActivity {
     private void rememberCandidate(String rawUrl, JSONObject details) {
         if (!sessionActive || finding || awaitingEpisode || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
         String url = UrlPolicy.normalizeHttpsUrl(rawUrl);
-        if (url.isEmpty() || !MediaSourcePolicy.playable(url,confirmedMedia(details))) return;
+        if (url.isEmpty() || !playableCandidate(url,details)) return;
         if (!mediaCandidates.containsKey(url) && mediaCandidates.size() >= 24) {
             if(details==null || !details.optBoolean("visible"))return;
             String replace=null;
@@ -1129,6 +1140,10 @@ public final class MainActivity extends ComponentActivity {
     private static boolean confirmedMedia(JSONObject details) {
         return details!=null && details.optBoolean("confirmed") && details.optBoolean("visible") && details.optDouble("duration",0)>0;
     }
+    private static boolean playableCandidate(String url, JSONObject details) {
+        return MediaSourcePolicy.playable(url,confirmedMedia(details),details!=null && details.optBoolean("attached")
+            && "application/x-mpegURL".equals(details.optString("mime")));
+    }
     private void openNative(String url, double position) {
         if(finding || awaitingEpisode)return;
         if(guardEpisodeMedia()){
@@ -1165,10 +1180,9 @@ public final class MainActivity extends ComponentActivity {
     private void openNativeConfirmed(String url, double position) {
         if(finding || awaitingEpisode)return;
         JSONObject details=mediaCandidates.get(url);
-        if (!MediaSourcePolicy.playable(url,confirmedMedia(details)) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
+        if (!playableCandidate(url,details) || UrlPolicy.normalizeHttpsUrl(url).isEmpty() || protectedPage || MediaSourcePolicy.preferWeb(sourcePageUrl)) return;
         preferWebThisPage=false;
-        // Keep the confirmed public episode with this native player. Its source
-        // WebView is about to be unloaded, so its later title/URL is not evidence.
+        // Keep confirmed episode identity separate from the retained webpage.
         nativeHistoryContext=historyContextPage==videoPageGeneration?currentHistoryContext:null;
         if(nativeHistoryContext==null && currentProgramPage() && programSelection!=null && programSelection.exact())try {
             nativeHistoryContext=new JSONObject().put("program",new JSONObject().put("source",programSelection.source)
@@ -1176,17 +1190,25 @@ public final class MainActivity extends ComponentActivity {
         }catch(Exception ignored){}
         hideFullscreenVideo();
         destroyCompanion();
-        ++videoPageGeneration;
-        // about:blank unloads the complete frame tree, preventing hidden video
-        // or ad frames from continuing to produce a second audio track.
-        videoWebView.loadUrl("about:blank");
+        if(resolverPageReady && (programRevision==0 || currentProgramPage())) {
+            webHandoff.begin(videoPageGeneration,programRevision);
+            videoWebView.evaluateJavascript(handoffScript+"('hold')",null);
+        }
         videoWebView.setVisibility(View.GONE);
         nativePlayerView.setVisibility(View.VISIBLE);
-        String referer = MediaSourcePolicy.origin(sourcePageUrl);
+        String referer = details!=null && "no-referrer".equals(details.optString("referrerPolicy")) ? "" : MediaSourcePolicy.origin(sourcePageUrl);
         if(recoveryPosition>=0){position=recoveryPosition;recoveryPosition=-1;}
-        nativePlayer.open(url, referer, videoWebView.getSettings().getUserAgentString(), position,
+        nativePlayer.open(url, playbackHeaders.snapshot(url,referer,videoWebView.getSettings().getUserAgentString()), position,
             details!=null && "application/x-mpegURL".equals(details.optString("mime")));
         showVideoTab();
+    }
+
+    private void completeNativeHandoff() {
+        if(destroyed || !sessionActive || finding || !nativePlayer.isActive())return;
+        if(!webHandoff.commit(videoPageGeneration,programRevision))return;
+        ++videoPageGeneration;
+        // Only a decoded native frame permits disposing the fallback document.
+        videoWebView.loadUrl("about:blank");
     }
 
     private void returnToWeb() {
@@ -1196,7 +1218,9 @@ public final class MainActivity extends ComponentActivity {
         recoveryPosition=-1;
         // This WebView owns the temporary blob URL. Reloading here used to
         // discard the episode/position that the gate had just confirmed.
-        boolean keepPage=webPlayerReady();
+        boolean keepPage=webPlayerReady() || (webHandoff.matches(videoPageGeneration,programRevision)
+            && (programRevision==0 || currentProgramPage()) && resolverPageReady && !awaitingEpisode);
+        webHandoff.clear();
         ++videoPageGeneration;exitNativeFullscreen();
         nativePlayer.release();
         nativePlayerView.setVisibility(View.GONE);
@@ -1205,6 +1229,7 @@ public final class MainActivity extends ComponentActivity {
         mainHandler.removeCallbacks(prepareTick);
         videoWebView.getSettings().setMediaPlaybackRequiresUserGesture(false);
         if(keepPage){
+            videoWebView.evaluateJavascript(handoffScript+"('restore')",null);
             readyWebSamples=0;showVideoTab();
             setStatus("已保留本集的网页播放器；如果画面暂停，点一下播放。");return;
         }
@@ -1348,12 +1373,15 @@ public final class MainActivity extends ComponentActivity {
     private final class VideoPageClient extends WebViewClient {
         @Override
         public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-            // Observe only the URL. Cookies and Authorization headers stay in
-            // WebView; we neither copy them nor send them to the room server.
+            // Keep only public request context in this document's bounded cache.
+            // Credentials are not copied; no request context goes to the server.
             String url = request.getUrl().toString();
             int generation = videoPageGeneration;
-            if (MediaSourcePolicy.isMedia(url)) mainHandler.post(() -> {
-                if (generation == videoPageGeneration && !nativePlayer.isActive()) rememberCandidate(url, null);
+            if (UrlPolicy.isHttpsWebUrl(url)) mainHandler.post(() -> {
+                if (generation == videoPageGeneration && !nativePlayer.isActive()) {
+                    playbackHeaders.observe(url,request.getRequestHeaders());
+                    if (MediaSourcePolicy.isMedia(url)) rememberCandidate(url, null);
+                }
             });
             return null;
         }
@@ -1388,6 +1416,8 @@ public final class MainActivity extends ComponentActivity {
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
             super.onPageStarted(view, url, favicon);
             if ("about:blank".equals(url)) return;
+            webHandoff.clear();
+            playbackHeaders.clear();
             resolverPageReady=false;
             scanDiagnostic="";readyWebSamples=0;
             finishPlayerHold(false);

@@ -22,6 +22,9 @@
                     try{for(const hls of [video.hls,window.hls,window.dp?.plugins?.hls]){
                         if(hls?.media===video && typeof hls.url==='string' && /^https:\/\//i.test(hls.url)){bound=hls.url;break;}
                     }}catch{}
+                    const bindings=window.__twMediaBindings?.read(video) || [];
+                    if(bindings.length===1)bound=bindings[0].url;
+                    else if(bindings.length>1)bound='';
                 }
                 result.candidates.push({ url:bound||url, ...details, current:!!video.currentSrc && !video.srcObject,
                     hls:!!bound, blobReady:!bound && url.startsWith('blob:') && details.main && video.readyState>=2 });

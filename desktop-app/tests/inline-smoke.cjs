@@ -7,7 +7,8 @@ const {setTimeout:delay}=require('node:timers/promises');
 exports.run=async({createDesktop,server,until})=>{
     const clients=[];
     async function client(name,room=''){
-        const c=await createDesktop({server,visible:false});clients.push(c);
+        const testMediaFetch=async url=>({url,status:200,headers:{'content-type':'application/vnd.apple.mpegurl'},body:new Response('not a manifest').body});
+        const c=await createDesktop({server,visible:false,testMediaFetch});clients.push(c);
         await c.start({nickname:name,consent:true});await c.action('kanju');
         await c.state().discoveryView.webContents.session.protocol.handle('https',async request=>{
             const u=new URL(request.url);

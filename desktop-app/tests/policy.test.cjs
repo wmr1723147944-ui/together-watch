@@ -83,11 +83,13 @@ test('fullscreen uses the entire content area with no room or toolbar gap', () =
     assert.equal(p.panelBounds(1360,850,false,true).video.y,264);
     assert.equal(p.panelBounds(1360,850,true,true).video.y,0);
 });
-test('remote content has no preload, Node integration or disabled web security', () => {
+test('remote content has no native bridge, Node integration or disabled web security', () => {
     const main = fs.readFileSync(path.join(__dirname,'../src/main.cjs'),'utf8');
     assert.match(main,/app\.enableSandbox\(\)/);
     assert.match(main,/nodeIntegration: false/); assert.match(main,/contextIsolation: true/); assert.match(main,/webSecurity: true/);
     assert.doesNotMatch(main,/webSecurity: false|nodeIntegration: true|ignore-certificate-errors/);
     assert.match(main,/event\.senderFrame === win\.webContents\.mainFrame/);
     assert.match(main,/details\.mediaTypes\[0\] !== 'audio'/);
+    const binding=fs.readFileSync(path.join(__dirname,'../src/media-bindings.js'),'utf8');
+    assert.doesNotMatch(binding,/ipcRenderer|require\(|exposeInMainWorld|Cookie|Authorization/);
 });

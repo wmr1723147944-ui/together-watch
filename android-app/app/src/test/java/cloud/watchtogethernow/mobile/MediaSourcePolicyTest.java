@@ -36,4 +36,10 @@ public class MediaSourcePolicyTest {
         assertFalse(MediaSourcePolicy.displayName(url).contains("secret"));
         assertFalse(MediaSourcePolicy.displayName(url).contains("private"));
     }
+    @Test public void manifestMimeFromBoundHlsInstanceAllowsNonstandardFilenameOnlyWhenConfirmed() {
+        assertTrue(MediaSourcePolicy.playable("https://cdn.example/playlist.php?id=5",true,true));
+        assertFalse(MediaSourcePolicy.playable("https://cdn.example/playlist.php?id=5",false,true));
+        assertFalse(MediaSourcePolicy.playable("https://user:pass@cdn.example/playlist.php",true,true));
+        assertFalse(MediaSourcePolicy.playable("blob:https://cdn.example/a",true,true));
+    }
 }
