@@ -132,6 +132,9 @@ public final class MainActivity extends ComponentActivity {
     private int holdToken;
     private View holdTouchTarget;
     private final PlayerSwipe playerSwipe=new PlayerSwipe();
+    private final PlayerDoubleTap playerDoubleTap=new PlayerDoubleTap();
+    private boolean doubleTapEligible;
+    private int doubleTapSession;
     private TextView swipeHint;
     private float swipeOriginX,swipeOriginY,swipeBrightnessBefore;
     private float brightnessBeforeSwipes=Float.NaN;
@@ -571,6 +574,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void showFinder(boolean original) {
+        playerDoubleTap.reset();
         finishPlayerHold(false);
         if(requestBusy)return;
         restoreWindowBrightness();
@@ -756,6 +760,7 @@ public final class MainActivity extends ComponentActivity {
         openProgramPage(requestedPageUrl,true);
     }
     private void openProgramPage(String page,boolean recovering) {
+        playerDoubleTap.reset();
         webHandoff.clear();
         if(!recovering){playbackRefresh.reset();recoveryPosition=-1;}
         finishPlayerHold(false);
@@ -1758,6 +1763,9 @@ public final class MainActivity extends ComponentActivity {
                         nativePlayer.gestureVolume(),currentWindowBrightness());
                 }
             }
+            doubleTapEligible=touchCandidate && holdNativeMode;
+            doubleTapSession=holdNativeMode?nativePlayer.gestureSession():-1;
+            if(!doubleTapEligible)playerDoubleTap.reset();
             if(touchCandidate) {
                 final int token=holdToken;
                 if(!holdNativeMode)videoWebView.evaluateJavascript(webHoldScript("canHold"),result->{
@@ -1766,10 +1774,15 @@ public final class MainActivity extends ComponentActivity {
                 mainHandler.postDelayed(startPlayerHold,450);
             }
         } else if(action==MotionEvent.ACTION_POINTER_DOWN || action==MotionEvent.ACTION_CANCEL) {
+            doubleTapEligible=false;
+            playerDoubleTap.reset();
             boolean consumed=playerTouchConsumed;finishPlayerHold(false);
             if(action==MotionEvent.ACTION_CANCEL)playerTouchConsumed=false;
             if(consumed)return true;
         } else if(action==MotionEvent.ACTION_MOVE && touchCandidate) {
+            if(Math.hypot(event.getRawX()-holdX,event.getRawY()-holdY)>ViewConfiguration.get(this).getScaledTouchSlop()){
+                doubleTapEligible=false;playerDoubleTap.reset();
+            }
             if(playerSwipe.armed && !holdRequested && !holdGestureActive) {
                 if(!nativePlayer.isActive() || nativePlayer.gestureSession()!=playerSwipe.session) {
                     boolean consumed=playerTouchConsumed;finishPlayerHold(false);if(consumed)return true;
@@ -1796,10 +1809,24 @@ public final class MainActivity extends ComponentActivity {
             }
         } else if(action==MotionEvent.ACTION_UP) {
             boolean consumed=playerTouchConsumed, tap=touchCandidate;
+            boolean doubleTap=false;
+            int tapSession=nativePlayer!=null?nativePlayer.gestureSession():-1;
+            if(tap && doubleTapEligible && holdNativeMode && doubleTapSession==tapSession && !consumed && !holdRequested && !holdGestureActive
+                && Math.hypot(event.getRawX()-holdX,event.getRawY()-holdY)<=ViewConfiguration.get(this).getScaledTouchSlop())
+                doubleTap=playerDoubleTap.tap(tapSession,event.getDownTime(),event.getEventTime(),event.getRawX(),event.getRawY(),
+                    ViewConfiguration.getDoubleTapTimeout(),ViewConfiguration.get(this).getScaledDoubleTapSlop());
+            else playerDoubleTap.reset();
+            doubleTapEligible=false;
             finishPlayerSwipe(true);
             finishPlayerHold(holdGestureActive);
             playerTouchConsumed=false;
             if(consumed)return true;
+            if(doubleTap){
+                MotionEvent cancel=MotionEvent.obtain(event);cancel.setAction(MotionEvent.ACTION_CANCEL);
+                super.dispatchTouchEvent(cancel);cancel.recycle();
+                if(nativePlayer.gestureToggle(tapSession))nativePlayerView.showController();
+                return true;
+            }
             boolean handled=super.dispatchTouchEvent(event);
             if(tap && fullscreenView!=null) {
                 if(fullscreenControls!=null && fullscreenControls.getVisibility()==View.VISIBLE)hideFullscreenUi.run();
@@ -1816,6 +1843,7 @@ public final class MainActivity extends ComponentActivity {
 
     private void startPlayerHold() {
         if(!touchCandidate || destroyed || !foreground || (!holdNativeMode && !webHoldEligible))return;
+        playerDoubleTap.reset();
         playerSwipe.reset(); // A long press cannot turn into a swipe mid-gesture.
         holdRequested=true;playerTouchConsumed=true;
         final int token=holdToken;
@@ -1970,6 +1998,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void enterNativeFullscreen() {
+        playerDoubleTap.reset();
         if (nativeFullscreen || !nativePlayer.isActive()) return;
         finishPlayerHold(false);
         hideFullscreenVideo();
@@ -1987,6 +2016,7 @@ public final class MainActivity extends ComponentActivity {
     }
 
     private void exitNativeFullscreen() {
+        playerDoubleTap.reset();
         if (!nativeFullscreen) return;
         finishPlayerHold(false);
         nativeFullscreen = false;
@@ -2155,6 +2185,7 @@ public final class MainActivity extends ComponentActivity {
         mainHandler.removeCallbacks(hideFullscreenUi);
         hideFullscreenUi.run();
         foreground = false;
+        playerDoubleTap.reset();
         if(roomPage!=null)roomPage.pause();
         updateFullscreenBack();
         if(catalogMetadata!=null)catalogMetadata.flush();

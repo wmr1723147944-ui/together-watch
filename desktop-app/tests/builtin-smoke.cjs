@@ -22,6 +22,13 @@ exports.run = async ({createDesktop, server, output, until}) => {
         await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount:1,...point});
         await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount:1,...point});
     }
+    async function doubleClickVideo(wc){
+        const point=await wc.executeJavaScript('(()=>{const r=video.getBoundingClientRect();return {x:r.x+r.width*.3,y:r.y+r.height*.35};})()');
+        for(const clickCount of [1,2]){
+            await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mousePressed',button:'left',clickCount,...point});
+            await wc.debugger.sendCommand('Input.dispatchMouseEvent',{type:'mouseReleased',button:'left',clickCount,...point});
+        }
+    }
     try {
         for (const name of ['builtin-alice','builtin-bob']) {
             const testMediaFetch=async (url,headers,signal)=>{
@@ -79,6 +86,19 @@ exports.run = async ({createDesktop, server, output, until}) => {
             }
         }
         const [a,b] = clients, aw = a.state().builtin.webContents, bw = b.state().builtin.webContents;
+        await control(aw,'document.querySelector("video").play()');
+        await until('playing before double-click',()=>aw.executeJavaScript('!video.paused'));
+        await until('peer playing before double-click',()=>bw.executeJavaScript('!video.paused'));
+        await aw.executeJavaScript("window.tapEvents=[];for(const type of ['play','pause'])video.addEventListener(type,()=>tapEvents.push(type));true");
+        await doubleClickVideo(aw);
+        await until('double-click pauses and synchronizes once',()=>bw.executeJavaScript('video.paused'));
+        assert.equal(await aw.executeJavaScript('video.paused'),true);
+        assert.deepEqual(await aw.executeJavaScript('tapEvents'),['pause'],'double-click sends one pause, not three toggles');
+        assert.equal(a.state().full,false,'double-click must not toggle fullscreen');
+        await delay(350);await doubleClickVideo(aw);
+        await until('double-click resumes and synchronizes',()=>bw.executeJavaScript('!video.paused'));
+        assert.equal(await aw.executeJavaScript('video.paused'),false);
+        assert.deepEqual(await aw.executeJavaScript('tapEvents'),['pause','play'],'second double-click sends one resume');
         await control(aw, 'const v=document.querySelector("video");v.pause();v.currentTime=12');
         try { await until('built-in peer receives pause and seek', () => bw.executeJavaScript('document.querySelector("video").paused && Math.abs(document.querySelector("video").currentTime-12)<1')); }
         catch(error){
@@ -105,6 +125,14 @@ exports.run = async ({createDesktop, server, output, until}) => {
         await a.toggleFullscreen(true);
         assert.equal(a.state().builtin.getBounds().y, 0);
         assert.equal(a.state().builtin.getBounds().height, a.win.getContentSize()[1]);
+        await doubleClickVideo(aw);
+        await until('fullscreen double-click pauses peer',()=>bw.executeJavaScript('video.paused'));
+        assert.equal(await aw.executeJavaScript('video.paused'),true);
+        assert.equal(a.state().full,true,'double-click must stay in fullscreen');
+        await delay(350);await doubleClickVideo(aw);
+        await until('fullscreen double-click resumes peer',()=>bw.executeJavaScript('!video.paused'));
+        assert.equal(await aw.executeJavaScript('video.paused'),false);
+        assert.equal(a.state().full,true);
         await pointerClick(aw,'fit');
         assert.equal(await aw.executeJavaScript('document.activeElement.id'),'fit','real pointer click leaves focus on button');
         await delay(2800);

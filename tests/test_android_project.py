@@ -8,6 +8,22 @@ ANDROID = ROOT / "android-app"
 
 
 class AndroidProjectTests(unittest.TestCase):
+    def test_double_tap_uses_native_room_intent_and_excludes_other_gestures(self):
+        root = ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile'
+        activity = (root / 'MainActivity.java').read_text(encoding='utf-8')
+        dispatch = activity.split('dispatchTouchEvent(MotionEvent event)',1)[1].split('private String webHoldScript',1)[0]
+        for marker in ('doubleTapEligible=touchCandidate && holdNativeMode', 'doubleTapSession==tapSession',
+                       'doubleTapEligible=false', 'playerDoubleTap.reset()', 'getScaledDoubleTapSlop()',
+                       'getDoubleTapTimeout()', '!holdRequested && !holdGestureActive',
+                       'touchesPlayerControl(nativePlayerView', 'nativePlayer.gestureToggle(tapSession)'):
+            self.assertIn(marker, dispatch)
+        controller = (root / 'NativePlayerController.java').read_text(encoding='utf-8')
+        toggle = controller.split('boolean gestureToggle(int expected)',1)[1].split('double gesturePosition()',1)[0]
+        for marker in ('session!=expected', '!firstFrame', 'suspended', 'getPlayerError()',
+                       '!player.getPlayWhenReady()', 'player.setPlayWhenReady(playing)', 'event(playing?"play":"pause")'):
+            self.assertIn(marker, toggle)
+        self.assertNotIn('pauseLocally()', toggle)
+
     def test_room_surface_does_not_bootstrap_through_the_catalogue(self):
         root = ANDROID / 'app/src/main/java/cloud/watchtogethernow/mobile'
         activity = (root / 'MainActivity.java').read_text(encoding='utf-8')

@@ -56,6 +56,19 @@
         notice.textContent = hasFrame() ? '已就绪，点击视频播放；也可由房间成员同步开始。' : '线路已加载，正在确认视频画面…';
     });
     video.addEventListener('playing', () => { if (!failed) notice.hidden = true; });
+    video.addEventListener('dblclick',event=>{
+        const box=video.getBoundingClientRect();
+        // Leave Chromium's native seek bar/buttons alone. Only the picture is a
+        // double-click target; fullscreen remains on the explicit button/F11.
+        if(event.button!==0 || event.clientY>=box.bottom-64)return;
+        event.preventDefault();event.stopPropagation();
+        if(failed || !hasFrame())return;
+        if(video.paused || video.ended){
+            if(video.ended)video.currentTime=0;
+            video.play().catch(()=>{notice.textContent='暂时无法继续播放，请使用播放按钮重试。';notice.hidden=false;});
+        }else video.pause();
+        showControls();
+    },true);
     video.addEventListener('encrypted', () => fail('检测到 DRM 保护，请使用原网页及自己的观看权限。'));
     video.addEventListener('error', () => {
         if (!video.getAttribute('src') || failed) return;

@@ -145,6 +145,16 @@ final class NativePlayerController {
 
     boolean isActive() { return player != null; }
     int gestureSession() { return session; }
+    boolean gestureToggle(int expected) {
+        if(player==null || session!=expected || !firstFrame || suspended || player.getPlayerError()!=null)return false;
+        endHold(false);
+        boolean ended=player.getPlaybackState()==Player.STATE_ENDED;
+        boolean playing=ended || !player.getPlayWhenReady();
+        if(ended)player.seekTo(0);
+        player.setPlayWhenReady(playing);
+        event(playing?"play":"pause"); // One user intent, shared through the existing room sync.
+        return true;
+    }
     double gesturePosition() { return player==null?0:player.getCurrentPosition()/1000.0; }
     double gestureDuration() { return player==null || player.getDuration()==C.TIME_UNSET?0:Math.max(0,player.getDuration()/1000.0); }
     boolean gestureSeekable() { return player!=null && player.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
