@@ -1,7 +1,7 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self'; form-action 'none'; frame-src 'none'">
 <title>一起看 · Windows</title><link rel="stylesheet" href="shell.css"></head><body>
-<header><div class="brand"><img class="mark" src="app-icon.svg" width="42" height="42" alt=""><div>一起看<small>WINDOWS · 0.6.26 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="checkUpdates" title="检查客户端更新">检查更新</button><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
+<header><div class="brand"><img class="mark" src="app-icon.svg" width="42" height="42" alt=""><div>一起看<small>WINDOWS · 0.6.27 测试版</small></div></div><button id="previous" title="返回上一步（Alt + ←）">← 返回</button><span id="status" role="status">选好影片，就能邀请朋友一起看。</span><button id="checkUpdates" title="检查客户端更新">检查更新</button><button id="home">推荐首页</button><button id="settings">加入朋友房间</button></header>
 <dialog id="setup" hidden aria-labelledby="entryTitle">
 <div class="entry-heading"><div class="entry-brand"><img src="app-icon.svg" width="44" height="44" alt=""><span>一起看<small>好片，有人陪你看</small></span></div><button id="cancelEntry" aria-label="关闭，返回选片">×</button></div>
 <h1 id="entryTitle">加入房间</h1>
@@ -33,4 +33,4 @@
     </section>
 </section>
 <section id="finderTools" hidden><div><strong>选好这一集，一起看</strong><span>原站页面</span></div><nav><button id="finder-catalog">返回推荐 / 搜索</button><button id="finder-kanju">看剧 AI</button><button id="finder-back">后退</button><button id="finder-reload">刷新 / 重试</button><button id="finder-browser">浏览器打开</button><button id="finder-pick">用当前播放页建房</button></nav><p>确认影片和集数后再建房；登录和验证只在原站实际要求时进行。</p></section>
-<section id="placeholder" hidden aria-label="内置播放"><small lang="en">SCREENING ROOM</small><strong>放映准备</strong><p id="gateText" role="status">正在为这一集准备内置播放…</p><button id="gateChoices" hidden>选择内置线路</button> <button id="gateChange">换个来源</button> <button id="gateOriginal">手动打开原网页</button></section><script src="shell.js"></script></body></html>
+<section id="placeholder" hidden aria-label="内置播放"><small lang="en">SCREENING ROOM</small><strong>放映准备</strong><p id="gateText" role="status">正在为这一集准备内置播放…</p><button id="gateRetry">重试本集</button> <button id="gateChoices" hidden>选择内置线路</button> <button id="gateChange">换个来源</button> <button id="gateOriginal">手动打开原网页</button></section><script src="shell.js"></script></body></html>

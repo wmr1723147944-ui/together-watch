@@ -28,6 +28,7 @@ $('leave').onclick = () => window.desktop.action('leave');
 $('finder-catalog').onclick = () => window.desktop.action('discover');
 $('change-film').onclick = () => window.desktop.action('discover');
 $('gateOriginal').onclick = () => window.desktop.action('original');
+$('gateRetry').onclick = () => window.desktop.action('retry-source');
 $('gateChange').onclick = () => window.desktop.action('discover');
 $('gateChoices').onclick = async () => {await window.desktop.action({type:'tools',expanded:true}); $('mediaChoices').focus();};
 $('finder-kanju').onclick = () => window.desktop.action('kanju');

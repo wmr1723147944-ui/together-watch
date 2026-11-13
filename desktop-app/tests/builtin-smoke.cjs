@@ -33,6 +33,7 @@ exports.run = async ({createDesktop, server, output, until}) => {
             await client.start({nickname:name,room:'builtin-smoke',source:server+'/discover',consent:true});
             const ses = client.state().video.webContents.session;
             await ses.protocol.handle('https', async request => {
+                if (request.url === 'https://v.qq.com/example') return new Response('<body>Web-only platform fixture</body>', {headers:{'content-type':'text/html'}});
                 if (new URL(request.url).hostname !== 'media.example.com') return new Response('', {status:404});
                 const html = `<style>body{margin:0}video{width:100%;height:80vh}</style><video controls preload="auto" crossorigin="anonymous" src="https://media.example.com/movie.mp4"></video>`;
                 if (request.url === fixture || request.url.endsWith('/next')) return new Response(html, {headers:{'content-type':'text/html'}});

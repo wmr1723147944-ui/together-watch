@@ -1,7 +1,7 @@
 {
   "name": "together-watch-desktop",
   "productName": "Together Watch",
-  "version": "0.6.26",
+  "version": "0.6.27",
   "private": true,
   "description": "Together Watch Windows desktop client",
   "main": "src/main.cjs",

@@ -174,6 +174,9 @@ socketio.run(app, host='127.0.0.1', port=${port}, debug=False, allow_unsafe_werk
             await require('./invite-smoke.cjs').run({createDesktop,server,output,until});
             return;
         }
+        if(process.env.TW_SMOKE_INVITE_RECOVERY==='1'){
+            await require('./invite-recovery-smoke.cjs').run({createDesktop,server,until});return;
+        }
         if(process.env.TW_SMOKE_PUBLIC_KANJU==='1'){
             await require('./public-kanju-smoke.cjs').run({createDesktop,server,until});return;
         }
